@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Mic, Search, User, Video, Play, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import axios from "axios";
 
-export default function SearchPage() {
+function SearchContent() {
     const searchParams = useSearchParams();
     const router = useRouter();
     const q = searchParams.get('q') || '';
@@ -23,7 +23,13 @@ export default function SearchPage() {
             }
             setLoading(true);
             try {
-                const res = await axios.get(`http://${window.location.hostname}:5005/api/search?q=${encodeURIComponent(q)}`);
+                // Determine API base URL dynamically or fallback to current host
+                let apiUrl = 'http://localhost:5005';
+                if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
+                    apiUrl = process.env.NEXT_PUBLIC_API_URL || `https://${window.location.hostname}`;
+                }
+
+                const res = await axios.get(`${apiUrl}/api/search?q=${encodeURIComponent(q)}`);
                 setResults(res.data);
             } catch (err) {
                 console.error("Failed to fetch search results", err);
@@ -165,5 +171,13 @@ export default function SearchPage() {
                 )}
             </main>
         </div>
+    );
+}
+
+export default function SearchPage() {
+    return (
+        <Suspense fallback={<div className="min-h-screen bg-black flex items-center justify-center"><div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div></div>}>
+            <SearchContent />
+        </Suspense>
     );
 }
