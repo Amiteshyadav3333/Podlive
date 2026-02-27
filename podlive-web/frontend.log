@@ -1,0 +1,35 @@
+
+> podlive-web@0.1.0 dev
+> next dev
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://172.16.245.42:3000
+
+✓ Starting...
+✓ Ready in 556ms
+ GET / 200 in 613ms (compile: 523ms, render: 90ms)
+ GET / 200 in 63ms (compile: 1875µs, render: 61ms)
+ GET /login 200 in 198ms (compile: 124ms, render: 75ms)
+⚠ Cross origin request detected from 127.0.0.1 to /_next/* resource. In a future major version of Next.js, you will need to explicitly configure "allowedDevOrigins" in next.config to allow this.
+Read more: https://nextjs.org/docs/app/api-reference/config/next-config-js/allowedDevOrigins
+ GET /register 200 in 84ms (compile: 35ms, render: 48ms)
+ GET /login 200 in 47ms (compile: 4ms, render: 43ms)
+ GET /dashboard 200 in 150ms (compile: 69ms, render: 81ms)
+ GET /register 200 in 31ms (compile: 4ms, render: 28ms)
+ GET /dashboard 200 in 19ms (compile: 4ms, render: 15ms)
+ GET /live/80f170d2-c7b7-4b9e-952d-476e7313bf40 200 in 458ms (compile: 442ms, render: 16ms)
+ GET /dashboard/recordings 200 in 80ms (compile: 66ms, render: 13ms)
+ GET /dashboard/audience 200 in 82ms (compile: 44ms, render: 38ms)
+ GET /dashboard/settings 200 in 69ms (compile: 38ms, render: 32ms)
+ GET /dashboard 200 in 49ms (compile: 4ms, render: 44ms)
+ GET /dashboard/audience 200 in 28ms (compile: 3ms, render: 25ms)
+ GET /dashboard 200 in 17ms (compile: 5ms, render: 11ms)
+ GET /live/b373f12b-1f3a-4aa4-b068-48f22ac4f5ab 200 in 18ms (compile: 7ms, render: 11ms)
+ GET /dashboard/recordings 200 in 18ms (compile: 4ms, render: 14ms)
+ GET /dashboard 200 in 53ms (compile: 9ms, render: 45ms)
+ GET /dashboard 200 in 54ms (compile: 5ms, render: 49ms)
+ GET /dashboard/settings 200 in 25ms (compile: 7ms, render: 18ms)
+ GET /login 200 in 27ms (compile: 6ms, render: 21ms)
+ GET /login 200 in 11ms (compile: 1830µs, render: 9ms)
+[?25h
