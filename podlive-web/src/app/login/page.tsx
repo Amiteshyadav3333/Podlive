@@ -26,7 +26,7 @@ export default function Login() {
         setError("");
 
         try {
-            const res = await fetch(`http://${window.location.hostname}:5005/api/auth/login`, {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/auth/login`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(formData),

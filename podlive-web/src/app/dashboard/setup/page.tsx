@@ -33,7 +33,7 @@ export default function Dashboard() {
             const token = localStorage.getItem("accessToken");
             if (!token) throw new Error("Please log in again.");
 
-            const res = await fetch(`http://${window.location.hostname}:5005/api/live/create`, {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/live/create`, {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",

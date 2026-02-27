@@ -34,7 +34,7 @@ export default function Register() {
         }
 
         try {
-            const res = await fetch(`http://${window.location.hostname}:5005/api/auth/register`, {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/auth/register`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({

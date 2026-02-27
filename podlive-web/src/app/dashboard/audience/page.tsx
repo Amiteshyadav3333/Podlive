@@ -21,7 +21,7 @@ export default function Audience() {
                 return;
             }
 
-            const res = await fetch(`http://${window.location.hostname}:5005/api/user/audience`, {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/user/audience`, {
                 headers: { "Authorization": `Bearer ${token}` }
             });
             const data = await res.json();

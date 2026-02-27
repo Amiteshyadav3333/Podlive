@@ -57,7 +57,7 @@ export default function UploadPage() {
                 data.append("sessionId", sessionId);
             }
 
-            const res = await fetch(`http://${window.location.hostname}:5005/api/upload`, {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/upload`, {
                 method: "POST",
                 headers: {
                     "Authorization": `Bearer ${token}`

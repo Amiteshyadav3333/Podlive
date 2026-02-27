@@ -37,7 +37,7 @@ function RoomHeader({ roomName, isHost, id }: { roomName: string, isHost: boolea
         const lsToken = localStorage.getItem("accessToken");
 
         try {
-            await axios.post(`http://${window.location.hostname}:5005/api/live/${id}/end`, {}, {
+            await axios.post(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/live/${id}/end`, {}, {
                 headers: { Authorization: `Bearer ${lsToken}` }
             });
 
@@ -228,7 +228,7 @@ export default function LiveRoom() {
 
                 try {
                     // Try to start as host first
-                    const hostAttempt = await axios.post(`http://${window.location.hostname}:5005/api/live/${id}/start`, {}, {
+                    const hostAttempt = await axios.post(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/live/${id}/start`, {}, {
                         headers: { Authorization: `Bearer ${lsToken}` }
                     });
                     setToken(hostAttempt.data.token);
@@ -238,7 +238,7 @@ export default function LiveRoom() {
                     // If forbidden, join as viewer
                     if (hostError.response?.status === 403) {
                         try {
-                            const viewerAttempt = await axios.get(`http://${window.location.hostname}:5005/api/live/${id}/token`, {
+                            const viewerAttempt = await axios.get(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/live/${id}/token`, {
                                 headers: { Authorization: `Bearer ${lsToken}` }
                             });
                             setToken(viewerAttempt.data.token);
@@ -330,7 +330,7 @@ export default function LiveRoom() {
             if (!lsToken) return;
 
             // Call the created upgrade route to get a new publish-enabled token
-            const res = await axios.get(`http://${window.location.hostname}:5005/api/live/${id}/upgrade`, {
+            const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/live/${id}/upgrade`, {
                 headers: { Authorization: `Bearer ${lsToken}` }
             });
 
