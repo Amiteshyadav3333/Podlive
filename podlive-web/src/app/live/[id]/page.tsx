@@ -244,28 +244,32 @@ function GuestManager({ sessionId, isHost }: { sessionId: string, isHost: boolea
         } catch (e) { console.error(e) }
     };
 
-    if (!isHost || guests.length === 0) return null;
+    if (!isHost) return null;
 
     return (
         <div className="p-4 border-b border-zinc-800">
             <h4 className="text-sm font-bold text-zinc-400 mb-2">Stage Guests</h4>
-            <div className="flex flex-col gap-2">
-                {guests.map(g => (
-                    <div key={g.id} className="flex items-center justify-between bg-zinc-900 p-2 rounded-lg text-sm border border-white/5">
-                        <span className="font-semibold text-white max-w-[120px] truncate" title={g.invitee?.unique_handle}>
-                            @{g.invitee?.unique_handle}
-                        </span>
-                        <div className="flex items-center gap-2">
-                            <button onClick={() => handleMute(g.invitee_id)} className="p-1.5 bg-zinc-800 rounded hover:bg-zinc-700 text-indigo-400" title="Mute Mic">
-                                <MicOff className="w-4 h-4" />
-                            </button>
-                            <button onClick={() => handleRemove(g.invitee_id)} className="p-1.5 bg-red-500/10 rounded hover:bg-red-500/20 text-red-500" title="Remove from Stage">
-                                <PhoneOff className="w-4 h-4" />
-                            </button>
+            {guests.length === 0 ? (
+                <p className="text-xs text-zinc-500 italic">No guests currently on stage.</p>
+            ) : (
+                <div className="flex flex-col gap-2">
+                    {guests.map(g => (
+                        <div key={g.id} className="flex items-center justify-between bg-zinc-900 p-2 rounded-lg text-sm border border-white/5">
+                            <span className="font-semibold text-white max-w-[120px] truncate" title={g.invitee?.unique_handle}>
+                                @{g.invitee?.unique_handle}
+                            </span>
+                            <div className="flex items-center gap-2">
+                                <button onClick={() => handleMute(g.invitee_id)} className="p-1.5 bg-zinc-800 rounded hover:bg-zinc-700 text-indigo-400" title="Mute Mic">
+                                    <MicOff className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => handleRemove(g.invitee_id)} className="p-1.5 bg-red-500/10 rounded hover:bg-red-500/20 text-red-500" title="Remove from Stage">
+                                    <PhoneOff className="w-4 h-4" />
+                                </button>
+                            </div>
                         </div>
-                    </div>
-                ))}
-            </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 }
