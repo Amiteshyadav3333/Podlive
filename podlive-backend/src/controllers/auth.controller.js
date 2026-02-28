@@ -56,8 +56,7 @@ exports.register = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Registration Error:', error);
-        res.status(500).json({ error: 'Internal Server Error' });
+        res.status(500).json({ error: 'Internal Server Error', details: error.message });
     }
 };
 
@@ -102,8 +101,7 @@ exports.login = async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Login Error:', error);
-        res.status(500).json({ error: 'Internal Server Error' });
+        res.status(500).json({ error: 'Internal Server Error', details: error.message });
     }
 };
 
@@ -118,7 +116,6 @@ exports.checkHandle = async (req, res) => {
 
         return res.status(200).json({ available: true });
     } catch (error) {
-        console.error('Check Handle Error:', error);
-        res.status(500).json({ error: 'Internal Server Error' });
+        res.status(500).json({ error: 'Internal Server Error', details: error.message });
     }
 };
