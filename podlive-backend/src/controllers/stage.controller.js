@@ -1,6 +1,9 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
-const { AccessToken } = require('livekit-server-sdk');
+const { AccessToken, RoomServiceClient, TrackSource } = require('livekit-server-sdk');
+
+const livekitHost = process.env.LIVEKIT_URL || 'http://127.0.0.1:7880';
+const roomService = new RoomServiceClient(livekitHost, process.env.LIVEKIT_API_KEY || 'devkey', process.env.LIVEKIT_API_SECRET || 'secret');
 
 const createToken = async (roomName, participantName) => {
     const apiKey = process.env.LIVEKIT_API_KEY || 'devkey';
@@ -101,6 +104,17 @@ exports.removeGuest = async (req, res) => {
             return res.status(403).json({ error: 'Unauthorized' });
         }
 
+        const guestUser = await prisma.user.findUnique({ where: { id: userId } });
+        if (!guestUser) {
+            return res.status(404).json({ error: 'Guest not found' });
+        }
+
+        try {
+            await roomService.removeParticipant(session.livekit_room_name, guestUser.unique_handle);
+        } catch (e) {
+            console.log("Error removing from LiveKit room (maybe already left):", e.message);
+        }
+
         await prisma.stageInvite.updateMany({
             where: { session_id: sessionId, invitee_id: userId, status: 'accepted' },
             data: { status: 'ended', left_at: new Date() }
@@ -109,6 +123,42 @@ exports.removeGuest = async (req, res) => {
         res.json({ message: 'Guest removed' });
     } catch (error) {
         console.error('Remove Guest Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+};
+
+exports.muteGuestMic = async (req, res) => {
+    try {
+        const { sessionId, userId } = req.params;
+        const host_id = req.user.id;
+
+        const session = await prisma.liveSession.findUnique({ where: { id: sessionId } });
+        if (!session || session.host_user_id !== host_id) {
+            return res.status(403).json({ error: 'Unauthorized' });
+        }
+
+        const guestUser = await prisma.user.findUnique({ where: { id: userId } });
+        if (!guestUser) {
+            return res.status(404).json({ error: 'Guest not found' });
+        }
+
+        try {
+            const participant = await roomService.getParticipant(session.livekit_room_name, guestUser.unique_handle);
+            if (participant && participant.tracks) {
+                for (const track of participant.tracks) {
+                    if (track.source === TrackSource.MICROPHONE) {
+                        // true to mute
+                        await roomService.mutePublishedTrack(session.livekit_room_name, guestUser.unique_handle, track.sid, true);
+                    }
+                }
+            }
+        } catch (e) {
+            console.log("Error muting guest mic:", e.message);
+        }
+
+        res.json({ message: 'Guest muted' });
+    } catch (error) {
+        console.error('Mute Guest Error:', error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
 };
