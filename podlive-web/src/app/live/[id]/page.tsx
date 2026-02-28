@@ -200,6 +200,76 @@ function CustomChat({ socket, sessionId }: { socket: any, sessionId: string }) {
     );
 }
 
+function GuestManager({ sessionId, isHost }: { sessionId: string, isHost: boolean }) {
+    const [guests, setGuests] = useState<any[]>([]);
+
+    const fetchGuests = async () => {
+        try {
+            const lsToken = localStorage.getItem("accessToken");
+            if (!lsToken) return;
+            const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/stage/${sessionId}/guests`, {
+                headers: { Authorization: `Bearer ${lsToken}` }
+            });
+            setGuests(res.data);
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    useEffect(() => {
+        if (!isHost) return;
+        fetchGuests();
+        const interval = setInterval(fetchGuests, 5000); // refresh every 5s
+        return () => clearInterval(interval);
+    }, [sessionId, isHost]);
+
+    const handleMute = async (userId: string) => {
+        try {
+            const lsToken = localStorage.getItem("accessToken");
+            await axios.post(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/stage/guest/${sessionId}/${userId}/mute`, { muted: true }, {
+                headers: { Authorization: `Bearer ${lsToken}` }
+            });
+            alert("Muted guest successfully. (They will be muted instantly)");
+        } catch (e) { console.error(e) }
+    };
+
+    const handleRemove = async (userId: string) => {
+        try {
+            const lsToken = localStorage.getItem("accessToken");
+            await axios.delete(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/stage/guest/${sessionId}/${userId}`, {
+                headers: { Authorization: `Bearer ${lsToken}` }
+            });
+            alert("Guest removed from stage.");
+            fetchGuests();
+        } catch (e) { console.error(e) }
+    };
+
+    if (!isHost || guests.length === 0) return null;
+
+    return (
+        <div className="p-4 border-b border-zinc-800">
+            <h4 className="text-sm font-bold text-zinc-400 mb-2">Stage Guests</h4>
+            <div className="flex flex-col gap-2">
+                {guests.map(g => (
+                    <div key={g.id} className="flex items-center justify-between bg-zinc-900 p-2 rounded-lg text-sm border border-white/5">
+                        <span className="font-semibold text-white max-w-[120px] truncate" title={g.invitee?.unique_handle}>
+                            @{g.invitee?.unique_handle}
+                        </span>
+                        <div className="flex items-center gap-2">
+                            <button onClick={() => handleMute(g.invitee_id)} className="p-1.5 bg-zinc-800 rounded hover:bg-zinc-700 text-indigo-400" title="Mute Mic">
+                                <MicOff className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => handleRemove(g.invitee_id)} className="p-1.5 bg-red-500/10 rounded hover:bg-red-500/20 text-red-500" title="Remove from Stage">
+                                <PhoneOff className="w-4 h-4" />
+                            </button>
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 export default function LiveRoom() {
     const params = useParams();
     const router = useRouter();
@@ -447,25 +517,28 @@ export default function LiveRoom() {
                             </div>
 
                             {isHost && (
-                                <div className="p-4 border-b border-zinc-800">
-                                    <h4 className="text-sm font-bold text-zinc-400 mb-2">Stage Invite</h4>
-                                    <div className="flex gap-2">
-                                        <input
-                                            type="text"
-                                            placeholder="@user_handle"
-                                            className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
-                                            value={inviteHandle}
-                                            onChange={(e) => setInviteHandle(e.target.value)}
-                                        />
-                                        <button
-                                            onClick={handleSendInvite}
-                                            className="bg-indigo-600 px-4 py-2 rounded-lg text-sm font-bold hover:bg-indigo-500"
-                                        >
-                                            Invite
-                                        </button>
+                                <>
+                                    <div className="p-4 border-b border-zinc-800">
+                                        <h4 className="text-sm font-bold text-zinc-400 mb-2">Stage Invite</h4>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                placeholder="@user_handle"
+                                                className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                                                value={inviteHandle}
+                                                onChange={(e) => setInviteHandle(e.target.value)}
+                                            />
+                                            <button
+                                                onClick={handleSendInvite}
+                                                className="bg-indigo-600 px-4 py-2 rounded-lg text-sm font-bold hover:bg-indigo-500"
+                                            >
+                                                Invite
+                                            </button>
+                                        </div>
+                                        <p className="text-xs text-zinc-600 mt-2">Enter the viewer's exact handle to pop an invite on their screen.</p>
                                     </div>
-                                    <p className="text-xs text-zinc-600 mt-2">Enter the viewer's exact handle to pop an invite on their screen.</p>
-                                </div>
+                                    <GuestManager sessionId={id} isHost={isHost} />
+                                </>
                             )}
 
                             <div className="flex-1 overflow-hidden relative flex flex-col min-h-0 h-full">
