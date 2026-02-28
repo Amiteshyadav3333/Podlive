@@ -13,7 +13,8 @@ import {
     ParticipantTile,
     ControlBar,
     StartAudio,
-    useChat
+    useChat,
+    useLocalParticipant
 } from "@livekit/components-react";
 import { Track } from "livekit-client";
 import "@livekit/components-styles";
@@ -200,7 +201,37 @@ function CustomChat({ socket, sessionId }: { socket: any, sessionId: string }) {
     );
 }
 
-function GuestManager({ sessionId, isHost }: { sessionId: string, isHost: boolean }) {
+function GuestSocketListener({ socket }: { socket: any }) {
+    const { localParticipant } = useLocalParticipant();
+
+    useEffect(() => {
+        if (!socket) return;
+
+        const handleRemoved = () => {
+            alert("The host dropped your stage connection.");
+            window.location.reload();
+        };
+
+        const handleMuted = () => {
+            if (localParticipant) {
+                localParticipant.setMicrophoneEnabled(false);
+                alert("The host has muted your microphone forcefully.");
+            }
+        };
+
+        socket.on('guest_removed', handleRemoved);
+        socket.on('guest_muted', handleMuted);
+
+        return () => {
+            socket.off('guest_removed', handleRemoved);
+            socket.off('guest_muted', handleMuted);
+        }
+    }, [socket, localParticipant]);
+
+    return null;
+}
+
+function GuestManager({ sessionId, isHost, socket }: { sessionId: string, isHost: boolean, socket: any }) {
     const [guests, setGuests] = useState<any[]>([]);
 
     const fetchGuests = async () => {
@@ -229,7 +260,7 @@ function GuestManager({ sessionId, isHost }: { sessionId: string, isHost: boolea
             await axios.post(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/stage/guest/${sessionId}/${userId}/mute`, { muted: true }, {
                 headers: { Authorization: `Bearer ${lsToken}` }
             });
-            alert("Muted guest successfully. (They will be muted instantly)");
+            if (socket) socket.emit('mute_guest', { guestId: userId });
         } catch (e) { console.error(e) }
     };
 
@@ -239,7 +270,7 @@ function GuestManager({ sessionId, isHost }: { sessionId: string, isHost: boolea
             await axios.delete(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/stage/guest/${sessionId}/${userId}`, {
                 headers: { Authorization: `Bearer ${lsToken}` }
             });
-            alert("Guest removed from stage.");
+            if (socket) socket.emit('remove_guest', { guestId: userId });
             fetchGuests();
         } catch (e) { console.error(e) }
     };
@@ -508,6 +539,7 @@ export default function LiveRoom() {
                 style={{ height: "100vh", display: 'flex', flexDirection: 'column', backgroundColor: '#000' }}
             >
                 <div className="min-h-screen bg-black text-white flex flex-col w-full h-full">
+                    {!isHost && onStage && <GuestSocketListener socket={socket} />}
                     <RoomHeader roomName={roomName} isHost={isHost} id={id} />
 
                     <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
@@ -541,7 +573,7 @@ export default function LiveRoom() {
                                         </div>
                                         <p className="text-xs text-zinc-600 mt-2">Enter the viewer's exact handle to pop an invite on their screen.</p>
                                     </div>
-                                    <GuestManager sessionId={id} isHost={isHost} />
+                                    <GuestManager sessionId={id} isHost={isHost} socket={socket} />
                                 </>
                             )}
 
