@@ -57,6 +57,18 @@ module.exports = (io) => {
             }
         });
 
+        socket.on('remove_guest', ({ guestId }) => {
+            if (activeUsers.has(guestId)) {
+                io.to(activeUsers.get(guestId)).emit('guest_removed');
+            }
+        });
+
+        socket.on('mute_guest', ({ guestId }) => {
+            if (activeUsers.has(guestId)) {
+                io.to(activeUsers.get(guestId)).emit('guest_muted');
+            }
+        });
+
         // Chat functionality
         socket.on('join_chat_room', (sessionId) => {
             socket.join(sessionId);
