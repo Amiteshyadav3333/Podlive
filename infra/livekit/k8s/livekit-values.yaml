@@ -1,0 +1,38 @@
+# Helm starter values for livekit/livekit-server.
+# Install:
+#   helm repo add livekit https://helm.livekit.io
+#   helm upgrade --install podlive-livekit livekit/livekit-server \
+#     --namespace livekit --create-namespace \
+#     --values infra/livekit/k8s/livekit-values.yaml
+
+replicaCount: 2
+
+livekit:
+  port: 7880
+  log_level: info
+  rtc:
+    use_external_ip: true
+    tcp_port: 7881
+    port_range_start: 50000
+    port_range_end: 60000
+  redis:
+    address: redis-master.livekit.svc.cluster.local:6379
+  turn:
+    enabled: true
+    domain: turn.example.com
+    udp_port: 3478
+    tls_port: 5349
+  keys:
+    devkey: super-secret-and-very-secure-key-for-local-dev
+
+service:
+  type: LoadBalancer
+
+resources:
+  requests:
+    cpu: "2"
+    memory: 4Gi
+  limits:
+    cpu: "4"
+    memory: 8Gi
+

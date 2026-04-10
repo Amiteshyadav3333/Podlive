@@ -23,6 +23,7 @@ const upload = multer({
 
 router.post('/create', authMiddleware, liveController.createLiveSession);
 router.post('/:id/start', authMiddleware, liveController.startLiveSession);
+router.post('/:id/hls/start', authMiddleware, liveController.startHlsEgress);
 router.post('/:id/end', authMiddleware, upload.single('video'), liveController.endLiveSession);
 router.get('/:id/token', authMiddleware, liveController.getViewerToken);
 router.get('/:id/upgrade', authMiddleware, liveController.upgradeViewerToken);

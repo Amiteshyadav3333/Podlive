@@ -52,6 +52,7 @@ model LiveSession {
   thumbnail_url     String?
   status            String    @default("scheduled") // scheduled, live, ended
   livekit_room_name String?
+  livekit_egress_id String?
   viewer_count_peak Int       @default(0)
   recording_url     String?
   started_at        DateTime?

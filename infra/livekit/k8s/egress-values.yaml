@@ -1,0 +1,35 @@
+# Helm starter values for livekit/egress.
+# Install:
+#   helm repo add livekit https://helm.livekit.io
+#   helm upgrade --install podlive-egress livekit/egress \
+#     --namespace livekit --values infra/livekit/k8s/egress-values.yaml
+
+replicaCount: 2
+
+egress:
+  api_key: devkey
+  api_secret: super-secret-and-very-secure-key-for-local-dev
+  ws_url: wss://live.example.com
+  redis:
+    address: redis-master.livekit.svc.cluster.local:6379
+  s3:
+    access_key: replace-me
+    secret: replace-me
+    region: ap-south-1
+    endpoint: https://dbliejijmxwjjsoigjvp.storage.supabase.co/storage/v1/s3
+    bucket: Podlive-videos
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 65
+
+resources:
+  requests:
+    cpu: "4"
+    memory: 4Gi
+  limits:
+    cpu: "8"
+    memory: 8Gi
+

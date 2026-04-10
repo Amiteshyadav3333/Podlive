@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { AccessToken } = require('livekit-server-sdk');
 const fs = require('fs');
 const path = require('path');
+const livekitEgressService = require('../services/livekit-egress.service');
 
 const createToken = async (roomName, participantName, isHost = false) => {
     const apiKey = process.env.LIVEKIT_API_KEY;
@@ -28,7 +29,7 @@ exports.createLiveSession = async (req, res) => {
 
         const livekit_room_name = `room-${crypto.randomBytes(8).toString('hex')}`;
 
-        const newSession = await prisma.liveSession.create({
+        let newSession = await prisma.liveSession.create({
             data: {
                 host_user_id,
                 title,
@@ -48,6 +49,54 @@ exports.createLiveSession = async (req, res) => {
     } catch (error) {
         console.error('Create Live Session Error:', error);
         res.status(500).json({ error: 'Internal Server Error' });
+    }
+};
+
+exports.startHlsEgress = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const session = await prisma.liveSession.findUnique({ where: { id } });
+
+        if (!session || session.host_user_id !== req.user.id) {
+            return res.status(403).json({ error: 'Unauthorized to start HLS egress for this session' });
+        }
+
+        if (session.status !== 'live') {
+            return res.status(409).json({ error: 'HLS egress can only be started for live sessions' });
+        }
+
+        if (!livekitEgressService.isHlsEgressEnabled()) {
+            return res.status(202).json({ enabled: false, message: 'LiveKit HLS egress is disabled' });
+        }
+
+        if (session.livekit_egress_id) {
+            return res.json({
+                enabled: true,
+                egressId: session.livekit_egress_id,
+                hlsUrl: session.recording_url
+            });
+        }
+
+        const egressInfo = await livekitEgressService.startRoomHlsEgress(session);
+        const hlsUrl = livekitEgressService.getLiveHlsUrl(session.id);
+
+        const updatedSession = await prisma.liveSession.update({
+            where: { id: session.id },
+            data: {
+                livekit_egress_id: egressInfo.egressId,
+                recording_url: hlsUrl
+            }
+        });
+
+        res.status(201).json({
+            enabled: true,
+            egressId: egressInfo.egressId,
+            hlsUrl,
+            session: updatedSession
+        });
+    } catch (error) {
+        console.error('Start HLS Egress Error:', error);
+        res.status(500).json({ error: 'Failed to start HLS egress', details: error.message });
     }
 };
 
@@ -84,12 +133,19 @@ exports.endLiveSession = async (req, res) => {
             recording_url = `${baseUrl}/uploads/${req.file.filename}`;
         }
 
+        if (session.livekit_egress_id) {
+            livekitEgressService.stopEgress(session.livekit_egress_id).catch((egressError) => {
+                console.error('LiveKit egress stop failed:', egressError);
+            });
+        }
+
         const updatedSession = await prisma.liveSession.update({
             where: { id },
             data: {
                 status: 'ended',
                 ended_at: new Date(),
                 ...(recording_url && { recording_url }),
+                livekit_egress_id: null,
                 viewer_count_peak: Math.floor(Math.random() * 50) + 12
             }
         });

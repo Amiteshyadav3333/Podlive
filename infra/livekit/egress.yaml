@@ -1,0 +1,20 @@
+log_level: info
+
+api_key: devkey
+api_secret: super-secret-and-very-secure-key-for-local-dev
+ws_url: ws://livekit:7880
+insecure: true
+
+redis:
+  address: redis:6379
+
+health_port: 7981
+prometheus_port: 7982
+
+s3:
+  access_key: ""
+  secret: ""
+  region: ap-south-1
+  endpoint: https://dbliejijmxwjjsoigjvp.storage.supabase.co/storage/v1/s3
+  bucket: Podlive-videos
+

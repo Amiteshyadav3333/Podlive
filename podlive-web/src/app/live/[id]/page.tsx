@@ -318,6 +318,7 @@ export default function LiveRoom() {
     const [isHost, setIsHost] = useState(false);
     const [onStage, setOnStage] = useState(false); // viewers who have accepted the invite
     const [preJoinComplete, setPreJoinComplete] = useState(false);
+    const [hlsEgressStarted, setHlsEgressStarted] = useState(false);
     const liveKitServerUrl = getLiveKitWsUrl();
 
     // Stage Invites State
@@ -463,6 +464,22 @@ export default function LiveRoom() {
         }
     }
 
+    const handleLiveKitConnected = async () => {
+        if (!isHost || hlsEgressStarted) return;
+
+        setHlsEgressStarted(true);
+        try {
+            const lsToken = localStorage.getItem("accessToken");
+            if (!lsToken) return;
+
+            await axios.post(buildApiUrl(`/api/live/${id}/hls/start`), {}, {
+                headers: { Authorization: `Bearer ${lsToken}` }
+            });
+        } catch (err) {
+            console.error("Failed to start HLS egress", err);
+        }
+    };
+
     if (loading || !token) {
         return (
             <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center text-white">
@@ -548,6 +565,7 @@ export default function LiveRoom() {
                 token={token}
                 connect={isBroadcaster ? preJoinComplete : true}
                 serverUrl={liveKitServerUrl}
+                onConnected={handleLiveKitConnected}
                 data-lk-theme="default"
                 style={{ height: "100vh", display: 'flex', flexDirection: 'column', backgroundColor: '#000' }}
             >
