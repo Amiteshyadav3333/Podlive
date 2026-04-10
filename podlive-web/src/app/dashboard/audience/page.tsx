@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Users, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { buildApiUrl } from "@/lib/api";
 
 export default function Audience() {
     const router = useRouter();
@@ -21,7 +22,7 @@ export default function Audience() {
                 return;
             }
 
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/user/audience`, {
+            const res = await fetch(buildApiUrl("/api/user/audience"), {
                 headers: { "Authorization": `Bearer ${token}` }
             });
             const data = await res.json();

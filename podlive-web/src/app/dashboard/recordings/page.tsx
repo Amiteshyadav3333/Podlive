@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Video, Play, Loader2, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { buildApiUrl } from "@/lib/api";
 
 export default function Recordings() {
     const router = useRouter();
@@ -22,7 +23,7 @@ export default function Recordings() {
                 return;
             }
 
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/user/recordings`, {
+            const res = await fetch(buildApiUrl("/api/user/recordings"), {
                 headers: { "Authorization": `Bearer ${token}` }
             });
             const data = await res.json();
@@ -43,7 +44,7 @@ export default function Recordings() {
                 const token = localStorage.getItem("accessToken");
                 if (!token) return;
 
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/live/${id}`, {
+                const res = await fetch(buildApiUrl(`/api/live/${id}`), {
                     method: 'DELETE',
                     headers: { "Authorization": `Bearer ${token}` }
                 });

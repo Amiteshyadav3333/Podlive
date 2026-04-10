@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Settings as SettingsIcon, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { buildApiUrl } from "@/lib/api";
 
 export default function Settings() {
     const router = useRouter();
@@ -23,7 +24,7 @@ export default function Settings() {
                 return;
             }
 
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/user/profile`, {
+            const res = await fetch(buildApiUrl("/api/user/profile"), {
                 headers: { "Authorization": `Bearer ${token}` }
             });
             const data = await res.json();
@@ -42,7 +43,7 @@ export default function Settings() {
         setMessage("");
         try {
             const token = localStorage.getItem("accessToken");
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/user/profile`, {
+            const res = await fetch(buildApiUrl("/api/user/profile"), {
                 method: "PUT",
                 headers: {
                     "Content-Type": "application/json",

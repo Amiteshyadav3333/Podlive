@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Mic, Eye, EyeOff, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { buildApiUrl } from "@/lib/api";
 
 export default function Login() {
     const router = useRouter();
@@ -26,16 +27,19 @@ export default function Login() {
         setError("");
 
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/auth/login`, {
+            const res = await fetch(buildApiUrl("/api/auth/login"), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(formData),
             });
 
-            const data = await res.json();
+            const contentType = res.headers.get("content-type") || "";
+            const data = contentType.includes("application/json")
+                ? await res.json()
+                : await res.text();
 
             if (!res.ok) {
-                throw new Error(data.error || "Login failed");
+                throw new Error(typeof data === "string" ? data : data.error || "Login failed");
             }
 
             // Save tokens

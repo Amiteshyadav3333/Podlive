@@ -22,6 +22,7 @@ import {
     Activity
 } from "lucide-react";
 import Hls from "hls.js";
+import { buildApiUrl } from "@/lib/api";
 
 // Custom HLS Player Component with Quality Selector
 function HlsPlayer({ url, poster, subtitles }: { url: string, poster: string, subtitles: any[] }) {
@@ -171,7 +172,7 @@ export default function WatchPage() {
     useEffect(() => {
         const fetchRecording = async () => {
             try {
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/live/${params.id}/recording`);
+                const res = await fetch(buildApiUrl(`/api/live/${params.id}/recording`));
                 const data = await res.json();
                 if (res.ok) {
                     setRecording(data);
@@ -187,7 +188,7 @@ export default function WatchPage() {
             try {
                 const token = localStorage.getItem("accessToken");
                 if (!token || !recording?.host?.id) return;
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/user/follow-status/${recording.host.id}`, {
+                const res = await fetch(buildApiUrl(`/api/user/follow-status/${recording.host.id}`), {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const data = await res.json();
@@ -203,7 +204,7 @@ export default function WatchPage() {
             try {
                 const token = localStorage.getItem("accessToken");
                 if (!token) return;
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/live/${params.id}/like-status`, {
+                const res = await fetch(buildApiUrl(`/api/live/${params.id}/like-status`), {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const data = await res.json();
@@ -226,7 +227,7 @@ export default function WatchPage() {
             try {
                 const token = localStorage.getItem("accessToken");
                 if (!token || !recording?.host?.id) return;
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/user/follow-status/${recording.host.id}`, {
+                const res = await fetch(buildApiUrl(`/api/user/follow-status/${recording.host.id}`), {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const data = await res.json();
@@ -251,7 +252,7 @@ export default function WatchPage() {
                 return;
             }
 
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/user/follow`, {
+            const res = await fetch(buildApiUrl("/api/user/follow"), {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -283,7 +284,7 @@ export default function WatchPage() {
                 return;
             }
 
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/live/${params.id}/like`, {
+            const res = await fetch(buildApiUrl(`/api/live/${params.id}/like`), {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",
@@ -317,7 +318,7 @@ export default function WatchPage() {
                 return;
             }
 
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/live/${params.id}/comment`, {
+            const res = await fetch(buildApiUrl(`/api/live/${params.id}/comment`), {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Mic, Radio, Settings, Users, Video, AlertCircle, Loader2, Home as HomeIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { buildApiUrl } from "@/lib/api";
 
 export default function Dashboard() {
     const router = useRouter();
@@ -33,7 +34,7 @@ export default function Dashboard() {
             const token = localStorage.getItem("accessToken");
             if (!token) throw new Error("Please log in again.");
 
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/live/create`, {
+            const res = await fetch(buildApiUrl("/api/live/create"), {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",

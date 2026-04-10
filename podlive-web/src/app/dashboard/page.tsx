@@ -5,6 +5,7 @@ import { Mic, Radio, Settings, Users, Video, Home as HomeIcon, Play, Loader2, Se
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import axios from "axios";
+import { buildApiUrl } from "@/lib/api";
 
 export default function DashboardHome() {
     const router = useRouter();
@@ -15,7 +16,7 @@ export default function DashboardHome() {
     useEffect(() => {
         const fetchLives = async () => {
             try {
-                const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/live/active`);
+                const res = await axios.get(buildApiUrl("/api/live/active"));
                 setLives(res.data);
             } catch (err) {
                 console.error("Failed to fetch lives", err);

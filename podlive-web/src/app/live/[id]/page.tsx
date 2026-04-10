@@ -20,6 +20,7 @@ import { Track } from "livekit-client";
 import "@livekit/components-styles";
 import axios from "axios";
 import { useSocket } from "@/providers/SocketProvider";
+import { buildApiUrl, getLiveKitWsUrl } from "@/lib/api";
 
 function RoomHeader({ roomName, isHost, id }: { roomName: string, isHost: boolean, id: string }) {
     const router = useRouter();
@@ -38,7 +39,7 @@ function RoomHeader({ roomName, isHost, id }: { roomName: string, isHost: boolea
         const lsToken = localStorage.getItem("accessToken");
 
         try {
-            await axios.post(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/live/${id}/end`, {}, {
+            await axios.post(buildApiUrl(`/api/live/${id}/end`), {}, {
                 headers: { Authorization: `Bearer ${lsToken}` }
             });
 
@@ -238,7 +239,7 @@ function GuestManager({ sessionId, isHost, socket }: { sessionId: string, isHost
         try {
             const lsToken = localStorage.getItem("accessToken");
             if (!lsToken) return;
-            const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/stage/${sessionId}/guests`, {
+            const res = await axios.get(buildApiUrl(`/api/stage/${sessionId}/guests`), {
                 headers: { Authorization: `Bearer ${lsToken}` }
             });
             setGuests(res.data);
@@ -257,7 +258,7 @@ function GuestManager({ sessionId, isHost, socket }: { sessionId: string, isHost
     const handleMute = async (userId: string) => {
         try {
             const lsToken = localStorage.getItem("accessToken");
-            await axios.post(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/stage/guest/${sessionId}/${userId}/mute`, { muted: true }, {
+            await axios.post(buildApiUrl(`/api/stage/guest/${sessionId}/${userId}/mute`), { muted: true }, {
                 headers: { Authorization: `Bearer ${lsToken}` }
             });
             if (socket) socket.emit('mute_guest', { guestId: userId });
@@ -267,7 +268,7 @@ function GuestManager({ sessionId, isHost, socket }: { sessionId: string, isHost
     const handleRemove = async (userId: string) => {
         try {
             const lsToken = localStorage.getItem("accessToken");
-            await axios.delete(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/stage/guest/${sessionId}/${userId}`, {
+            await axios.delete(buildApiUrl(`/api/stage/guest/${sessionId}/${userId}`), {
                 headers: { Authorization: `Bearer ${lsToken}` }
             });
             if (socket) socket.emit('remove_guest', { guestId: userId });
@@ -333,7 +334,7 @@ export default function LiveRoom() {
 
                 try {
                     // Try to start as host first
-                    const hostAttempt = await axios.post(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/live/${id}/start`, {}, {
+                    const hostAttempt = await axios.post(buildApiUrl(`/api/live/${id}/start`), {}, {
                         headers: { Authorization: `Bearer ${lsToken}` }
                     });
                     setToken(hostAttempt.data.token);
@@ -343,7 +344,7 @@ export default function LiveRoom() {
                     // If forbidden, join as viewer
                     if (hostError.response?.status === 403) {
                         try {
-                            const viewerAttempt = await axios.get(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/live/${id}/token`, {
+                            const viewerAttempt = await axios.get(buildApiUrl(`/api/live/${id}/token`), {
                                 headers: { Authorization: `Bearer ${lsToken}` }
                             });
                             setToken(viewerAttempt.data.token);
@@ -435,7 +436,7 @@ export default function LiveRoom() {
             if (!lsToken) return;
 
             // Call the created upgrade route to get a new publish-enabled token
-            const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/live/${id}/upgrade`, {
+            const res = await axios.get(buildApiUrl(`/api/live/${id}/upgrade`), {
                 headers: { Authorization: `Bearer ${lsToken}` }
             });
 
@@ -534,7 +535,7 @@ export default function LiveRoom() {
                 audio={isBroadcaster}
                 token={token}
                 connect={isBroadcaster ? preJoinComplete : true}
-                serverUrl={typeof window !== 'undefined' ? `ws://${window.location.hostname}:7880` : ''}
+                serverUrl={getLiveKitWsUrl()}
                 data-lk-theme="default"
                 style={{ height: "100vh", display: 'flex', flexDirection: 'column', backgroundColor: '#000' }}
             >

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Mic, Eye, EyeOff, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { buildApiUrl } from "@/lib/api";
 
 export default function Register() {
     const router = useRouter();
@@ -34,7 +35,7 @@ export default function Register() {
         }
 
         try {
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/auth/register`, {
+            const res = await fetch(buildApiUrl("/api/auth/register"), {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
@@ -43,10 +44,13 @@ export default function Register() {
                 }),
             });
 
-            const data = await res.json();
+            const contentType = res.headers.get("content-type") || "";
+            const data = contentType.includes("application/json")
+                ? await res.json()
+                : await res.text();
 
             if (!res.ok) {
-                throw new Error(data.error || "Something went wrong during registration.");
+                throw new Error(typeof data === "string" ? data : data.error || "Something went wrong during registration.");
             }
 
             // Save tokens using localStorage

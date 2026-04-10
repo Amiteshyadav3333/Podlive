@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
+import { buildApiUrl } from "@/lib/api";
 
 export default function CreatorProfilePage() {
     const params = useParams();
@@ -28,7 +29,7 @@ export default function CreatorProfilePage() {
         const fetchCreator = async () => {
             if (!params.id) return;
             try {
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/user/creator/${params.id}`);
+                const res = await fetch(buildApiUrl(`/api/user/creator/${params.id}`));
                 const data = await res.json();
                 if (res.ok) {
                     setCreatorData(data);
@@ -47,7 +48,7 @@ export default function CreatorProfilePage() {
             try {
                 const token = localStorage.getItem("accessToken");
                 if (!token) return;
-                const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/user/follow-status/${params.id}`, {
+                const res = await fetch(buildApiUrl(`/api/user/follow-status/${params.id}`), {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
                 const data = await res.json();
@@ -72,7 +73,7 @@ export default function CreatorProfilePage() {
                 return;
             }
 
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/user/follow`, {
+            const res = await fetch(buildApiUrl("/api/user/follow"), {
                 method: "POST",
                 headers: {
                     "Content-Type": "application/json",

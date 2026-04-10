@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { Mic, Radio, Settings, Users, Video, UploadCloud, Link as LinkIcon, Home as HomeIcon, Loader2, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { buildApiUrl } from "@/lib/api";
 
 export default function UploadPage() {
     const router = useRouter();
@@ -57,7 +58,7 @@ export default function UploadPage() {
                 data.append("sessionId", sessionId);
             }
 
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://" + window.location.hostname + ":5005"}/api/upload`, {
+            const res = await fetch(buildApiUrl("/api/upload"), {
                 method: "POST",
                 headers: {
                     "Authorization": `Bearer ${token}`

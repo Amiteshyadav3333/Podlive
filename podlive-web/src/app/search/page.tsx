@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { Mic, Search, User, Video, Play, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import axios from "axios";
+import { buildApiUrl } from "@/lib/api";
 
 function SearchContent() {
     const searchParams = useSearchParams();
@@ -23,13 +24,7 @@ function SearchContent() {
             }
             setLoading(true);
             try {
-                // Determine API base URL dynamically or fallback to current host
-                let apiUrl = 'http://localhost:5005';
-                if (typeof window !== 'undefined' && window.location.hostname !== 'localhost') {
-                    apiUrl = process.env.NEXT_PUBLIC_API_URL || `https://${window.location.hostname}`;
-                }
-
-                const res = await axios.get(`${apiUrl}/api/search?q=${encodeURIComponent(q)}`);
+                const res = await axios.get(buildApiUrl(`/api/search?q=${encodeURIComponent(q)}`));
                 setResults(res.data);
             } catch (err) {
                 console.error("Failed to fetch search results", err);
