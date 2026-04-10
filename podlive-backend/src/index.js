@@ -4,6 +4,17 @@ const http = require('http');
 const { Server } = require('socket.io');
 require('dotenv').config();
 
+const requiredEnvVars = [
+  'DATABASE_URL',
+  'JWT_ACCESS_SECRET',
+  'JWT_REFRESH_SECRET'
+];
+
+const missingEnvVars = requiredEnvVars.filter((key) => !process.env[key]);
+if (missingEnvVars.length > 0) {
+  throw new Error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
+}
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
