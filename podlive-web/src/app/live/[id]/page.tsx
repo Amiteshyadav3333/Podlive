@@ -318,6 +318,7 @@ export default function LiveRoom() {
     const [isHost, setIsHost] = useState(false);
     const [onStage, setOnStage] = useState(false); // viewers who have accepted the invite
     const [preJoinComplete, setPreJoinComplete] = useState(false);
+    const liveKitServerUrl = getLiveKitWsUrl();
 
     // Stage Invites State
     const [inviteHandle, setInviteHandle] = useState("");
@@ -471,6 +472,17 @@ export default function LiveRoom() {
         );
     }
 
+    if (!liveKitServerUrl) {
+        return (
+            <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center text-white px-6 text-center">
+                <h1 className="text-2xl font-bold mb-3">LiveKit is not configured</h1>
+                <p className="text-zinc-400 max-w-xl">
+                    Set NEXT_PUBLIC_LIVEKIT_URL in Vercel to your LiveKit WebSocket URL, for example wss://your-project.livekit.cloud.
+                </p>
+            </div>
+        );
+    }
+
     // Is Broadcaster (Host or Stage Guest)
     const isBroadcaster = isHost || onStage;
 
@@ -535,7 +547,7 @@ export default function LiveRoom() {
                 audio={isBroadcaster}
                 token={token}
                 connect={isBroadcaster ? preJoinComplete : true}
-                serverUrl={getLiveKitWsUrl()}
+                serverUrl={liveKitServerUrl}
                 data-lk-theme="default"
                 style={{ height: "100vh", display: 'flex', flexDirection: 'column', backgroundColor: '#000' }}
             >

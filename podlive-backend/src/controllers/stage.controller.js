@@ -3,11 +3,11 @@ const prisma = new PrismaClient();
 const { AccessToken, RoomServiceClient, TrackSource } = require('livekit-server-sdk');
 
 const livekitHost = process.env.LIVEKIT_URL || 'http://127.0.0.1:7880';
-const roomService = new RoomServiceClient(livekitHost, process.env.LIVEKIT_API_KEY || 'devkey', process.env.LIVEKIT_API_SECRET || 'secret');
+const roomService = new RoomServiceClient(livekitHost, process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET);
 
 const createToken = async (roomName, participantName) => {
-    const apiKey = process.env.LIVEKIT_API_KEY || 'devkey';
-    const apiSecret = process.env.LIVEKIT_API_SECRET || 'secret';
+    const apiKey = process.env.LIVEKIT_API_KEY;
+    const apiSecret = process.env.LIVEKIT_API_SECRET;
 
     const at = new AccessToken(apiKey, apiSecret, {
         identity: participantName,

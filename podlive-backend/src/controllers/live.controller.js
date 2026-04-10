@@ -6,9 +6,8 @@ const fs = require('fs');
 const path = require('path');
 
 const createToken = async (roomName, participantName, isHost = false) => {
-    // These should ideally come from env vars
-    const apiKey = process.env.LIVEKIT_API_KEY || 'devkey';
-    const apiSecret = process.env.LIVEKIT_API_SECRET || 'secret';
+    const apiKey = process.env.LIVEKIT_API_KEY;
+    const apiSecret = process.env.LIVEKIT_API_SECRET;
 
     const at = new AccessToken(apiKey, apiSecret, {
         identity: participantName,

@@ -7,7 +7,9 @@ require('dotenv').config();
 const requiredEnvVars = [
   'DATABASE_URL',
   'JWT_ACCESS_SECRET',
-  'JWT_REFRESH_SECRET'
+  'JWT_REFRESH_SECRET',
+  'LIVEKIT_API_KEY',
+  'LIVEKIT_API_SECRET'
 ];
 
 const missingEnvVars = requiredEnvVars.filter((key) => !process.env[key]);
