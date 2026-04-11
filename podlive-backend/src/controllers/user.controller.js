@@ -125,7 +125,7 @@ exports.toggleFollow = async (req, res) => {
             await prisma.follows.delete({
                 where: { id: existingFollow.id }
             });
-            await prisma.user.update({
+            const updatedProfile = await prisma.user.update({
                 where: { id: followingId },
                 data: { follower_count: { decrement: 1 } }
             });
@@ -133,7 +133,13 @@ exports.toggleFollow = async (req, res) => {
                 where: { id: followerId },
                 data: { following_count: { decrement: 1 } }
             });
-            res.json({ following: false });
+
+            // Update followers in REAL-TIME via Socket Room (userId room)
+            if (req.io) {
+                req.io.to(followingId).emit('follower_count_update', { count: updatedProfile.follower_count });
+            }
+
+            res.json({ following: false, follower_count: updatedProfile.follower_count });
         } else {
             // Follow
             await prisma.follows.create({
@@ -142,7 +148,7 @@ exports.toggleFollow = async (req, res) => {
                     following_id: followingId
                 }
             });
-            await prisma.user.update({
+            const updatedProfile = await prisma.user.update({
                 where: { id: followingId },
                 data: { follower_count: { increment: 1 } }
             });
@@ -150,7 +156,13 @@ exports.toggleFollow = async (req, res) => {
                 where: { id: followerId },
                 data: { following_count: { increment: 1 } }
             });
-            res.json({ following: true });
+
+            // Update followers in REAL-TIME via Socket Room (userId room)
+            if (req.io) {
+                req.io.to(followingId).emit('follower_count_update', { count: updatedProfile.follower_count });
+            }
+
+            res.json({ following: true, follower_count: updatedProfile.follower_count });
         }
     } catch (error) {
         console.error("Toggle follow error:", error);

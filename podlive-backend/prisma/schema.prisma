@@ -59,6 +59,7 @@ model LiveSession {
   ended_at          DateTime?
   category          String?
   like_count        Int       @default(0)
+  views             Int       @default(0)
   is_processing     Boolean   @default(false)
   created_at        DateTime  @default(now())
 

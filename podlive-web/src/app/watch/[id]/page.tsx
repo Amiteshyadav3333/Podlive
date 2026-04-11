@@ -305,6 +305,39 @@ export default function WatchPage() {
         }
     };
 
+    const handleShare = async () => {
+        const shareData = {
+            title: recording.title,
+            text: `Check out this podcast: ${recording.title} on PodLive!`,
+            url: window.location.href,
+        };
+
+        try {
+            if (navigator.share) {
+                await navigator.share(shareData);
+            } else {
+                await navigator.clipboard.writeText(window.location.href);
+                alert("Link copied to clipboard!");
+            }
+        } catch (err) {
+            console.error("Share failed:", err);
+        }
+    };
+
+    useEffect(() => {
+        if (params.id && !loading) {
+            // Increment view count on video playback
+            fetch(buildApiUrl(`/api/live/${params.id}/view`), { method: 'POST' })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.views) {
+                        setRecording((prev: any) => prev ? ({ ...prev, views: data.views }) : null);
+                    }
+                })
+                .catch(err => console.error("View count increment failed", err));
+        }
+    }, [params.id, loading]);
+
     const handlePostComment = async (e?: React.FormEvent) => {
         if (e) e.preventDefault();
         if (!newComment.trim()) return;
@@ -434,10 +467,14 @@ export default function WatchPage() {
 
                             {/* ACTION BAR */}
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-4 border-y border-white/10">
-                                <div className="flex items-center gap-4 text-sm text-zinc-400">
+                                <div className="flex flex-wrap items-center gap-3 text-sm text-zinc-400">
                                     <div className="flex items-center gap-1.5 bg-white/5 py-1.5 px-3 rounded-lg border border-white/5">
-                                        <Users className="w-4 h-4 text-zinc-300" />
-                                        <span className="font-medium text-white">{recording.viewer_count_peak || 25} Peak Viewers</span>
+                                        <Users className="w-4 h-4 text-indigo-400" />
+                                        <span className="font-medium text-white">{recording.views || 0} Views</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 bg-white/5 py-1.5 px-3 rounded-lg border border-white/5">
+                                        <Activity className="w-4 h-4 text-zinc-300" />
+                                        <span className="font-medium text-white">{recording.viewer_count_peak || 25} Peak</span>
                                     </div>
                                 </div>
 
@@ -449,7 +486,10 @@ export default function WatchPage() {
                                         <Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} />
                                         <span>{recording.like_count || 0}</span>
                                     </button>
-                                    <button className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 rounded-full font-medium text-white transition-colors">
+                                    <button
+                                        onClick={handleShare}
+                                        className="flex items-center gap-2 px-4 py-2 bg-indigo-600/10 hover:bg-indigo-600/20 rounded-full font-medium text-indigo-400 transition-all border border-indigo-500/20"
+                                    >
                                         <Share2 className="w-5 h-5" />
                                         Share
                                     </button>

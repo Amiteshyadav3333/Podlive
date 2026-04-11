@@ -29,6 +29,12 @@ const io = new Server(server, {
 app.use(cors());
 app.use(express.json());
 
+// Attach Socket.io to request object for use in controllers
+app.use((req, res, next) => {
+  req.io = io;
+  next();
+});
+
 const path = require('path');
 
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));

@@ -4,15 +4,37 @@ import { useEffect, useState } from "react";
 import { Users, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { buildApiUrl } from "@/lib/api";
+import { useSocket } from "@/providers/SocketProvider";
 
 export default function Audience() {
     const router = useRouter();
+    const { socket } = useSocket();
     const [stats, setStats] = useState<any>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         fetchAudienceStats();
     }, []);
+
+    useEffect(() => {
+        if (!socket) return;
+
+        const userData = localStorage.getItem('user');
+        if (userData) {
+            const user = JSON.parse(userData);
+            socket.emit('register_user', user.id);
+        }
+
+        const handleFollowerUpdate = (data: { count: number }) => {
+            setStats((prev: any) => prev ? ({ ...prev, followers: data.count }) : ({ followers: data.count }));
+        };
+
+        socket.on('follower_count_update', handleFollowerUpdate);
+
+        return () => {
+            socket.off('follower_count_update', handleFollowerUpdate);
+        };
+    }, [socket]);
 
     const fetchAudienceStats = async () => {
         try {

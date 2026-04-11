@@ -16,14 +16,51 @@ import {
 import { useParams, useRouter } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
 import { buildApiUrl } from "@/lib/api";
+import { useSocket } from "@/providers/SocketProvider";
 
 export default function CreatorProfilePage() {
     const params = useParams();
     const router = useRouter();
+    const { socket } = useSocket();
     const [creatorData, setCreatorData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState("recordings");
     const [isFollowing, setIsFollowing] = useState(false);
+
+    useEffect(() => {
+        if (!socket || !params.id) return;
+
+        const handleFollowerUpdateForCreator = (data: { count: number }) => {
+            // Only update if the event is for the current creator public profile we are looking at
+            // Though currently the event is emitted to the target room, let's just update
+            setCreatorData((prev: any) => prev ? ({ ...prev, follower_count: data.count }) : null);
+        };
+
+        socket.on('follower_count_update', handleFollowerUpdateForCreator);
+
+        return () => {
+            socket.off('follower_count_update', handleFollowerUpdateForCreator);
+        };
+    }, [socket, params.id]);
+
+    const handleShare = async () => {
+        const shareData = {
+            title: `PodLive Creator: ${creatorData.display_name}`,
+            text: `Follow this amazing podcast creator @${creatorData.unique_handle} on PodLive!`,
+            url: window.location.href,
+        };
+
+        try {
+            if (navigator.share) {
+                await navigator.share(shareData);
+            } else {
+                await navigator.clipboard.writeText(window.location.href);
+                alert("Profile link copied to clipboard!");
+            }
+        } catch (err) {
+            console.error("Share failed:", err);
+        }
+    };
 
     useEffect(() => {
         const fetchCreator = async () => {
@@ -178,7 +215,10 @@ export default function CreatorProfilePage() {
 
                     {/* Action Buttons */}
                     <div className="flex items-center gap-3 w-full md:w-auto mt-4 md:mt-0">
-                        <button className="p-3 rounded-full bg-gray-900 border border-gray-800 hover:bg-gray-800 transition-colors text-white duration-300">
+                        <button
+                            onClick={handleShare}
+                            className="p-3 rounded-full bg-gray-900 border border-gray-800 hover:bg-gray-800 transition-colors text-white duration-300"
+                        >
                             <Share2 className="w-5 h-5" />
                         </button>
                         <button

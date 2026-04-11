@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Mic, MicOff, VideoIcon, VideoOff, Users, MessageSquare, PhoneOff, Settings, Loader2 } from "lucide-react";
+import { Mic, MicOff, VideoIcon, VideoOff, Users, MessageSquare, PhoneOff, Settings, Loader2, Share2 } from "lucide-react";
 import {
     LiveKitRoom,
     RoomAudioRenderer,
@@ -28,6 +28,25 @@ function RoomHeader({ roomName, isHost, id }: { roomName: string, isHost: boolea
     const viewerCount = Math.max(0, participants.length - 1);
 
     const [isSaving, setIsSaving] = useState(false);
+
+    const handleShare = async () => {
+        const shareData = {
+            title: `Live Podcast: ${roomName}`,
+            text: `Join my live podcast on PodLive: ${roomName}!`,
+            url: window.location.href,
+        };
+
+        try {
+            if (navigator.share) {
+                await navigator.share(shareData);
+            } else {
+                await navigator.clipboard.writeText(window.location.href);
+                alert("Link copied to clipboard!");
+            }
+        } catch (err) {
+            console.error("Share failed:", err);
+        }
+    };
 
     const handleEndStream = async () => {
         if (!isHost) {
@@ -65,6 +84,13 @@ function RoomHeader({ roomName, isHost, id }: { roomName: string, isHost: boolea
             </div>
 
             <div className="flex items-center gap-6">
+                <button
+                    onClick={handleShare}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600/10 hover:bg-indigo-600/20 rounded-lg font-medium text-indigo-400 transition-all border border-indigo-500/20 text-sm"
+                >
+                    <Share2 className="w-4 h-4" />
+                    Share
+                </button>
                 <div className="flex items-center gap-2 text-zinc-400 font-semibold px-4 py-1.5 rounded-full bg-zinc-900 border border-zinc-800">
                     <Users className="w-4 h-4 text-indigo-400" />
                     <span>{viewerCount}</span>

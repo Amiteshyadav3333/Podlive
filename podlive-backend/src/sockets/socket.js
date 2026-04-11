@@ -9,7 +9,8 @@ module.exports = (io) => {
 
         socket.on('register_user', (userId) => {
             activeUsers.set(userId, socket.id);
-            console.log(`User ${userId} registered with socket ${socket.id}`);
+            socket.join(userId); // Join a private room with the user's ID
+            console.log(`User ${userId} registered with socket ${socket.id} and joined private room.`);
         });
 
         socket.on('send_invite', async ({ sessionId, inviteeHandle, hostId }) => {

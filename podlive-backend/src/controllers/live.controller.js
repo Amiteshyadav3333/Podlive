@@ -450,3 +450,18 @@ exports.deleteRecording = async (req, res) => {
         res.status(500).json({ error: 'Failed to delete recording' });
     }
 };
+
+exports.incrementViewCount = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const session = await prisma.liveSession.update({
+            where: { id },
+            data: { views: { increment: 1 } }
+        });
+
+        res.json({ views: session.views });
+    } catch (error) {
+        console.error("Increment view error:", error);
+        res.status(500).json({ error: 'Failed to increment view count' });
+    }
+};

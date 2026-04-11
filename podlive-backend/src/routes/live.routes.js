@@ -33,6 +33,7 @@ router.get('/:id/recording', liveController.getRecordingDetails);
 router.post('/:id/comment', authMiddleware, liveController.addComment);
 router.post('/:id/like', authMiddleware, liveController.toggleLike);
 router.get('/:id/like-status', authMiddleware, liveController.getLikeStatus);
+router.post('/:id/view', liveController.incrementViewCount);
 router.delete('/:id', authMiddleware, liveController.deleteRecording);
 
 module.exports = router;
