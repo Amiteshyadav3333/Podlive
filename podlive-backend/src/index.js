@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const http = require('http');
 const { Server } = require('socket.io');
+const multer = require('multer');
 require('dotenv').config();
 
 const requiredEnvVars = [
@@ -90,16 +91,17 @@ socketHandler(io);
 app.use((err, req, res, next) => {
   console.error(err.stack);
   
-  if (err instanceof require('multer').MulterError) {
+  if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
       return res.status(413).json({ error: 'File size too large. Professional plans allow up to 1GB.' });
     }
     return res.status(400).json({ error: `Upload error: ${err.message}` });
   }
 
-  res.status(err.status || 500).json({
-    error: err.message || 'Internal Server Error',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  res.status(500).json({ 
+    error: 'Internal Server Error', 
+    message: err.message,
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined 
   });
 });
 
