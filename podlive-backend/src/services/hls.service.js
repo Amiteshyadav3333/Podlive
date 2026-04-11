@@ -15,12 +15,13 @@ const resolutions = [
     { name: '360p', size: '640x360', bitrate: '600k' }
 ];
 
+const os = require('os');
 exports.processHLS = async (sessionId, inputPath, baseUrl) => {
     return new Promise(async (resolve, reject) => {
         try {
             console.log(`[HLS Engine] Started HLS processing for session: ${sessionId}`);
 
-            const outputDir = path.join(__dirname, '../../uploads', `hls_${sessionId}`);
+            const outputDir = path.join(os.tmpdir(), `hls_${sessionId}`);
             if (!fs.existsSync(outputDir)) {
                 fs.mkdirSync(outputDir, { recursive: true });
             }

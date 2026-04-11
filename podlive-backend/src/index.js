@@ -80,6 +80,23 @@ app.use('/api/search', searchRoutes);
 const socketHandler = require('./sockets/socket');
 socketHandler(io);
 
+// Global Error Handler Middleware (Ensure all errors return JSON, not HTML)
+app.use((err, req, res, next) => {
+  console.error(err.stack);
+  
+  if (err instanceof require('multer').MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: 'File size too large. Professional plans allow up to 1GB.' });
+    }
+    return res.status(400).json({ error: `Upload error: ${err.message}` });
+  }
+
+  res.status(err.status || 500).json({
+    error: err.message || 'Internal Server Error',
+    ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+  });
+});
+
 const PORT = process.env.PORT || 5005;
 server.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);

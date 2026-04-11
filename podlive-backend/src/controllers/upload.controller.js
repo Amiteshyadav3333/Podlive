@@ -72,24 +72,35 @@ exports.uploadVideo = async (req, res) => {
             });
         }
 
-        const inputPath = path.join(__dirname, '../../uploads', videoFile.filename);
+        const inputPath = videoFile.path; // Use the path provided by multer directly
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
 
-        const baseUrl = `http://${req.headers.host}`;
-        // Trigger background AI task for subtitles
-        subtitleService.processSubtitles(newVOD.id, inputPath, baseUrl);
+        // Send success response EARLY to avoid timeout issues during heavy processing
+        res.status(201).json({
+            message: 'Video upload successful. Subtitles and HLS processing started in background.',
+            video: newVOD
+        });
 
-        // Trigger background HLS Transcoding
+        // Trigger background AI task for subtitles safely
+        try {
+            subtitleService.processSubtitles(newVOD.id, inputPath, baseUrl);
+        } catch (subError) {
+            console.error("Subtitle trigger failed:", subError);
+        }
+
+        // Trigger background HLS Transcoding safely
         hlsService.processHLS(newVOD.id, inputPath, baseUrl).catch(err => {
             console.error("HLS Processing failed in background:", err);
         });
 
-        res.status(201).json({
-            message: 'Video published, and is now being processed to HLS multi-quality stream in background.',
-            video: newVOD
-        });
-
     } catch (error) {
-        console.error('Upload Error:', error);
-        res.status(500).json({ error: 'Failed to upload video' });
+        console.error('Upload Controller Comprehensive Error:', error);
+        // Ensure we only send one response
+        if (!res.headersSent) {
+            res.status(500).json({ 
+                error: 'Failed to upload or process video',
+                details: error.message 
+            });
+        }
     }
 };

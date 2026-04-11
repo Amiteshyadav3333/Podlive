@@ -7,9 +7,18 @@ const path = require('path');
 const crypto = require('crypto');
 
 // Configure Multer
+const os = require('os');
+const fs = require('fs');
+
+// Configure Multer to use system temp directory (Safer for Render/Cloud platforms)
+const uploadDir = path.join(os.tmpdir(), 'podlive-uploads');
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
+
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, path.join(__dirname, '../../uploads')); // Assuming /uploads is at project root
+        cb(null, uploadDir);
     },
     filename: (req, file, cb) => {
         const uniqueSuffix = Date.now() + '-' + crypto.randomBytes(4).toString('hex');
@@ -20,7 +29,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
     storage: storage,
-    limits: { fileSize: 100 * 1024 * 1024 } // 100MB max limit to prevent local crashing
+    limits: { fileSize: 1024 * 1024 * 1024 } // 1GB max limit
 });
 
 router.post('/',
