@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node src/index.js",
-    "build": "prisma generate",
+    "build": "npx prisma generate && npx prisma db push --accept-data-loss",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
