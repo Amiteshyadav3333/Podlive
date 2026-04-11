@@ -76,6 +76,20 @@ const stageRoutes = require('./routes/stage.routes');
 const uploadRoutes = require('./routes/upload.routes');
 const searchRoutes = require('./routes/search.routes');
 
+app.get('/api/admin/db-sync', async (req, res) => {
+    try {
+        const { exec } = require('child_process');
+        exec('npx prisma db push --accept-data-loss', (error, stdout, stderr) => {
+            if (error) {
+                return res.status(500).json({ error: error.message, stderr });
+            }
+            res.json({ message: 'Database synced successfully', stdout });
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.use('/api/auth', authRoutes);
 app.use('/api/live', liveRoutes);
 app.use('/api/user', userRoutes);
