@@ -40,3 +40,12 @@ uploads/
 *.ntvs*
 *.njsproj
 *.sln
+
+# Test and Debug files
+test-*.js
+test_*.js
+*.log
+backend.log
+frontend.log
+build.log
+infra/
