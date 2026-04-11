@@ -167,9 +167,10 @@ exports.getViewerToken = async (req, res) => {
         }
 
         const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-        const token = await createToken(session.livekit_room_name, user.unique_handle, false);
+        const isHost = session.host_user_id === req.user.id;
+        const token = await createToken(session.livekit_room_name, user.unique_handle, isHost);
 
-        res.json({ token, roomName: session.livekit_room_name });
+        res.json({ token, roomName: session.livekit_room_name, isHost });
     } catch (error) {
         console.error('Get Viewer Token Error:', error);
         res.status(500).json({ error: 'Internal Server Error' });

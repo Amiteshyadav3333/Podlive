@@ -335,32 +335,28 @@ export default function LiveRoom() {
                 }
 
                 try {
-                    // Try to start as host first
-                    const hostAttempt = await axios.post(buildApiUrl(`/api/live/${id}/start`), {}, {
+                    // Single token endpoint for both host and viewers
+                    const tokenAttempt = await axios.get(buildApiUrl(`/api/live/${id}/token`), {
                         headers: { Authorization: `Bearer ${lsToken}` }
                     });
-                    setToken(hostAttempt.data.token);
-                    setRoomName(hostAttempt.data.roomName);
-                    setIsHost(true);
-                } catch (hostError: any) {
-                    // If forbidden, join as viewer
-                    if (hostError.response?.status === 403) {
+                    setToken(tokenAttempt.data.token);
+                    setRoomName(tokenAttempt.data.roomName);
+                    setIsHost(!!tokenAttempt.data.isHost);
+                    setPreJoinComplete(!tokenAttempt.data.isHost);
+                } catch (tokenError: any) {
+                    if (tokenError.response?.status === 404) {
                         try {
-                            const viewerAttempt = await axios.get(buildApiUrl(`/api/live/${id}/token`), {
-                                headers: { Authorization: `Bearer ${lsToken}` }
-                            });
-                            setToken(viewerAttempt.data.token);
-                            setRoomName(viewerAttempt.data.roomName);
-                            setIsHost(false);
-                            setPreJoinComplete(true);
-                        } catch (viewerError) {
-                            console.error("Failed to get viewer token", viewerError);
-                            router.push("/dashboard");
+                            const stats = await axios.get(buildApiUrl(`/api/live/${id}/stats`));
+                            if (stats.data?.status === 'ended') {
+                                router.push(`/watch/${id}`);
+                                return;
+                            }
+                        } catch (statsError) {
+                            console.error("Failed to fetch session status", statsError);
                         }
-                    } else {
-                        console.error("Failed to get host token", hostError);
-                        router.push("/dashboard");
                     }
+                    console.error("Failed to get room token", tokenError);
+                    router.push("/dashboard");
                 }
 
             } catch (err) {
