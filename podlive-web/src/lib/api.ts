@@ -17,19 +17,20 @@ export function getSocketUrl() {
   return API_BASE_URL;
 }
 
-export function getLiveKitWsUrl() {
-  const configuredLiveKitUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL?.trim();
-  if (configuredLiveKitUrl) {
-    return configuredLiveKitUrl.replace(/\/+$/, "");
-  }
-
-  if (typeof window === "undefined") {
+/**
+ * Fetches the LiveKit WebSocket URL securely from the backend.
+ * The URL is NEVER stored in frontend env vars or hardcoded in the bundle.
+ * The backend reads it from its own .env and serves only the WS URL (no secrets).
+ */
+export async function fetchLiveKitWsUrl(): Promise<string> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/config`);
+    if (!res.ok) throw new Error(`Config fetch failed: ${res.status}`);
+    const data = await res.json();
+    if (!data.livekitUrl) throw new Error("livekitUrl missing in config response");
+    return data.livekitUrl.replace(/\/+$/, "");
+  } catch (err) {
+    console.error("[PodLive] Failed to fetch LiveKit config from backend:", err);
     return "";
   }
-
-  if (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") {
-    return "ws://localhost:7880";
-  }
-
-  return "";
 }

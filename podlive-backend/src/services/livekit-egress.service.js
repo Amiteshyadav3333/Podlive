@@ -5,7 +5,7 @@ const {
     S3Upload
 } = require('livekit-server-sdk');
 
-const isHlsEgressEnabled = () => process.env.ENABLE_LIVEKIT_HLS_EGRESS === 'true';
+const isHlsEgressEnabled = () => false;
 
 const getEgressClient = () => {
     if (!process.env.LIVEKIT_URL) {

@@ -150,6 +150,10 @@ exports.endLiveSession = async (req, res) => {
             }
         });
 
+        if (req.io) {
+            req.io.to(id).emit('podcast_ended');
+        }
+
         res.json({ message: 'Live session ended successfully', session: updatedSession });
     } catch (error) {
         console.error('End Live Session Error:', error);

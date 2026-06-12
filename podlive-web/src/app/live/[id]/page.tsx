@@ -20,7 +20,7 @@ import { Track } from "livekit-client";
 import "@livekit/components-styles";
 import axios from "axios";
 import { useSocket } from "@/providers/SocketProvider";
-import { buildApiUrl, getLiveKitWsUrl } from "@/lib/api";
+import { buildApiUrl, fetchLiveKitWsUrl } from "@/lib/api";
 
 function RoomHeader({ roomName, isHost, id }: { roomName: string, isHost: boolean, id: string }) {
     const router = useRouter();
@@ -345,7 +345,8 @@ export default function LiveRoom() {
     const [onStage, setOnStage] = useState(false); // viewers who have accepted the invite
     const [preJoinComplete, setPreJoinComplete] = useState(false);
     const [hlsEgressStarted, setHlsEgressStarted] = useState(false);
-    const liveKitServerUrl = getLiveKitWsUrl();
+    // LiveKit URL is fetched securely from the backend — never stored in frontend env or bundle
+    const [liveKitServerUrl, setLiveKitServerUrl] = useState("");
 
     // Stage Invites State
     const [inviteHandle, setInviteHandle] = useState("");
@@ -359,6 +360,10 @@ export default function LiveRoom() {
                     router.push("/login");
                     return;
                 }
+
+                // Fetch LiveKit URL securely from backend (never from frontend env/bundle)
+                const wsUrl = await fetchLiveKitWsUrl();
+                setLiveKitServerUrl(wsUrl);
 
                 try {
                     // Single token endpoint for both host and viewers
@@ -428,18 +433,27 @@ export default function LiveRoom() {
             if (isHost) alert(`❌ ${data.inviteeHandle} declined your stage invite.`);
         };
 
+        const handlePodcastEnded = () => {
+            if (!isHost) {
+                alert("The host has ended this podcast session.");
+                router.push(`/watch/${id}`);
+            }
+        };
+
         socket.on('receive_invite', handleReceiveInvite);
         socket.on('invite_status', handleInviteStatus);
         socket.on('invite_accepted', handleInviteAccepted);
         socket.on('invite_rejected', handleInviteRejected);
+        socket.on('podcast_ended', handlePodcastEnded);
 
         return () => {
             socket.off('receive_invite', handleReceiveInvite);
             socket.off('invite_status', handleInviteStatus);
             socket.off('invite_accepted', handleInviteAccepted);
             socket.off('invite_rejected', handleInviteRejected);
+            socket.off('podcast_ended', handlePodcastEnded);
         };
-    }, [socket, id, isHost]);
+    }, [socket, id, isHost, router]);
 
     const handleSendInvite = () => {
         if (!inviteHandle || !socket) return;
@@ -487,6 +501,8 @@ export default function LiveRoom() {
     }
 
     const handleLiveKitConnected = async () => {
+        // Background HLS egress recording disabled for now
+        /*
         if (!isHost || hlsEgressStarted) return;
 
         setHlsEgressStarted(true);
@@ -500,6 +516,7 @@ export default function LiveRoom() {
         } catch (err) {
             console.error("Failed to start HLS egress", err);
         }
+        */
     };
 
     if (loading || !token) {
@@ -514,9 +531,9 @@ export default function LiveRoom() {
     if (!liveKitServerUrl) {
         return (
             <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center text-white px-6 text-center">
-                <h1 className="text-2xl font-bold mb-3">LiveKit is not configured</h1>
+                <h1 className="text-2xl font-bold mb-3">Could not connect to LiveKit</h1>
                 <p className="text-zinc-400 max-w-xl">
-                    Set NEXT_PUBLIC_LIVEKIT_URL in Vercel to your LiveKit WebSocket URL, for example wss://your-project.livekit.cloud.
+                    The server could not provide a LiveKit configuration. Please ensure <code className="text-indigo-400">LIVEKIT_URL</code> is set in the backend environment variables and the server is running.
                 </p>
             </div>
         );

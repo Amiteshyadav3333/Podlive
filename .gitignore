@@ -8,6 +8,11 @@ node_modules/
 .env
 .env.local
 .env.*
+!.env.example
+
+# LiveKit local config (contains dev keys)
+livekit.yaml
+infra/livekit/livekit.yaml
 
 # Logs
 npm-debug.log*

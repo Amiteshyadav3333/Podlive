@@ -97,6 +97,18 @@ app.use('/api/stage', stageRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/search', searchRoutes);
 
+// Public config endpoint — exposes only what the frontend needs (no secrets)
+// API keys and secrets are NEVER sent here. Only the WebSocket URL.
+app.get('/api/config', (req, res) => {
+  const livekitUrl = process.env.LIVEKIT_URL;
+  if (!livekitUrl) {
+    return res.status(503).json({ error: 'LiveKit is not configured on this server.' });
+  }
+  res.json({
+    livekitUrl, // e.g. wss://podlike-r0rwil4t.livekit.cloud
+  });
+});
+
 // Real-time socket connection
 const socketHandler = require('./sockets/socket');
 socketHandler(io);
