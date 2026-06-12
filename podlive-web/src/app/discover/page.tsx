@@ -1,124 +1,143 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Mic, Search, Play, Users } from "lucide-react";
+import { Mic, Search, Play, Users, Radio, ChevronRight } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import axios from "axios";
 import { buildApiUrl } from "@/lib/api";
 
+const CATEGORIES = ["All", "Technology", "Music", "Comedy", "Education", "Finance", "Gaming", "General"];
+
 export default function Discover() {
-    const [lives, setLives] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const [lives, setLives] = useState<any[]>([]);
+  const [filtered, setFiltered] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeCategory, setActiveCategory] = useState("All");
 
-    useEffect(() => {
-        const fetchLives = async () => {
-            try {
-                const res = await axios.get(buildApiUrl("/api/live/active"));
-                setLives(res.data);
-            } catch (err) {
-                console.error("Failed to fetch lives", err);
-            } finally {
-                setLoading(false);
-            }
-        };
+  useEffect(() => {
+    axios.get(buildApiUrl("/api/live/active"))
+      .then(r => { setLives(r.data); setFiltered(r.data); })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, []);
 
-        fetchLives();
-    }, []);
-
-    return (
-        <div className="min-h-screen bg-zinc-950 text-white selection:bg-indigo-500 selection:text-white">
-            {/* Navbar */}
-            <nav className="fixed top-0 w-full z-50 border-b border-white/10 bg-black/50 backdrop-blur-md">
-                <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-                    <Link href="/" className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center">
-                            <Mic className="w-4 h-4 text-white" />
-                        </div>
-                        <span className="font-bold text-xl tracking-tight">PodLive</span>
-                    </Link>
-                    <div className="flex items-center gap-4">
-                        <Link href="/dashboard" className="text-sm font-medium bg-white text-black px-4 py-2 rounded-full hover:bg-zinc-200 transition-colors">
-                            Go Live
-                        </Link>
-                    </div>
-                </div>
-            </nav>
-
-            <main className="pt-32 pb-16 px-6 max-w-7xl mx-auto">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
-                    <div>
-                        <h1 className="text-4xl font-extrabold tracking-tight mb-2">Discover Lives</h1>
-                        <p className="text-zinc-400">Find and join interesting live podcasts right now.</p>
-                    </div>
-
-                    <div className="relative w-full md:w-96">
-                        <span className="absolute inset-y-0 left-0 pl-4 flex items-center text-zinc-500">
-                            <Search className="w-5 h-5" />
-                        </span>
-                        <input
-                            type="text"
-                            placeholder="Search podcasts or hosts..."
-                            className="w-full bg-zinc-900 border border-zinc-800 rounded-full pl-12 pr-4 py-3 text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
-                        />
-                    </div>
-                </div>
-
-                {/* Categories */}
-                <div className="flex overflow-x-auto gap-3 pb-4 mb-8 scrollbar-hide">
-                    {['All', 'Technology', 'Music', 'Comedy', 'Education', 'Gaming', 'Business'].map((cat) => (
-                        <button key={cat} className={`px-5 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${cat === 'All' ? 'bg-white text-black' : 'bg-zinc-900 border border-zinc-800 text-zinc-300 hover:bg-zinc-800'}`}>
-                            {cat}
-                        </button>
-                    ))}
-                </div>
-
-                {/* Live Grid */}
-                {loading ? (
-                    <div className="text-zinc-500 flex items-center justify-center p-12">
-                        <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
-                    </div>
-                ) : lives.length === 0 ? (
-                    <div className="text-zinc-500 text-center p-12 bg-zinc-900/50 rounded-2xl border border-white/5">
-                        <Users className="w-12 h-12 mx-auto mb-4 text-zinc-600" />
-                        <h3 className="text-xl font-bold text-white mb-2">No active live sessions right now</h3>
-                        <p>Be the first to go live and start your podcast!</p>
-                        <Link href="/dashboard" className="inline-block mt-6 bg-indigo-600 px-6 py-3 rounded-full font-bold hover:bg-indigo-500 transition-colors">
-                            Start Broadcasting
-                        </Link>
-                    </div>
-                ) : (
-                    <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                        {lives.map((session) => (
-                            <Link href={`/live/${session.id}`} key={session.id} className="group relative rounded-2xl overflow-hidden bg-zinc-900 border border-white/5 cursor-pointer hover:border-indigo-500/50 transition-all">
-                                <div className="aspect-video bg-zinc-800 relative">
-                                    <div className="absolute top-3 left-3 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-md flex items-center gap-1">
-                                        <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span>
-                                        LIVE
-                                    </div>
-                                    <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md text-white text-xs font-semibold px-2 py-1 rounded-md flex items-center gap-1">
-                                        <Users className="w-3 h-3" />
-                                        {session.viewer_count_peak || 0}
-                                    </div>
-                                    {/* Play overlay on hover */}
-                                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center">
-                                            <Play className="w-5 h-5 text-black ml-1" />
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="p-4">
-                                    <h3 className="font-bold text-lg mb-1 truncate">{session.title}</h3>
-                                    <p className="text-zinc-400 text-sm truncate mb-4">{session.description || "Join the conversation"}</p>
-                                    <div className="flex items-center gap-2">
-                                        <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500"></div>
-                                        <span className="text-sm font-medium text-zinc-300 truncate">@{session.host.unique_handle}</span>
-                                    </div>
-                                </div>
-                            </Link>
-                        ))}
-                    </div>
-                )}
-            </main>
-        </div>
+  useEffect(() => {
+    let result = lives;
+    if (activeCategory !== "All") result = result.filter(l => l.category === activeCategory);
+    if (searchQuery.trim()) result = result.filter(l =>
+      l.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      l.host?.unique_handle?.toLowerCase().includes(searchQuery.toLowerCase())
     );
+    setFiltered(result);
+  }, [lives, activeCategory, searchQuery]);
+
+  return (
+    <div className="min-h-screen bg-[#080808] text-white">
+      <nav className="fixed top-0 w-full z-50 border-b border-white/[0.06] bg-[#080808]/90 backdrop-blur-xl">
+        <div className="max-w-7xl mx-auto px-4 md:px-6 h-14 flex items-center gap-4">
+          <Link href="/" className="flex items-center gap-2 shrink-0">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+              <Mic className="w-4 h-4 text-white" />
+            </div>
+            <span className="font-bold text-base tracking-tight hidden sm:block">PodLive</span>
+          </Link>
+
+          <div className="flex-1 max-w-xl mx-auto">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search live streams..."
+                className="w-full bg-zinc-900/80 border border-white/[0.08] rounded-full pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-indigo-500/60 transition-all text-white placeholder:text-zinc-500"
+              />
+            </div>
+          </div>
+
+          <Link href="/dashboard" className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-1.5 rounded-full transition-colors flex items-center gap-1.5 shrink-0">
+            <Radio className="w-3.5 h-3.5" />
+            <span className="hidden sm:block">Go Live</span>
+          </Link>
+        </div>
+      </nav>
+
+      <main className="pt-14">
+        <div className="max-w-7xl mx-auto px-4 md:px-6 py-8">
+          <div className="mb-8">
+            <h1 className="text-3xl font-extrabold tracking-tight mb-1">Discover Live</h1>
+            <p className="text-zinc-400 text-sm">Join real-time podcast streams happening right now</p>
+          </div>
+
+          {/* Category chips */}
+          <div className="flex gap-2 overflow-x-auto pb-3 scrollbar-hide mb-6">
+            {CATEGORIES.map(cat => (
+              <button
+                key={cat}
+                onClick={() => setActiveCategory(cat)}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
+                  activeCategory === cat ? "bg-white text-black" : "bg-zinc-900 border border-white/[0.07] text-zinc-300 hover:bg-zinc-800"
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+
+          {loading ? (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              {[...Array(8)].map((_, i) => <div key={i} className="aspect-video skeleton rounded-xl" />)}
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="glass p-16 rounded-2xl text-center">
+              <Radio className="w-12 h-12 mx-auto mb-4 text-zinc-600" />
+              <h3 className="text-xl font-bold text-white mb-2">No live streams right now</h3>
+              <p className="text-zinc-400 text-sm mb-6">Be the first to go live!</p>
+              <Link href="/dashboard/setup" className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-6 py-2.5 rounded-full text-sm transition-colors">
+                Start Broadcasting <ChevronRight className="w-4 h-4" />
+              </Link>
+            </div>
+          ) : (
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              {filtered.map((session) => {
+                const avatar = session.host?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(session.host?.display_name || "H")}&background=6366f1&color=fff`;
+                return (
+                  <div key={session.id} onClick={() => router.push(`/live/${session.id}`)} className="group cursor-pointer fade-up">
+                    <div className="relative aspect-video rounded-xl overflow-hidden bg-zinc-900 border border-white/[0.06] group-hover:border-red-500/40 transition-all">
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <Radio className="w-8 h-8 text-zinc-700" />
+                      </div>
+                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="w-14 h-14 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center">
+                          <Play className="w-6 h-6 text-white ml-1" fill="white" />
+                        </div>
+                      </div>
+                      <div className="absolute top-2 left-2 bg-red-600 text-white text-[11px] font-bold px-2 py-0.5 rounded flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 bg-white rounded-full live-dot" /> LIVE
+                      </div>
+                      <div className="absolute top-2 right-2 bg-black/70 backdrop-blur-sm text-white text-xs px-2 py-0.5 rounded flex items-center gap-1">
+                        <Users className="w-3 h-3" />{session.viewer_count_peak || 0}
+                      </div>
+                      {session.category && (
+                        <div className="absolute bottom-2 left-2 bg-black/70 text-white text-[10px] px-2 py-0.5 rounded">{session.category}</div>
+                      )}
+                    </div>
+                    <div className="mt-2.5 flex gap-2.5">
+                      <img src={avatar} className="w-9 h-9 rounded-full object-cover border border-white/10 shrink-0" alt="" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-white truncate group-hover:text-red-400 transition-colors">{session.title}</p>
+                        <p className="text-xs text-zinc-400 truncate mt-0.5">@{session.host?.unique_handle}</p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </main>
+    </div>
+  );
 }

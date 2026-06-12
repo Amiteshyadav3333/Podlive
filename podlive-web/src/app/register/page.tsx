@@ -7,211 +7,144 @@ import { useRouter } from "next/navigation";
 import { buildApiUrl } from "@/lib/api";
 
 export default function Register() {
-    const router = useRouter();
-    const [formData, setFormData] = useState({
-        unique_handle: "",
-        display_name: "",
-        email: "",
-        password: "",
-    });
-    const [showPassword, setShowPassword] = useState(false);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState("");
+  const router = useRouter();
+  const [formData, setFormData] = useState({ unique_handle: "", display_name: "", email: "", password: "" });
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        setFormData({ ...formData, [e.target.name]: e.target.value });
-        setError("");
-    };
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true); setError("");
+    let handle = formData.unique_handle.trim();
+    if (!handle.startsWith("@")) handle = "@" + handle;
+    try {
+      const res = await fetch(buildApiUrl("/api/auth/register"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...formData, unique_handle: handle }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Registration failed");
+      localStorage.setItem("accessToken", data.accessToken);
+      localStorage.setItem("refreshToken", data.refreshToken);
+      localStorage.setItem("user", JSON.stringify(data.user));
+      router.push("/dashboard");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-        setError("");
-
-        // Adding the '@' symbol if not provided
-        let handle = formData.unique_handle.trim();
-        if (!handle.startsWith("@")) {
-            handle = "@" + handle;
-        }
-
-        try {
-            const res = await fetch(buildApiUrl("/api/auth/register"), {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    ...formData,
-                    unique_handle: handle,
-                }),
-            });
-
-            const contentType = res.headers.get("content-type") || "";
-            const data = contentType.includes("application/json")
-                ? await res.json()
-                : await res.text();
-
-            if (!res.ok) {
-                throw new Error(typeof data === "string" ? data : data.error || "Something went wrong during registration.");
-            }
-
-            // Save tokens using localStorage
-            localStorage.setItem("accessToken", data.accessToken);
-            localStorage.setItem("refreshToken", data.refreshToken);
-            localStorage.setItem("user", JSON.stringify(data.user));
-
-            // Route to dashboard
-            router.push("/dashboard");
-        } catch (err: any) {
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    return (
-        <div className="min-h-screen bg-zinc-950 flex flex-col justify-center py-12 sm:px-6 lg:px-8 selection:bg-indigo-500 selection:text-white">
-            <div className="sm:mx-auto sm:w-full sm:max-w-md">
-                <div className="flex justify-center">
-                    <Link href="/">
-                        <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center cursor-pointer hover:scale-105 transition-transform">
-                            <Mic className="w-6 h-6 text-white" />
-                        </div>
-                    </Link>
-                </div>
-                <h2 className="mt-6 text-center text-3xl font-extrabold text-white tracking-tight">
-                    Create your account
-                </h2>
-                <p className="mt-2 text-center text-sm text-zinc-400">
-                    Already have an account?{" "}
-                    <Link href="/login" className="font-medium text-indigo-400 hover:text-indigo-300">
-                        Log in
-                    </Link>
-                </p>
+  return (
+    <div className="min-h-screen bg-[#080808] flex">
+      {/* Left panel */}
+      <div className="hidden lg:flex flex-1 relative overflow-hidden bg-gradient-to-br from-purple-950 via-[#0d0d1a] to-[#080808]">
+        <div className="absolute top-1/3 left-1/3 w-64 h-64 bg-purple-600/20 rounded-full blur-3xl" />
+        <div className="absolute bottom-1/3 right-1/3 w-48 h-48 bg-indigo-600/20 rounded-full blur-3xl" />
+        <div className="relative z-10 p-12 flex flex-col justify-between h-full">
+          <Link href="/" className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+              <Mic className="w-5 h-5 text-white" />
             </div>
-
-            <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-                <div className="bg-zinc-900 border border-white/10 py-8 px-4 shadow-2xl sm:rounded-2xl sm:px-10">
-                    <form className="space-y-6" onSubmit={handleSubmit}>
-                        {error && (
-                            <div className="bg-red-500/10 border border-red-500/50 text-red-500 text-sm p-3 rounded-lg text-center">
-                                {error}
-                            </div>
-                        )}
-                        <div>
-                            <label
-                                htmlFor="unique_handle"
-                                className="block text-sm font-medium text-zinc-300"
-                            >
-                                Unique Handle
-                            </label>
-                            <div className="mt-1 relative">
-                                <span className="absolute inset-y-0 left-0 pl-3 flex items-center text-zinc-500">
-                                    @
-                                </span>
-                                <input
-                                    id="unique_handle"
-                                    name="unique_handle"
-                                    type="text"
-                                    required
-                                    placeholder="yourname"
-                                    value={formData.unique_handle}
-                                    onChange={handleChange}
-                                    className="appearance-none block w-full pl-8 px-3 py-3 border border-zinc-700 rounded-xl bg-black text-white placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-colors"
-                                />
-                            </div>
-                        </div>
-
-                        <div>
-                            <label
-                                htmlFor="display_name"
-                                className="block text-sm font-medium text-zinc-300"
-                            >
-                                Display Name
-                            </label>
-                            <div className="mt-1">
-                                <input
-                                    id="display_name"
-                                    name="display_name"
-                                    type="text"
-                                    required
-                                    placeholder="Your Full Name"
-                                    value={formData.display_name}
-                                    onChange={handleChange}
-                                    className="appearance-none block w-full px-3 py-3 border border-zinc-700 rounded-xl bg-black text-white placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-colors"
-                                />
-                            </div>
-                        </div>
-
-                        <div>
-                            <label
-                                htmlFor="email"
-                                className="block text-sm font-medium text-zinc-300"
-                            >
-                                Email address
-                            </label>
-                            <div className="mt-1">
-                                <input
-                                    id="email"
-                                    name="email"
-                                    type="email"
-                                    autoComplete="email"
-                                    required
-                                    placeholder="you@example.com"
-                                    value={formData.email}
-                                    onChange={handleChange}
-                                    className="appearance-none block w-full px-3 py-3 border border-zinc-700 rounded-xl bg-black text-white placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-colors"
-                                />
-                            </div>
-                        </div>
-
-                        <div>
-                            <label
-                                htmlFor="password"
-                                className="block text-sm font-medium text-zinc-300"
-                            >
-                                Password
-                            </label>
-                            <div className="mt-1 relative">
-                                <input
-                                    id="password"
-                                    name="password"
-                                    type={showPassword ? "text" : "password"}
-                                    autoComplete="new-password"
-                                    required
-                                    placeholder="••••••••"
-                                    value={formData.password}
-                                    onChange={handleChange}
-                                    className="appearance-none block w-full px-3 py-3 border border-zinc-700 rounded-xl bg-black text-white placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-colors"
-                                />
-                                <button
-                                    type="button"
-                                    onClick={() => setShowPassword(!showPassword)}
-                                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-zinc-400 hover:text-zinc-200 transition-colors"
-                                >
-                                    {showPassword ? (
-                                        <EyeOff className="h-4 w-4" aria-hidden="true" />
-                                    ) : (
-                                        <Eye className="h-4 w-4" aria-hidden="true" />
-                                    )}
-                                </button>
-                            </div>
-                        </div>
-
-                        <div>
-                            <button
-                                type="submit"
-                                disabled={loading}
-                                className="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 focus:ring-offset-zinc-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                {loading ? (
-                                    <Loader2 className="w-5 h-5 animate-spin" />
-                                ) : (
-                                    "Create Account"
-                                )}
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
+            <span className="font-bold text-xl tracking-tight text-white">PodLive</span>
+          </Link>
+          <div>
+            <h2 className="text-3xl font-extrabold text-white mb-3 leading-tight">
+              Join thousands<br />of creators.
+            </h2>
+            <p className="text-zinc-400 text-sm leading-relaxed max-w-xs">
+              Start your first live stream in minutes. No equipment needed — just your voice and your story.
+            </p>
+          </div>
         </div>
-    );
+      </div>
+
+      {/* Form */}
+      <div className="flex-1 lg:max-w-md flex flex-col items-center justify-center px-8 py-12">
+        <div className="w-full max-w-sm">
+          <Link href="/" className="flex items-center gap-2 mb-8 lg:hidden">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
+              <Mic className="w-4 h-4 text-white" />
+            </div>
+            <span className="font-bold text-lg text-white">PodLive</span>
+          </Link>
+
+          <h1 className="text-2xl font-bold text-white mb-1">Create account</h1>
+          <p className="text-sm text-zinc-400 mb-8">
+            Already have one?{" "}
+            <Link href="/login" className="text-indigo-400 hover:text-indigo-300 font-medium">Log in</Link>
+          </p>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {error && (
+              <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm p-3 rounded-xl text-center">
+                {error}
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Handle</label>
+              <div className="relative">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500 text-sm font-medium">@</span>
+                <input
+                  type="text" required
+                  value={formData.unique_handle}
+                  onChange={(e) => setFormData({ ...formData, unique_handle: e.target.value })}
+                  placeholder="yourname"
+                  className="w-full bg-zinc-900/60 border border-white/[0.08] rounded-xl pl-8 pr-4 py-3 text-sm focus:outline-none focus:border-indigo-500/70 transition-all text-white placeholder:text-zinc-600"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Display Name</label>
+              <input
+                type="text" required
+                value={formData.display_name}
+                onChange={(e) => setFormData({ ...formData, display_name: e.target.value })}
+                placeholder="Your Full Name"
+                className="w-full bg-zinc-900/60 border border-white/[0.08] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500/70 transition-all text-white placeholder:text-zinc-600"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Email</label>
+              <input
+                type="email" required
+                value={formData.email}
+                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                placeholder="you@example.com"
+                className="w-full bg-zinc-900/60 border border-white/[0.08] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500/70 transition-all text-white placeholder:text-zinc-600"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Password</label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"} required
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  placeholder="••••••••"
+                  className="w-full bg-zinc-900/60 border border-white/[0.08] rounded-xl px-4 py-3 pr-10 text-sm focus:outline-none focus:border-indigo-500/70 transition-all text-white placeholder:text-zinc-600"
+                />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-3 flex items-center text-zinc-500 hover:text-zinc-300">
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <button
+              type="submit" disabled={loading}
+              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all glow-indigo disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 mt-2"
+            >
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create Account"}
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
 }

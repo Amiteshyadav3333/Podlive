@@ -455,6 +455,29 @@ exports.deleteRecording = async (req, res) => {
     }
 };
 
+exports.getPublicVODs = async (req, res) => {
+    try {
+        const { category, sort = 'latest', limit = 24 } = req.query;
+        const where = { status: 'ended', recording_url: { not: null } };
+        if (category && category !== 'All') where.category = category;
+
+        const orderBy = sort === 'popular'
+            ? [{ views: 'desc' }, { ended_at: 'desc' }]
+            : [{ ended_at: 'desc' }];
+
+        const sessions = await prisma.liveSession.findMany({
+            where,
+            include: { host: { select: { id: true, unique_handle: true, display_name: true, avatar_url: true, is_verified: true } } },
+            orderBy,
+            take: parseInt(limit)
+        });
+        res.json(sessions);
+    } catch (error) {
+        console.error('Get Public VODs Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+};
+
 exports.incrementViewCount = async (req, res) => {
     try {
         const { id } = req.params;

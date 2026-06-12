@@ -3,6 +3,9 @@ const cors = require('cors');
 const http = require('http');
 const { Server } = require('socket.io');
 const multer = require('multer');
+const helmet = require('helmet');
+const compression = require('compression');
+const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 const requiredEnvVars = [
@@ -27,8 +30,20 @@ const io = new Server(server, {
   }
 });
 
-app.use(cors());
-app.use(express.json());
+// Security & perf middleware
+app.use(helmet({ crossOriginEmbedderPolicy: false, contentSecurityPolicy: false }));
+app.use(compression());
+app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Rate limiting — general API
+const apiLimiter = rateLimit({ windowMs: 60 * 1000, max: 200, standardHeaders: true, legacyHeaders: false });
+app.use('/api/', apiLimiter);
+
+// Stricter rate limit for auth endpoints
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20, message: { error: 'Too many attempts, please try again later.' } });
+app.use('/api/auth/', authLimiter);
 
 // Attach Socket.io to request object for use in controllers
 app.use((req, res, next) => {

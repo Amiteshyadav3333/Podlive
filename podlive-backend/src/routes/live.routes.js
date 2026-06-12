@@ -28,6 +28,7 @@ router.post('/:id/end', authMiddleware, upload.single('video'), liveController.e
 router.get('/:id/token', authMiddleware, liveController.getViewerToken);
 router.get('/:id/upgrade', authMiddleware, liveController.upgradeViewerToken);
 router.get('/active', liveController.getActiveLives);
+router.get('/vods', liveController.getPublicVODs);
 router.get('/:id/stats', liveController.getSessionStats);
 router.get('/:id/recording', liveController.getRecordingDetails);
 router.post('/:id/comment', authMiddleware, liveController.addComment);

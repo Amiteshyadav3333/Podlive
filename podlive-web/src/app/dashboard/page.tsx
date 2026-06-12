@@ -1,147 +1,184 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Mic, Radio, Settings, Users, Video, Home as HomeIcon, Play, Loader2, Search } from "lucide-react";
+import { Radio, Users, Play, Search, TrendingUp, Video, Clock, Eye } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import axios from "axios";
 import { buildApiUrl } from "@/lib/api";
+import DashboardSidebar from "@/components/DashboardSidebar";
+import { formatDistanceToNow } from "date-fns";
 
 export default function DashboardHome() {
-    const router = useRouter();
-    const [lives, setLives] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [searchQuery, setSearchQuery] = useState("");
+  const router = useRouter();
+  const [lives, setLives] = useState<any[]>([]);
+  const [stats, setStats] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [user, setUser] = useState<any>(null);
 
-    useEffect(() => {
-        const fetchLives = async () => {
-            try {
-                const res = await axios.get(buildApiUrl("/api/live/active"));
-                setLives(res.data);
-            } catch (err) {
-                console.error("Failed to fetch lives", err);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchLives();
-        const interval = setInterval(fetchLives, 10000);
-        return () => clearInterval(interval);
-    }, []);
+  useEffect(() => {
+    const u = localStorage.getItem("user");
+    if (!u) { router.push("/login"); return; }
+    setUser(JSON.parse(u));
 
-    return (
-        <div className="min-h-screen bg-zinc-950 text-white selection:bg-indigo-500 selection:text-white">
-            {/* Sidebar */}
-            <aside className="fixed left-0 top-0 h-screen w-64 border-r border-white/10 bg-black/50 p-6 flex flex-col hidden md:flex z-50">
-                <div className="flex items-center gap-2 mb-12">
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center">
-                        <Mic className="w-4 h-4 text-white" />
-                    </div>
-                    <span className="font-bold text-xl tracking-tight">PodLive</span>
-                </div>
+    const fetchData = async () => {
+      const token = localStorage.getItem("accessToken");
+      try {
+        const [livesRes, statsRes] = await Promise.all([
+          axios.get(buildApiUrl("/api/live/active")),
+          fetch(buildApiUrl("/api/user/audience"), { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json())
+        ]);
+        setLives(livesRes.data);
+        setStats(statsRes);
+      } catch (err) { console.error(err); }
+      finally { setLoading(false); }
+    };
 
-                <nav className="flex-1 space-y-2">
-                    <Link href="/dashboard" className="flex items-center gap-3 px-4 py-3 rounded-lg bg-indigo-500/10 text-indigo-400 font-medium transition-colors">
-                        <HomeIcon className="w-5 h-5" />
-                        Home
-                    </Link>
-                    <Link href="/dashboard/setup" className="flex items-center gap-3 px-4 py-3 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 font-medium transition-colors">
-                        <Radio className="w-5 h-5" />
-                        Live Setup
-                    </Link>
-                    <Link href="/dashboard/upload" className="flex items-center gap-3 px-4 py-3 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 font-medium transition-colors">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                        Upload Video
-                    </Link>
-                    <Link href="/dashboard/recordings" className="flex items-center gap-3 px-4 py-3 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 font-medium transition-colors">
-                        <Video className="w-5 h-5" />
-                        My Recordings
-                    </Link>
-                    <Link href="/dashboard/audience" className="flex items-center gap-3 px-4 py-3 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 font-medium transition-colors">
-                        <Users className="w-5 h-5" />
-                        Audience
-                    </Link>
-                </nav>
+    fetchData();
+    const interval = setInterval(() => {
+      axios.get(buildApiUrl("/api/live/active")).then(r => setLives(r.data)).catch(() => {});
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [router]);
 
-                <div className="pt-6 border-t border-white/10 mt-auto">
-                    <Link href="/dashboard/settings" className="flex items-center gap-3 px-4 py-3 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 font-medium transition-colors">
-                        <Settings className="w-5 h-5" />
-                        Settings
-                    </Link>
-                </div>
-            </aside>
+  const avatar = user?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.display_name || "U")}&background=6366f1&color=fff`;
 
-            {/* Main Content */}
-            <main className="md:ml-64 p-8 max-w-6xl">
-                <header className="mb-10 flex md:flex-row flex-col items-start md:items-center justify-between gap-4">
-                    <div>
-                        <h1 className="text-3xl font-bold tracking-tight mb-2">Home Feed</h1>
-                        <p className="text-zinc-400">Discover active live podcasts and join the conversation.</p>
-                    </div>
-                    <form onSubmit={(e) => { e.preventDefault(); if (searchQuery.trim()) router.push(`/search?q=${searchQuery}`) }} className="relative w-full md:w-auto md:min-w-[300px]">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-                        <input
-                            type="text"
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder="Search platform..."
-                            className="w-full bg-zinc-900 border border-zinc-800 rounded-full pl-10 pr-4 py-2.5 text-sm focus:outline-none focus:border-indigo-500 transition-colors text-white"
-                        />
-                    </form>
-                </header>
+  return (
+    <div className="min-h-screen bg-[#080808] text-white">
+      <DashboardSidebar />
 
-                {loading ? (
-                    <div className="flex items-center justify-center p-20">
-                        <Loader2 className="w-8 h-8 animate-spin text-zinc-500" />
-                    </div>
-                ) : lives.length === 0 ? (
-                    <div className="bg-zinc-900 border border-white/10 rounded-2xl p-12 flex flex-col items-center justify-center text-center">
-                        <Radio className="w-12 h-12 mb-4 text-zinc-600" />
-                        <h2 className="text-2xl font-bold text-white mb-2">No Podcasts Are Live Right Now</h2>
-                        <p className="text-zinc-400 max-w-md mb-6">
-                            Be the first one to host a podcast and gather an audience!
-                        </p>
-                        <button onClick={() => router.push('/dashboard/setup')} className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-3 rounded-xl flex items-center gap-2 font-medium transition-colors">
-                            <Radio className="w-5 h-5" />
-                            Start Broadcasting
-                        </button>
-                    </div>
-                ) : (
-                    <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                        {lives.map((session) => (
-                            <div onClick={() => router.push(`/live/${session.id}`)} key={session.id} className="group relative rounded-2xl overflow-hidden bg-zinc-900 border border-white/10 cursor-pointer hover:border-indigo-500/50 transition-all hover:-translate-y-1">
-                                <div className="aspect-video bg-zinc-800 relative">
-                                    <div className="absolute top-3 left-3 bg-red-500 text-white text-xs font-bold px-2 py-1 rounded-md flex items-center gap-1">
-                                        <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse"></span>
-                                        LIVE
-                                    </div>
-                                    <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-md text-white text-xs font-semibold px-2 py-1 rounded-md flex items-center gap-1">
-                                        <Users className="w-3 h-3" />
-                                        {session.viewer_count_peak || 0}
-                                    </div>
-                                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center">
-                                            <Play className="w-5 h-5 text-black ml-1" />
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="p-4">
-                                    <h3 className="font-bold text-lg mb-1 truncate group-hover:text-indigo-400 transition-colors">{session.title}</h3>
-                                    <p className="text-zinc-400 text-sm truncate mb-4">{session.description || "Join the conversation"}</p>
-                                    <div onClick={(e) => { e.stopPropagation(); router.push(`/creator/${session.host?.id || "1"}`); }} className="flex items-center gap-2 hover:opacity-80 transition-opacity">
-                                        <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center">
-                                            <span className="text-xs font-bold text-white uppercase">{session.host?.username?.charAt(0) || "H"}</span>
-                                        </div>
-                                        <span className="text-sm font-medium text-zinc-300 truncate hover:text-indigo-400">
-                                            @{session.host?.username || session.host?.unique_handle || "host"}
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </main>
+      <div className="md:ml-60">
+        {/* Top bar */}
+        <div className="sticky top-0 z-40 border-b border-white/[0.06] bg-[#080808]/90 backdrop-blur-xl px-6 h-14 flex items-center justify-between">
+          <form onSubmit={(e) => { e.preventDefault(); if (searchQuery.trim()) router.push(`/search?q=${searchQuery}`); }} className="relative w-full max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+            <input
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search platform..."
+              className="w-full bg-zinc-900/80 border border-white/[0.07] rounded-full pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-indigo-500/60 transition-all text-white placeholder:text-zinc-500"
+            />
+          </form>
+          {user && (
+            <div className="flex items-center gap-3 ml-4">
+              <Link href="/dashboard/setup" className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white text-sm font-bold px-4 py-1.5 rounded-full transition-colors">
+                <span className="w-1.5 h-1.5 rounded-full bg-white live-dot" />
+                Go Live
+              </Link>
+              <img src={avatar} alt={user.display_name} className="w-8 h-8 rounded-full object-cover border border-white/10" />
+            </div>
+          )}
         </div>
-    );
+
+        <div className="p-6 space-y-8 max-w-6xl">
+          {/* Stats Cards */}
+          {stats && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                { label: "Followers", value: stats.followers || 0, icon: Users, color: "purple" },
+                { label: "Total Views", value: stats.totalViews || 0, icon: Eye, color: "blue" },
+                { label: "Live Sessions", value: stats.totalLives || 0, icon: Radio, color: "red" },
+                { label: "Active Streams", value: lives.length, icon: TrendingUp, color: "green" },
+              ].map(({ label, value, icon: Icon, color }) => (
+                <div key={label} className="glass p-4 rounded-2xl">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-medium text-zinc-400 uppercase tracking-wider">{label}</p>
+                    <div className={`w-7 h-7 rounded-lg bg-${color}-500/15 flex items-center justify-center`}>
+                      <Icon className={`w-3.5 h-3.5 text-${color}-400`} />
+                    </div>
+                  </div>
+                  <p className="text-2xl font-bold">{value.toLocaleString()}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Quick Actions */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <Link href="/dashboard/setup" className="glass p-4 rounded-2xl hover:border-red-500/30 transition-all group">
+              <div className="w-10 h-10 rounded-xl bg-red-500/15 flex items-center justify-center mb-3">
+                <Radio className="w-5 h-5 text-red-400 group-hover:scale-110 transition-transform" />
+              </div>
+              <h3 className="font-semibold text-sm mb-0.5">Start Live Stream</h3>
+              <p className="text-xs text-zinc-500">Go live with your audience</p>
+            </Link>
+            <Link href="/dashboard/upload" className="glass p-4 rounded-2xl hover:border-indigo-500/30 transition-all group">
+              <div className="w-10 h-10 rounded-xl bg-indigo-500/15 flex items-center justify-center mb-3">
+                <Video className="w-5 h-5 text-indigo-400 group-hover:scale-110 transition-transform" />
+              </div>
+              <h3 className="font-semibold text-sm mb-0.5">Upload Video</h3>
+              <p className="text-xs text-zinc-500">Publish pre-recorded content</p>
+            </Link>
+            <Link href="/dashboard/recordings" className="glass p-4 rounded-2xl hover:border-purple-500/30 transition-all group">
+              <div className="w-10 h-10 rounded-xl bg-purple-500/15 flex items-center justify-center mb-3">
+                <Clock className="w-5 h-5 text-purple-400 group-hover:scale-110 transition-transform" />
+              </div>
+              <h3 className="font-semibold text-sm mb-0.5">My Recordings</h3>
+              <p className="text-xs text-zinc-500">Manage past broadcasts</p>
+            </Link>
+          </div>
+
+          {/* Live Feed */}
+          <div>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-bold flex items-center gap-2 text-base">
+                <span className="w-2 h-2 rounded-full bg-red-500 live-dot" />
+                Live Now
+              </h2>
+              <Link href="/discover" className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">View all →</Link>
+            </div>
+
+            {loading ? (
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {[...Array(3)].map((_, i) => <div key={i} className="aspect-video skeleton rounded-xl" />)}
+              </div>
+            ) : lives.length === 0 ? (
+              <div className="glass p-8 rounded-2xl text-center">
+                <Radio className="w-10 h-10 mx-auto mb-3 text-zinc-600" />
+                <p className="font-semibold text-zinc-300 mb-1">No active streams</p>
+                <p className="text-sm text-zinc-500 mb-4">Be the first one to go live!</p>
+                <Link href="/dashboard/setup" className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-5 py-2 rounded-full transition-colors">
+                  <Radio className="w-4 h-4" /> Start Broadcasting
+                </Link>
+              </div>
+            ) : (
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {lives.map((session) => {
+                  const avatar2 = session.host?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(session.host?.display_name || "H")}&background=6366f1&color=fff`;
+                  return (
+                    <div key={session.id} onClick={() => router.push(`/live/${session.id}`)} className="group cursor-pointer">
+                      <div className="relative aspect-video rounded-xl overflow-hidden bg-zinc-900 border border-white/[0.06] group-hover:border-red-500/40 transition-all">
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <Radio className="w-8 h-8 text-zinc-700" />
+                        </div>
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center">
+                            <Play className="w-5 h-5 text-white ml-1" fill="white" />
+                          </div>
+                        </div>
+                        <div className="absolute top-2 left-2 bg-red-600 text-white text-[11px] font-bold px-2 py-0.5 rounded flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 bg-white rounded-full live-dot" /> LIVE
+                        </div>
+                        <div className="absolute top-2 right-2 bg-black/70 text-white text-xs px-2 py-0.5 rounded flex items-center gap-1">
+                          <Users className="w-3 h-3" />{session.viewer_count_peak || 0}
+                        </div>
+                      </div>
+                      <div className="mt-2.5 flex gap-2.5">
+                        <img src={avatar2} className="w-8 h-8 rounded-full object-cover border border-white/10 shrink-0" alt="" />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-white truncate group-hover:text-red-400 transition-colors">{session.title}</p>
+                          <p className="text-xs text-zinc-400 truncate mt-0.5">@{session.host?.unique_handle}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
