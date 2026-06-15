@@ -420,18 +420,21 @@ function GuestSocketListener({ socket }: { socket: any }) {
 // ─────────────────────────────────────────────────────────────
 function GuestManager({ sessionId, isHost, socket }: { sessionId: string; isHost: boolean; socket: any }) {
     const [guests, setGuests] = useState<any[]>([]);
-    const [loadingStates, setLoadingStates] = useState<Record<string, Record<string, boolean>>>({});
+    const [busy, setBusy] = useState<Record<string, string>>({}); // guestId -> action
+    const [toast, setToast] = useState<string>("");
     const participants = useParticipants();
 
-    // Map LiveKit participant identity (= @unique_handle) → participant object
+    // Map handle → LiveKit participant
     const participantMap = useMemo(() => {
         const map = new Map<string, any>();
         participants.forEach((p) => map.set(p.identity, p));
         return map;
     }, [participants]);
 
-    const setLoading = (userId: string, action: string, val: boolean) =>
-        setLoadingStates((prev) => ({ ...prev, [userId]: { ...(prev[userId] || {}), [action]: val } }));
+    const showToast = (msg: string) => {
+        setToast(msg);
+        setTimeout(() => setToast(""), 2500);
+    };
 
     const fetchGuests = async () => {
         try {
@@ -449,139 +452,290 @@ function GuestManager({ sessionId, isHost, socket }: { sessionId: string; isHost
     useEffect(() => {
         if (!isHost) return;
         fetchGuests();
-        const interval = setInterval(fetchGuests, 5000);
+        const interval = setInterval(fetchGuests, 4000);
         return () => clearInterval(interval);
     }, [sessionId, isHost]);
 
-    const handleMuteMic = async (userId: string) => {
-        setLoading(userId, "mic", true);
+    // Listen for guest join/leave to refresh list
+    useEffect(() => {
+        if (!socket || !isHost) return;
+        const handler = () => fetchGuests();
+        socket.on("invite_accepted", handler);
+        return () => socket.off("invite_accepted", handler);
+    }, [socket, isHost]);
+
+    const muteMic = async (g: any) => {
+        setBusy(p => ({ ...p, [g.invitee_id]: "mic" }));
         try {
-            const lsToken = localStorage.getItem("accessToken");
-            await axios.post(buildApiUrl(`/api/stage/guest/${sessionId}/${userId}/mute`), { muted: true }, {
-                headers: { Authorization: `Bearer ${lsToken}` },
+            const token = localStorage.getItem("accessToken");
+            await axios.post(buildApiUrl(`/api/stage/guest/${sessionId}/${g.invitee_id}/mute`), {}, {
+                headers: { Authorization: `Bearer ${token}` },
             });
-            if (socket) socket.emit("mute_guest", { guestId: userId });
-        } catch (e) { console.error(e); }
-        finally { setLoading(userId, "mic", false); }
+            socket?.emit("mute_guest", { guestId: g.invitee_id });
+            showToast(`🔇 Muted @${g.invitee?.unique_handle?.replace("@","")}`);
+        } catch { showToast("Failed to mute"); }
+        finally { setBusy(p => { const n = {...p}; delete n[g.invitee_id]; return n; }); }
     };
 
-    const handleDisableCamera = async (userId: string) => {
-        setLoading(userId, "camera", true);
+    const disableCamera = async (g: any) => {
+        setBusy(p => ({ ...p, [g.invitee_id]: "cam" }));
         try {
-            const lsToken = localStorage.getItem("accessToken");
-            await axios.post(buildApiUrl(`/api/stage/guest/${sessionId}/${userId}/disable-camera`), {}, {
-                headers: { Authorization: `Bearer ${lsToken}` },
+            const token = localStorage.getItem("accessToken");
+            await axios.post(buildApiUrl(`/api/stage/guest/${sessionId}/${g.invitee_id}/disable-camera`), {}, {
+                headers: { Authorization: `Bearer ${token}` },
             });
-            if (socket) socket.emit("disable_camera_guest", { guestId: userId });
-        } catch (e) { console.error(e); }
-        finally { setLoading(userId, "camera", false); }
+            socket?.emit("disable_camera_guest", { guestId: g.invitee_id });
+            showToast(`📷 Camera off for @${g.invitee?.unique_handle?.replace("@","")}`);
+        } catch { showToast("Failed to disable camera"); }
+        finally { setBusy(p => { const n = {...p}; delete n[g.invitee_id]; return n; }); }
     };
 
-    const handleRemove = async (userId: string) => {
-        setLoading(userId, "remove", true);
+    const removeGuest = async (g: any) => {
+        setBusy(p => ({ ...p, [g.invitee_id]: "remove" }));
         try {
-            const lsToken = localStorage.getItem("accessToken");
-            await axios.delete(buildApiUrl(`/api/stage/guest/${sessionId}/${userId}`), {
-                headers: { Authorization: `Bearer ${lsToken}` },
+            const token = localStorage.getItem("accessToken");
+            await axios.delete(buildApiUrl(`/api/stage/guest/${sessionId}/${g.invitee_id}`), {
+                headers: { Authorization: `Bearer ${token}` },
             });
-            if (socket) socket.emit("remove_guest", { guestId: userId });
+            socket?.emit("remove_guest", { guestId: g.invitee_id });
+            showToast(`❌ Removed @${g.invitee?.unique_handle?.replace("@","")}`);
             fetchGuests();
-        } catch (e) { console.error(e); }
-        finally { setLoading(userId, "remove", false); }
+        } catch { showToast("Failed to remove"); }
+        finally { setBusy(p => { const n = {...p}; delete n[g.invitee_id]; return n; }); }
     };
 
     if (!isHost) return null;
 
     return (
-        <div className="p-4 border-b border-zinc-800">
-            <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">On Stage</h4>
-            {guests.length === 0 ? (
-                <p className="text-xs text-zinc-600 italic">No guests on stage yet.</p>
-            ) : (
-                <div className="flex flex-col gap-2">
-                    {guests.map((g) => {
-                        const handle = g.invitee?.unique_handle ?? "";
-                        const participant = participantMap.get(handle);
-                        const isMicMuted = participant ? !participant.isMicrophoneEnabled : true;
-                        const isCameraOff = participant ? !participant.isCameraEnabled : true;
-                        const isOnline = !!participant;
-                        const ls = loadingStates[g.invitee_id] || {};
+        <div className="border-b border-zinc-800/60">
+            {/* Toast */}
+            {toast && (
+                <div className="mx-3 mt-3 px-3 py-2 bg-zinc-800 border border-white/10 rounded-lg text-xs text-zinc-200 text-center">
+                    {toast}
+                </div>
+            )}
 
-                        return (
-                            <div key={g.id} className="bg-zinc-900 px-3 py-2.5 rounded-xl border border-white/5">
-                                {/* Guest name + online indicator */}
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                        <span
-                                            className={`w-2 h-2 rounded-full flex-shrink-0 ${isOnline ? "bg-green-500 animate-pulse" : "bg-zinc-600"}`}
-                                            title={isOnline ? "Live on stage" : "Not connected"}
-                                        />
-                                        <span className="text-sm font-semibold text-white truncate" title={handle}>
-                                            @{handle.replace("@", "")}
-                                        </span>
+            <div className="px-4 pt-3 pb-1">
+                <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-xs font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                        On Stage ({guests.length})
+                    </h4>
+                </div>
+
+                {guests.length === 0 ? (
+                    <p className="text-xs text-zinc-600 italic pb-3">No guests on stage. Invite someone above.</p>
+                ) : (
+                    <div className="space-y-2 pb-3">
+                        {guests.map((g) => {
+                            const handle = (g.invitee?.unique_handle ?? "").replace("@", "");
+                            const participant = participantMap.get(g.invitee?.unique_handle ?? "");
+                            const micOn  = participant?.isMicrophoneEnabled ?? false;
+                            const camOn  = participant?.isCameraEnabled ?? false;
+                            const online = !!participant;
+                            const action = busy[g.invitee_id];
+
+                            return (
+                                <div
+                                    key={g.id}
+                                    className="rounded-xl border border-white/[0.07] bg-zinc-900/80 overflow-hidden"
+                                >
+                                    {/* Guest header row */}
+                                    <div className="flex items-center gap-2.5 px-3 py-2.5">
+                                        {/* Avatar */}
+                                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shrink-0 text-xs font-bold text-white">
+                                            {handle.charAt(0).toUpperCase()}
+                                        </div>
+
+                                        {/* Name + status */}
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="text-sm font-semibold text-white truncate">@{handle}</span>
+                                                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                                    online ? "bg-green-500" : "bg-zinc-600"
+                                                }`} />
+                                            </div>
+                                            <div className="flex gap-2 mt-0.5">
+                                                <span className={`text-[10px] font-medium ${
+                                                    micOn ? "text-green-400" : "text-red-400"
+                                                }`}>
+                                                    {micOn ? "🎤 Mic on" : "🔇 Mic off"}
+                                                </span>
+                                                <span className={`text-[10px] font-medium ${
+                                                    camOn ? "text-green-400" : "text-zinc-500"
+                                                }`}>
+                                                    {camOn ? "📷 Cam on" : "📷 Cam off"}
+                                                </span>
+                                            </div>
+                                        </div>
                                     </div>
-                                    {/* Status badges */}
-                                    <div className="flex gap-1">
-                                        {isMicMuted && (
-                                            <span className="text-[10px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded font-medium">MIC OFF</span>
-                                        )}
-                                        {isCameraOff && (
-                                            <span className="text-[10px] bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded font-medium">CAM OFF</span>
-                                        )}
+
+                                    {/* Control buttons */}
+                                    <div className="grid grid-cols-3 border-t border-white/[0.05]">
+                                        {/* Mute Mic */}
+                                        <button
+                                            onClick={() => muteMic(g)}
+                                            disabled={!!action || !micOn}
+                                            className={`flex flex-col items-center justify-center gap-1 py-2.5 text-[11px] font-semibold transition-all border-r border-white/[0.05] ${
+                                                !micOn
+                                                    ? "text-zinc-600 cursor-not-allowed"
+                                                    : "text-zinc-300 hover:bg-red-500/15 hover:text-red-400 active:scale-95"
+                                            }`}
+                                        >
+                                            {action === "mic" ? (
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                            ) : micOn ? (
+                                                <Mic className="w-4 h-4" />
+                                            ) : (
+                                                <MicOff className="w-4 h-4 text-red-400" />
+                                            )}
+                                            {micOn ? "Mute" : "Muted"}
+                                        </button>
+
+                                        {/* Disable Camera */}
+                                        <button
+                                            onClick={() => disableCamera(g)}
+                                            disabled={!!action || !camOn}
+                                            className={`flex flex-col items-center justify-center gap-1 py-2.5 text-[11px] font-semibold transition-all border-r border-white/[0.05] ${
+                                                !camOn
+                                                    ? "text-zinc-600 cursor-not-allowed"
+                                                    : "text-zinc-300 hover:bg-orange-500/15 hover:text-orange-400 active:scale-95"
+                                            }`}
+                                        >
+                                            {action === "cam" ? (
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                            ) : camOn ? (
+                                                <VideoIcon className="w-4 h-4" />
+                                            ) : (
+                                                <VideoOff className="w-4 h-4 text-orange-400" />
+                                            )}
+                                            {camOn ? "Cam Off" : "Off"}
+                                        </button>
+
+                                        {/* Remove */}
+                                        <button
+                                            onClick={() => removeGuest(g)}
+                                            disabled={!!action}
+                                            className="flex flex-col items-center justify-center gap-1 py-2.5 text-[11px] font-semibold text-zinc-300 hover:bg-red-600/20 hover:text-red-400 transition-all active:scale-95 disabled:opacity-40"
+                                        >
+                                            {action === "remove" ? (
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                            ) : (
+                                                <UserX className="w-4 h-4" />
+                                            )}
+                                            Remove
+                                        </button>
                                     </div>
                                 </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
 
-                                {/* Action buttons */}
-                                <div className="flex items-center gap-1.5">
-                                    {/* Mute Mic */}
-                                    <button
-                                        onClick={() => handleMuteMic(g.invitee_id)}
-                                        disabled={!!ls.mic || isMicMuted}
-                                        title={isMicMuted ? "Mic already muted" : "Mute microphone"}
-                                        className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-40 ${
-                                            isMicMuted
-                                                ? "bg-red-500/10 text-red-400 border border-red-500/20 cursor-not-allowed"
-                                                : "bg-zinc-800 text-zinc-300 hover:bg-red-500/20 hover:text-red-400 border border-transparent"
-                                        }`}
-                                    >
-                                        {ls.mic ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isMicMuted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
-                                        {isMicMuted ? "Muted" : "Mute"}
-                                    </button>
 
-                                    {/* Disable Camera */}
-                                    <button
-                                        onClick={() => handleDisableCamera(g.invitee_id)}
-                                        disabled={!!ls.camera || isCameraOff}
-                                        title={isCameraOff ? "Camera already off" : "Turn off camera"}
-                                        className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-40 ${
-                                            isCameraOff
-                                                ? "bg-orange-500/10 text-orange-400 border border-orange-500/20 cursor-not-allowed"
-                                                : "bg-zinc-800 text-zinc-300 hover:bg-orange-500/20 hover:text-orange-400 border border-transparent"
-                                        }`}
-                                    >
-                                        {ls.camera ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isCameraOff ? <VideoOff className="w-3.5 h-3.5" /> : <VideoIcon className="w-3.5 h-3.5" />}
-                                        {isCameraOff ? "Cam Off" : "Camera"}
-                                    </button>
+// ─────────────────────────────────────────────────────────────
+// HostPanel — tabbed panel: Controls | Chat
+// ─────────────────────────────────────────────────────────────
+function HostPanel({
+    sessionId, socket, inviteHandle, setInviteHandle, handleSendInvite
+}: {
+    sessionId: string; socket: any;
+    inviteHandle: string; setInviteHandle: (v: string) => void;
+    handleSendInvite: () => void;
+}) {
+    const [tab, setTab] = useState<"controls" | "chat">("controls");
+    const [inviteStatus, setInviteStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
-                                    {/* Kick */}
-                                    <button
-                                        onClick={() => handleRemove(g.invitee_id)}
-                                        disabled={!!ls.remove}
-                                        title="Remove from stage"
-                                        className="p-1.5 rounded-lg bg-zinc-800 text-zinc-400 hover:bg-red-600 hover:text-white border border-transparent transition-all disabled:opacity-50"
-                                    >
-                                        {ls.remove ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserX className="w-3.5 h-3.5" />}
-                                    </button>
-                                </div>
+    // Show invite status from socket
+    useEffect(() => {
+        if (!socket) return;
+        const handler = (data: any) => {
+            setInviteStatus({ ok: data.success, msg: data.message });
+            setTimeout(() => setInviteStatus(null), 3000);
+            if (data.success) setInviteHandle("");
+        };
+        socket.on("invite_status", handler);
+        return () => socket.off("invite_status", handler);
+    }, [socket]);
+
+    const sendInvite = () => {
+        if (!inviteHandle.trim()) return;
+        handleSendInvite();
+    };
+
+    return (
+        <div className="flex flex-col h-full">
+            {/* Tab bar */}
+            <div className="flex border-b border-white/[0.07] shrink-0">
+                {(["controls", "chat"] as const).map(t => (
+                    <button
+                        key={t}
+                        onClick={() => setTab(t)}
+                        className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors relative ${
+                            tab === t ? "text-white" : "text-zinc-500 hover:text-zinc-300"
+                        }`}
+                    >
+                        {t === "controls" ? "🎤 Controls" : "💬 Chat"}
+                        {tab === t && (
+                            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-500 rounded-t-full" />
+                        )}
+                    </button>
+                ))}
+            </div>
+
+            {tab === "controls" ? (
+                <div className="flex-1 overflow-y-auto">
+                    {/* Invite section */}
+                    <div className="p-4 border-b border-zinc-800/60">
+                        <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-3">Invite to Stage</p>
+
+                        {inviteStatus && (
+                            <div className={`text-xs px-3 py-2 rounded-lg mb-2 ${
+                                inviteStatus.ok
+                                    ? "bg-green-500/10 border border-green-500/20 text-green-400"
+                                    : "bg-red-500/10 border border-red-500/20 text-red-400"
+                            }`}>
+                                {inviteStatus.msg}
                             </div>
-                        );
-                    })}
+                        )}
+
+                        <div className="flex gap-2">
+                            <input
+                                type="text"
+                                value={inviteHandle}
+                                onChange={(e) => setInviteHandle(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter") sendInvite(); }}
+                                placeholder="Enter @username"
+                                className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500 transition-colors"
+                            />
+                            <button
+                                onClick={sendInvite}
+                                disabled={!inviteHandle.trim()}
+                                className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-bold text-sm px-4 rounded-lg transition-colors"
+                            >
+                                Invite
+                            </button>
+                        </div>
+                        <p className="text-[11px] text-zinc-600 mt-2">
+                            User must be online and watching to receive invite.
+                        </p>
+                    </div>
+
+                    {/* Guest controls */}
+                    <GuestManager sessionId={sessionId} isHost={true} socket={socket} />
+                </div>
+            ) : (
+                <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+                    <CustomChat socket={socket} sessionId={sessionId} />
                 </div>
             )}
         </div>
     );
 }
-
 
 // ─────────────────────────────────────────────────────────────
 // Main LiveRoom page
@@ -658,15 +812,11 @@ export default function LiveRoom() {
         const handleReceiveInvite = (data: any) => {
             if (data.sessionId === id) setReceivedInvite(data);
         };
-        const handleInviteStatus = (data: any) => {
-            alert(data.message);
-            if (data.success) setInviteHandle("");
-        };
         const handleInviteAccepted = (data: any) => {
-            if (isHost) alert(`🎤 ${data.inviteeHandle} joined the stage!`);
+            if (isHost) setInviteHandle(""); // clear input on accept
         };
         const handleInviteRejected = (data: any) => {
-            if (isHost) alert(`❌ ${data.inviteeHandle} declined your stage invite.`);
+            console.log(`${data.inviteeHandle} declined invite`);
         };
         const handlePodcastEnded = () => {
             if (!isHost) {
@@ -676,14 +826,12 @@ export default function LiveRoom() {
         };
 
         socket.on("receive_invite", handleReceiveInvite);
-        socket.on("invite_status", handleInviteStatus);
         socket.on("invite_accepted", handleInviteAccepted);
         socket.on("invite_rejected", handleInviteRejected);
         socket.on("podcast_ended", handlePodcastEnded);
 
         return () => {
             socket.off("receive_invite", handleReceiveInvite);
-            socket.off("invite_status", handleInviteStatus);
             socket.off("invite_accepted", handleInviteAccepted);
             socket.off("invite_rejected", handleInviteRejected);
             socket.off("podcast_ended", handlePodcastEnded);
@@ -833,40 +981,25 @@ export default function LiveRoom() {
 
                         {/* Right Panel */}
                         <div className="w-full lg:w-96 bg-zinc-950 flex flex-col z-20">
-                            <div className="py-4 border-b border-white/10 flex">
-                                <h3 className="px-4 font-semibold">Live Chat & Controls</h3>
-                            </div>
 
-                            {isHost && (
+                            {isHost ? (
+                                <HostPanel
+                                    sessionId={id}
+                                    socket={socket}
+                                    inviteHandle={inviteHandle}
+                                    setInviteHandle={setInviteHandle}
+                                    handleSendInvite={handleSendInvite}
+                                />
+                            ) : (
                                 <>
-                                    {/* Stage Invite */}
-                                    <div className="p-4 border-b border-zinc-800/60">
-                                        <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">Invite to Stage</h4>
-                                        <div className="flex gap-2">
-                                            <input
-                                                type="text"
-                                                placeholder="@user_handle"
-                                                className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 text-white placeholder:text-zinc-600"
-                                                value={inviteHandle}
-                                                onChange={(e) => setInviteHandle(e.target.value)}
-                                                onKeyDown={(e) => { if (e.key === 'Enter') handleSendInvite(); }}
-                                            />
-                                            <button
-                                                onClick={handleSendInvite}
-                                                disabled={!inviteHandle.trim()}
-                                                className="bg-indigo-600 px-3 py-2 rounded-lg text-sm font-bold hover:bg-indigo-500 disabled:opacity-40 transition-colors"
-                                            >
-                                                Invite
-                                            </button>
-                                        </div>
+                                    <div className="py-3.5 px-4 border-b border-white/10">
+                                        <h3 className="font-semibold text-sm">Live Chat</h3>
                                     </div>
-                                    <GuestManager sessionId={id} isHost={isHost} socket={socket} />
+                                    <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+                                        <CustomChat socket={socket} sessionId={id} />
+                                    </div>
                                 </>
                             )}
-
-                            <div className="flex-1 overflow-hidden relative flex flex-col min-h-0 h-full">
-                                <CustomChat socket={socket} sessionId={id} />
-                            </div>
                         </div>
                     </div>
                 </div>
