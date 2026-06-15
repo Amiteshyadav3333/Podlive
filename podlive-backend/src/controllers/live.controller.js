@@ -48,7 +48,11 @@ exports.createLiveSession = async (req, res) => {
 
     } catch (error) {
         console.error('Create Live Session Error:', error);
-        res.status(500).json({ error: 'Internal Server Error' });
+        res.status(500).json({
+            error: 'Internal Server Error',
+            message: error.message,
+            code: error.code || error.errorCode
+        });
     }
 };
 
