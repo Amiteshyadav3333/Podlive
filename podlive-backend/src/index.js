@@ -22,6 +22,9 @@ if (missingEnvVars.length > 0) {
 }
 
 const app = express();
+
+// Trust Render's reverse proxy (required for express-rate-limit to work correctly)
+app.set('trust proxy', 1);
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
