@@ -839,26 +839,26 @@ export default function LiveRoom() {
 
                             {isHost && (
                                 <>
-                                    <div className="p-4 border-b border-zinc-800">
-                                        <h4 className="text-sm font-bold text-zinc-400 mb-2">Stage Invite</h4>
+                                    {/* Stage Invite */}
+                                    <div className="p-4 border-b border-zinc-800/60">
+                                        <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">Invite to Stage</h4>
                                         <div className="flex gap-2">
                                             <input
                                                 type="text"
                                                 placeholder="@user_handle"
-                                                className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500"
+                                                className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-indigo-500 text-white placeholder:text-zinc-600"
                                                 value={inviteHandle}
                                                 onChange={(e) => setInviteHandle(e.target.value)}
+                                                onKeyDown={(e) => { if (e.key === 'Enter') handleSendInvite(); }}
                                             />
                                             <button
                                                 onClick={handleSendInvite}
-                                                className="bg-indigo-600 px-4 py-2 rounded-lg text-sm font-bold hover:bg-indigo-500"
+                                                disabled={!inviteHandle.trim()}
+                                                className="bg-indigo-600 px-3 py-2 rounded-lg text-sm font-bold hover:bg-indigo-500 disabled:opacity-40 transition-colors"
                                             >
                                                 Invite
                                             </button>
                                         </div>
-                                        <p className="text-xs text-zinc-600 mt-2">
-                                            Enter the viewer's exact handle to pop an invite on their screen.
-                                        </p>
                                     </div>
                                     <GuestManager sessionId={id} isHost={isHost} socket={socket} />
                                 </>

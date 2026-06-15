@@ -1,53 +1,69 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
-const path = require('path');
+const fs = require('fs');
 const subtitleService = require('../services/subtitle.service');
 const hlsService = require('../services/hls.service');
 const s3Service = require('../services/s3.service');
 
+const safeUnlink = (filePath) => {
+    try { if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) { }
+};
+
 exports.uploadVideo = async (req, res) => {
+    let videoFilePath = null;
+    let thumbnailFilePath = null;
+
     try {
         const { title, description, category, sessionId } = req.body;
         const host_user_id = req.user.id;
 
-        if (!title) {
+        if (!title || !title.trim()) {
             return res.status(400).json({ error: 'Title is required' });
         }
 
-        if (!req.files || !req.files.video) {
+        if (!req.files || !req.files.video || req.files.video.length === 0) {
             return res.status(400).json({ error: 'Video file is required' });
         }
 
         const videoFile = req.files.video[0];
         const thumbnailFile = req.files.thumbnail ? req.files.thumbnail[0] : null;
+
+        videoFilePath = videoFile.path;
+        thumbnailFilePath = thumbnailFile ? thumbnailFile.path : null;
+
+        console.log(`[Upload] Starting upload: title="${title}", file="${videoFile.originalname}", size=${(videoFile.size / 1024 / 1024).toFixed(1)}MB`);
+
         const baseUrlForLocal = `${req.protocol}://${req.get('host')}`;
 
-        // Try S3 upload, fallback to local served URL if S3 fails (e.g. quota exceeded)
-        let s3VideoUrl;
+        // ── Upload video to S3, fallback to local ──
+        let videoUrl;
         try {
             const videoS3Key = `videos/${Date.now()}-${videoFile.filename}`;
-            s3VideoUrl = await s3Service.uploadFileToS3(videoFile.path, videoS3Key, videoFile.mimetype);
+            videoUrl = await s3Service.uploadFileToS3(videoFilePath, videoS3Key, videoFile.mimetype || 'video/mp4');
+            console.log(`[Upload] Video uploaded to S3: ${videoUrl}`);
         } catch (s3Err) {
-            console.warn('[Upload] S3 video upload failed, falling back to local:', s3Err.message);
-            s3VideoUrl = `${baseUrlForLocal}/uploads/${videoFile.filename}`;
+            console.warn(`[Upload] S3 video upload failed (${s3Err.message}), using local fallback`);
+            videoUrl = `${baseUrlForLocal}/uploads/${videoFile.filename}`;
         }
 
-        let s3ThumbnailUrl = "https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&q=80&w=1200";
+        // ── Upload thumbnail to S3, fallback to default ──
+        let thumbnailUrl = 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&q=80&w=1200';
         if (thumbnailFile) {
             try {
                 const thumbS3Key = `thumbnails/${Date.now()}-${thumbnailFile.filename}`;
-                s3ThumbnailUrl = await s3Service.uploadFileToS3(thumbnailFile.path, thumbS3Key, thumbnailFile.mimetype);
-                const fs = require('fs');
-                try { fs.unlinkSync(thumbnailFile.path); } catch (e) { }
+                thumbnailUrl = await s3Service.uploadFileToS3(thumbnailFilePath, thumbS3Key, thumbnailFile.mimetype || 'image/jpeg');
+                safeUnlink(thumbnailFilePath);
+                thumbnailFilePath = null;
+                console.log(`[Upload] Thumbnail uploaded to S3: ${thumbnailUrl}`);
             } catch (s3Err) {
-                console.warn('[Upload] S3 thumbnail upload failed, falling back to local:', s3Err.message);
-                s3ThumbnailUrl = `${baseUrlForLocal}/uploads/${thumbnailFile.filename}`;
+                console.warn(`[Upload] S3 thumbnail upload failed (${s3Err.message}), using local fallback`);
+                thumbnailUrl = `${baseUrlForLocal}/uploads/${thumbnailFile.filename}`;
             }
         }
 
+        // ── Save to DB ──
         let newVOD;
         if (sessionId) {
-            // Update existing session
             const existingSession = await prisma.liveSession.findUnique({ where: { id: sessionId } });
             if (!existingSession || existingSession.host_user_id !== host_user_id) {
                 return res.status(403).json({ error: 'Unauthorized or session not found' });
@@ -55,62 +71,62 @@ exports.uploadVideo = async (req, res) => {
             newVOD = await prisma.liveSession.update({
                 where: { id: sessionId },
                 data: {
-                    title,
-                    description,
-                    category,
-                    recording_url: s3VideoUrl,
-                    thumbnail_url: req.files.thumbnail ? s3ThumbnailUrl : existingSession.thumbnail_url, // keep old if not uploaded
-                    is_processing: true
+                    title: title.trim(),
+                    description: description?.trim() || null,
+                    category: category || 'General',
+                    recording_url: videoUrl,
+                    thumbnail_url: thumbnailFile ? thumbnailUrl : existingSession.thumbnail_url,
+                    is_processing: true,
+                    status: 'ended'
                 }
             });
         } else {
-            // Create a fake live session that represents a new standalone VOD
             newVOD = await prisma.liveSession.create({
                 data: {
                     host_user_id,
-                    title,
-                    description,
-                    category,
+                    title: title.trim(),
+                    description: description?.trim() || null,
+                    category: category || 'General',
                     status: 'ended',
                     viewer_count_peak: 0,
-                    recording_url: s3VideoUrl,
-                    thumbnail_url: s3ThumbnailUrl,
+                    recording_url: videoUrl,
+                    thumbnail_url: thumbnailUrl,
                     started_at: new Date(),
                     ended_at: new Date(),
-                    created_at: new Date(),
                     is_processing: true
                 }
             });
         }
 
-        const inputPath = videoFile.path; // Use the path provided by multer directly
-        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        console.log(`[Upload] DB record created: ${newVOD.id}`);
 
-        // Send success response EARLY to avoid timeout issues during heavy processing
+        // ── Respond immediately (don't wait for HLS/subtitles) ──
         res.status(201).json({
-            message: 'Video upload successful. Subtitles and HLS processing started in background.',
+            message: 'Video uploaded. Processing started in background.',
             video: newVOD
         });
 
-        // Trigger background AI task for subtitles safely
-        try {
-            subtitleService.processSubtitles(newVOD.id, inputPath, baseUrl);
-        } catch (subError) {
-            console.error("Subtitle trigger failed:", subError);
-        }
+        // ── Background processing ──
+        // Subtitles
+        subtitleService.processSubtitles(newVOD.id, videoFilePath, baseUrlForLocal).catch(err => {
+            console.error('[Upload] Subtitle processing failed:', err.message);
+        });
 
-        // Trigger background HLS Transcoding safely
-        hlsService.processHLS(newVOD.id, inputPath, baseUrl).catch(err => {
-            console.error("HLS Processing failed in background:", err);
+        // HLS transcoding
+        hlsService.processHLS(newVOD.id, videoFilePath, baseUrlForLocal).catch(err => {
+            console.error('[Upload] HLS processing failed:', err.message);
         });
 
     } catch (error) {
-        console.error('Upload Controller Comprehensive Error:', error);
-        // Ensure we only send one response
+        console.error('[Upload] Controller error:', error.message, error.stack);
+        // Cleanup temp files on error
+        safeUnlink(videoFilePath);
+        safeUnlink(thumbnailFilePath);
+
         if (!res.headersSent) {
-            res.status(500).json({ 
-                error: 'Failed to upload or process video',
-                details: error.message 
+            res.status(500).json({
+                error: 'Failed to upload video',
+                details: error.message
             });
         }
     }

@@ -5,36 +5,63 @@ const authMiddleware = require('../middleware/auth.middleware');
 const multer = require('multer');
 const path = require('path');
 const crypto = require('crypto');
-
-// Configure Multer
 const os = require('os');
 const fs = require('fs');
 
-// Use /uploads inside project if exists (local), else fallback to /tmp (Render/cloud)
-const localUploads = path.join(__dirname, '../../uploads');
-const uploadDir = fs.existsSync(path.dirname(localUploads))
-    ? (fs.mkdirSync(localUploads, { recursive: true }), localUploads)
-    : (fs.mkdirSync(path.join(os.tmpdir(), 'podlive-uploads'), { recursive: true }), path.join(os.tmpdir(), 'podlive-uploads'));
+// Always use /tmp on cloud (Render doesn't have persistent disk)
+const uploadDir = path.join(os.tmpdir(), 'podlive-uploads');
+if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+}
 
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadDir);
-    },
+    destination: (req, file, cb) => cb(null, uploadDir),
     filename: (req, file, cb) => {
         const uniqueSuffix = Date.now() + '-' + crypto.randomBytes(4).toString('hex');
-        const ext = path.extname(file.originalname);
+        const ext = path.extname(file.originalname) || (file.mimetype.includes('mp4') ? '.mp4' : '.webm');
         cb(null, file.fieldname + '-' + uniqueSuffix + ext);
     }
 });
 
 const upload = multer({
-    storage: storage,
-    limits: { fileSize: 1024 * 1024 * 1024 } // 1GB max limit
+    storage,
+    limits: { fileSize: 2 * 1024 * 1024 * 1024 }, // 2GB
+    fileFilter: (req, file, cb) => {
+        if (file.fieldname === 'video') {
+            const allowed = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'application/octet-stream'];
+            // Accept if mimetype matches OR extension is video
+            const ext = path.extname(file.originalname).toLowerCase();
+            const validExt = ['.mp4', '.webm', '.mov', '.avi', '.mkv'].includes(ext);
+            if (allowed.includes(file.mimetype) || validExt) return cb(null, true);
+            return cb(new Error('Only video files are allowed'));
+        }
+        if (file.fieldname === 'thumbnail') {
+            if (file.mimetype.startsWith('image/')) return cb(null, true);
+            return cb(new Error('Only image files allowed for thumbnail'));
+        }
+        cb(null, true);
+    }
 });
+
+// Multer error handler middleware
+const handleMulterError = (err, req, res, next) => {
+    if (err && err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: 'File too large. Max 2GB allowed.' });
+    }
+    if (err) {
+        return res.status(400).json({ error: err.message || 'File upload error' });
+    }
+    next();
+};
 
 router.post('/',
     authMiddleware,
-    upload.fields([{ name: 'video', maxCount: 1 }, { name: 'thumbnail', maxCount: 1 }]),
+    (req, res, next) => {
+        upload.fields([{ name: 'video', maxCount: 1 }, { name: 'thumbnail', maxCount: 1 }])(req, res, (err) => {
+            if (err) return handleMulterError(err, req, res, next);
+            next();
+        });
+    },
     uploadController.uploadVideo
 );
 
