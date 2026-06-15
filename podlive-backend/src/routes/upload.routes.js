@@ -10,11 +10,11 @@ const crypto = require('crypto');
 const os = require('os');
 const fs = require('fs');
 
-// Configure Multer to use system temp directory (Safer for Render/Cloud platforms)
-const uploadDir = path.join(os.tmpdir(), 'podlive-uploads');
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-}
+// Use /uploads inside project if exists (local), else fallback to /tmp (Render/cloud)
+const localUploads = path.join(__dirname, '../../uploads');
+const uploadDir = fs.existsSync(path.dirname(localUploads))
+    ? (fs.mkdirSync(localUploads, { recursive: true }), localUploads)
+    : (fs.mkdirSync(path.join(os.tmpdir(), 'podlive-uploads'), { recursive: true }), path.join(os.tmpdir(), 'podlive-uploads'));
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {

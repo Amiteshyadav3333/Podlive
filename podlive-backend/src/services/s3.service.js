@@ -30,7 +30,16 @@ exports.uploadFileToS3 = async (filePath, destinationKey, contentType) => {
         await upload.done();
         return `${process.env.S3_PUBLIC_URL}/${destinationKey}`;
     } catch (error) {
-        console.error("S3 Upload Error for file " + filePath + ":", error);
+        const statusCode = error?.$metadata?.httpStatusCode || error?.statusCode;
+        if (statusCode === 402) {
+            console.error(`[S3] Storage quota exceeded (402). Supabase storage limit hit. Key: ${destinationKey}`);
+            throw new Error('Storage quota exceeded. Please upgrade your Supabase storage plan.');
+        }
+        if (statusCode === 403) {
+            console.error(`[S3] Access denied (403). Check S3 credentials. Key: ${destinationKey}`);
+            throw new Error('Storage access denied. Check S3 credentials.');
+        }
+        console.error("S3 Upload Error for file " + filePath + ":", error.message || error);
         throw error;
     }
 };
@@ -50,7 +59,12 @@ exports.uploadBufferToS3 = async (buffer, destinationKey, contentType) => {
         await upload.done();
         return `${process.env.S3_PUBLIC_URL}/${destinationKey}`;
     } catch (error) {
-        console.error("S3 Buffer Upload Error:", error);
+        const statusCode = error?.$metadata?.httpStatusCode || error?.statusCode;
+        if (statusCode === 402) {
+            console.error(`[S3] Storage quota exceeded (402) for buffer upload. Key: ${destinationKey}`);
+            throw new Error('Storage quota exceeded.');
+        }
+        console.error("S3 Buffer Upload Error:", error.message || error);
         throw error;
     }
 };

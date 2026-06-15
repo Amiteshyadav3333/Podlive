@@ -56,7 +56,12 @@ app.use((req, res, next) => {
 
 const path = require('path');
 
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+// Serve local uploads (fallback when S3 is unavailable)
+const uploadsDir = path.join(__dirname, '../uploads');
+if (!require('fs').existsSync(uploadsDir)) {
+  require('fs').mkdirSync(uploadsDir, { recursive: true });
+}
+app.use('/uploads', express.static(uploadsDir));
 
 app.get('/', (req, res) => {
   res.send({ message: 'PodLive Server is running' });

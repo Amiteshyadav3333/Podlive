@@ -20,18 +20,29 @@ exports.uploadVideo = async (req, res) => {
 
         const videoFile = req.files.video[0];
         const thumbnailFile = req.files.thumbnail ? req.files.thumbnail[0] : null;
+        const baseUrlForLocal = `${req.protocol}://${req.get('host')}`;
 
-        // Use S3
-        const videoS3Key = `videos/${Date.now()}-${videoFile.filename}`;
-        const s3VideoUrl = await s3Service.uploadFileToS3(videoFile.path, videoS3Key, videoFile.mimetype);
+        // Try S3 upload, fallback to local served URL if S3 fails (e.g. quota exceeded)
+        let s3VideoUrl;
+        try {
+            const videoS3Key = `videos/${Date.now()}-${videoFile.filename}`;
+            s3VideoUrl = await s3Service.uploadFileToS3(videoFile.path, videoS3Key, videoFile.mimetype);
+        } catch (s3Err) {
+            console.warn('[Upload] S3 video upload failed, falling back to local:', s3Err.message);
+            s3VideoUrl = `${baseUrlForLocal}/uploads/${videoFile.filename}`;
+        }
 
         let s3ThumbnailUrl = "https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&q=80&w=1200";
         if (thumbnailFile) {
-            const thumbS3Key = `thumbnails/${Date.now()}-${thumbnailFile.filename}`;
-            s3ThumbnailUrl = await s3Service.uploadFileToS3(thumbnailFile.path, thumbS3Key, thumbnailFile.mimetype);
-            // safe to delete local thumbnail after s3 upload
-            const fs = require('fs');
-            try { fs.unlinkSync(thumbnailFile.path); } catch (e) { }
+            try {
+                const thumbS3Key = `thumbnails/${Date.now()}-${thumbnailFile.filename}`;
+                s3ThumbnailUrl = await s3Service.uploadFileToS3(thumbnailFile.path, thumbS3Key, thumbnailFile.mimetype);
+                const fs = require('fs');
+                try { fs.unlinkSync(thumbnailFile.path); } catch (e) { }
+            } catch (s3Err) {
+                console.warn('[Upload] S3 thumbnail upload failed, falling back to local:', s3Err.message);
+                s3ThumbnailUrl = `${baseUrlForLocal}/uploads/${thumbnailFile.filename}`;
+            }
         }
 
         let newVOD;

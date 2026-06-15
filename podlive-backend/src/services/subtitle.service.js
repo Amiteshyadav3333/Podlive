@@ -80,18 +80,22 @@ exports.processSubtitles = async (sessionId, videoPath, baseUrl) => {
             const fileName = `subtitle-${sessionId}-${lang.code}-${crypto.randomBytes(4).toString('hex')}.vtt`;
             const s3Key = `subtitles/${fileName}`;
 
-            // Upload directly to S3 from buffer
-            const vtt_url = await s3Service.uploadBufferToS3(Buffer.from(vttContent, 'utf-8'), s3Key, 'text/vtt');
+            try {
+                // Upload directly to S3 from buffer
+                const vtt_url = await s3Service.uploadBufferToS3(Buffer.from(vttContent, 'utf-8'), s3Key, 'text/vtt');
 
-            await prisma.subtitle.create({
-                data: {
-                    session_id: sessionId,
-                    language: lang.code,
-                    label: lang.label,
-                    vtt_url: vtt_url
-                }
-            });
-            console.log(`[AI Engine] Generated ${lang.label} subtitle for ${sessionId}`);
+                await prisma.subtitle.create({
+                    data: {
+                        session_id: sessionId,
+                        language: lang.code,
+                        label: lang.label,
+                        vtt_url: vtt_url
+                    }
+                });
+                console.log(`[AI Engine] Generated ${lang.label} subtitle for ${sessionId}`);
+            } catch (subErr) {
+                console.warn(`[AI Engine] Skipping ${lang.label} subtitle (S3 failed): ${subErr.message}`);
+            }
         }
         console.log(`[AI Engine] Finished all subtitles for session: ${sessionId}`);
 
