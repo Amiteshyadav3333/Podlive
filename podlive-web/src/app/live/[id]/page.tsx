@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
+
 import { useParams, useRouter } from "next/navigation";
-import { Mic, MicOff, PhoneOff, Users, MessageSquare, Loader2, Share2, Circle } from "lucide-react";
+import { Mic, MicOff, VideoIcon, VideoOff, PhoneOff, Users, MessageSquare, Loader2, Share2, Circle, UserX } from "lucide-react";
 import {
     LiveKitRoom,
     RoomAudioRenderer,
@@ -15,6 +16,7 @@ import {
     StartAudio,
     useLocalParticipant
 } from "@livekit/components-react";
+
 import { Track } from "livekit-client";
 import "@livekit/components-styles";
 import axios from "axios";
@@ -376,7 +378,7 @@ function CustomChat({ socket, sessionId }: { socket: any; sessionId: string }) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// GuestSocketListener
+// GuestSocketListener — listens for host commands on guest side
 // ─────────────────────────────────────────────────────────────
 function GuestSocketListener({ socket }: { socket: any }) {
     const { localParticipant } = useLocalParticipant();
@@ -390,25 +392,46 @@ function GuestSocketListener({ socket }: { socket: any }) {
         const handleMuted = () => {
             if (localParticipant) {
                 localParticipant.setMicrophoneEnabled(false);
-                alert("The host has muted your microphone forcefully.");
+                alert("🔇 The host has muted your microphone.");
+            }
+        };
+        const handleCameraDisabled = () => {
+            if (localParticipant) {
+                localParticipant.setCameraEnabled(false);
+                alert("📷 The host has turned off your camera.");
             }
         };
         socket.on("guest_removed", handleRemoved);
         socket.on("guest_muted", handleMuted);
+        socket.on("guest_camera_disabled", handleCameraDisabled);
         return () => {
             socket.off("guest_removed", handleRemoved);
             socket.off("guest_muted", handleMuted);
+            socket.off("guest_camera_disabled", handleCameraDisabled);
         };
     }, [socket, localParticipant]);
 
     return null;
 }
 
+
 // ─────────────────────────────────────────────────────────────
-// GuestManager
+// GuestManager — host control panel for on-stage guests
 // ─────────────────────────────────────────────────────────────
 function GuestManager({ sessionId, isHost, socket }: { sessionId: string; isHost: boolean; socket: any }) {
     const [guests, setGuests] = useState<any[]>([]);
+    const [loadingStates, setLoadingStates] = useState<Record<string, Record<string, boolean>>>({});
+    const participants = useParticipants();
+
+    // Map LiveKit participant identity (= @unique_handle) → participant object
+    const participantMap = useMemo(() => {
+        const map = new Map<string, any>();
+        participants.forEach((p) => map.set(p.identity, p));
+        return map;
+    }, [participants]);
+
+    const setLoading = (userId: string, action: string, val: boolean) =>
+        setLoadingStates((prev) => ({ ...prev, [userId]: { ...(prev[userId] || {}), [action]: val } }));
 
     const fetchGuests = async () => {
         try {
@@ -430,19 +453,32 @@ function GuestManager({ sessionId, isHost, socket }: { sessionId: string; isHost
         return () => clearInterval(interval);
     }, [sessionId, isHost]);
 
-    const handleMute = async (userId: string) => {
+    const handleMuteMic = async (userId: string) => {
+        setLoading(userId, "mic", true);
         try {
             const lsToken = localStorage.getItem("accessToken");
-            await axios.post(
-                buildApiUrl(`/api/stage/guest/${sessionId}/${userId}/mute`),
-                { muted: true },
-                { headers: { Authorization: `Bearer ${lsToken}` } }
-            );
+            await axios.post(buildApiUrl(`/api/stage/guest/${sessionId}/${userId}/mute`), { muted: true }, {
+                headers: { Authorization: `Bearer ${lsToken}` },
+            });
             if (socket) socket.emit("mute_guest", { guestId: userId });
         } catch (e) { console.error(e); }
+        finally { setLoading(userId, "mic", false); }
+    };
+
+    const handleDisableCamera = async (userId: string) => {
+        setLoading(userId, "camera", true);
+        try {
+            const lsToken = localStorage.getItem("accessToken");
+            await axios.post(buildApiUrl(`/api/stage/guest/${sessionId}/${userId}/disable-camera`), {}, {
+                headers: { Authorization: `Bearer ${lsToken}` },
+            });
+            if (socket) socket.emit("disable_camera_guest", { guestId: userId });
+        } catch (e) { console.error(e); }
+        finally { setLoading(userId, "camera", false); }
     };
 
     const handleRemove = async (userId: string) => {
+        setLoading(userId, "remove", true);
         try {
             const lsToken = localStorage.getItem("accessToken");
             await axios.delete(buildApiUrl(`/api/stage/guest/${sessionId}/${userId}`), {
@@ -451,45 +487,101 @@ function GuestManager({ sessionId, isHost, socket }: { sessionId: string; isHost
             if (socket) socket.emit("remove_guest", { guestId: userId });
             fetchGuests();
         } catch (e) { console.error(e); }
+        finally { setLoading(userId, "remove", false); }
     };
 
     if (!isHost) return null;
 
     return (
         <div className="p-4 border-b border-zinc-800">
-            <h4 className="text-sm font-bold text-zinc-400 mb-2">Stage Guests</h4>
+            <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">On Stage</h4>
             {guests.length === 0 ? (
-                <p className="text-xs text-zinc-500 italic">No guests currently on stage.</p>
+                <p className="text-xs text-zinc-600 italic">No guests on stage yet.</p>
             ) : (
                 <div className="flex flex-col gap-2">
-                    {guests.map((g) => (
-                        <div key={g.id} className="flex items-center justify-between bg-zinc-900 p-2 rounded-lg text-sm border border-white/5">
-                            <span className="font-semibold text-white max-w-[120px] truncate" title={g.invitee?.unique_handle}>
-                                @{g.invitee?.unique_handle}
-                            </span>
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => handleMute(g.invitee_id)}
-                                    className="p-1.5 bg-zinc-800 rounded hover:bg-zinc-700 text-indigo-400"
-                                    title="Mute Mic"
-                                >
-                                    <MicOff className="w-4 h-4" />
-                                </button>
-                                <button
-                                    onClick={() => handleRemove(g.invitee_id)}
-                                    className="p-1.5 bg-red-500/10 rounded hover:bg-red-500/20 text-red-500"
-                                    title="Remove from Stage"
-                                >
-                                    <PhoneOff className="w-4 h-4" />
-                                </button>
+                    {guests.map((g) => {
+                        const handle = g.invitee?.unique_handle ?? "";
+                        const participant = participantMap.get(handle);
+                        const isMicMuted = participant ? !participant.isMicrophoneEnabled : true;
+                        const isCameraOff = participant ? !participant.isCameraEnabled : true;
+                        const isOnline = !!participant;
+                        const ls = loadingStates[g.invitee_id] || {};
+
+                        return (
+                            <div key={g.id} className="bg-zinc-900 px-3 py-2.5 rounded-xl border border-white/5">
+                                {/* Guest name + online indicator */}
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <span
+                                            className={`w-2 h-2 rounded-full flex-shrink-0 ${isOnline ? "bg-green-500 animate-pulse" : "bg-zinc-600"}`}
+                                            title={isOnline ? "Live on stage" : "Not connected"}
+                                        />
+                                        <span className="text-sm font-semibold text-white truncate" title={handle}>
+                                            @{handle.replace("@", "")}
+                                        </span>
+                                    </div>
+                                    {/* Status badges */}
+                                    <div className="flex gap-1">
+                                        {isMicMuted && (
+                                            <span className="text-[10px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded font-medium">MIC OFF</span>
+                                        )}
+                                        {isCameraOff && (
+                                            <span className="text-[10px] bg-orange-500/20 text-orange-400 px-1.5 py-0.5 rounded font-medium">CAM OFF</span>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Action buttons */}
+                                <div className="flex items-center gap-1.5">
+                                    {/* Mute Mic */}
+                                    <button
+                                        onClick={() => handleMuteMic(g.invitee_id)}
+                                        disabled={!!ls.mic || isMicMuted}
+                                        title={isMicMuted ? "Mic already muted" : "Mute microphone"}
+                                        className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-40 ${
+                                            isMicMuted
+                                                ? "bg-red-500/10 text-red-400 border border-red-500/20 cursor-not-allowed"
+                                                : "bg-zinc-800 text-zinc-300 hover:bg-red-500/20 hover:text-red-400 border border-transparent"
+                                        }`}
+                                    >
+                                        {ls.mic ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isMicMuted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                                        {isMicMuted ? "Muted" : "Mute"}
+                                    </button>
+
+                                    {/* Disable Camera */}
+                                    <button
+                                        onClick={() => handleDisableCamera(g.invitee_id)}
+                                        disabled={!!ls.camera || isCameraOff}
+                                        title={isCameraOff ? "Camera already off" : "Turn off camera"}
+                                        className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-semibold transition-all disabled:opacity-40 ${
+                                            isCameraOff
+                                                ? "bg-orange-500/10 text-orange-400 border border-orange-500/20 cursor-not-allowed"
+                                                : "bg-zinc-800 text-zinc-300 hover:bg-orange-500/20 hover:text-orange-400 border border-transparent"
+                                        }`}
+                                    >
+                                        {ls.camera ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : isCameraOff ? <VideoOff className="w-3.5 h-3.5" /> : <VideoIcon className="w-3.5 h-3.5" />}
+                                        {isCameraOff ? "Cam Off" : "Camera"}
+                                    </button>
+
+                                    {/* Kick */}
+                                    <button
+                                        onClick={() => handleRemove(g.invitee_id)}
+                                        disabled={!!ls.remove}
+                                        title="Remove from stage"
+                                        className="p-1.5 rounded-lg bg-zinc-800 text-zinc-400 hover:bg-red-600 hover:text-white border border-transparent transition-all disabled:opacity-50"
+                                    >
+                                        {ls.remove ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UserX className="w-3.5 h-3.5" />}
+                                    </button>
+                                </div>
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             )}
         </div>
     );
 }
+
 
 // ─────────────────────────────────────────────────────────────
 // Main LiveRoom page

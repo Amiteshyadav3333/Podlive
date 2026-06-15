@@ -77,6 +77,13 @@ module.exports = (io) => {
             }
         });
 
+        socket.on('disable_camera_guest', ({ guestId }) => {
+            if (activeUsers.has(guestId)) {
+                io.to(activeUsers.get(guestId)).emit('guest_camera_disabled');
+            }
+        });
+
+
         // Chat functionality
         socket.on('join_chat_room', (sessionId) => {
             socket.join(sessionId);
