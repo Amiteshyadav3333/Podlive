@@ -14,7 +14,8 @@ import {
     ParticipantTile,
     ControlBar,
     StartAudio,
-    useLocalParticipant
+    useLocalParticipant,
+    TrackToggle
 } from "@livekit/components-react";
 
 import { Track } from "livekit-client";
@@ -263,6 +264,7 @@ function RoomHeader({
 // StageLayout
 // ─────────────────────────────────────────────────────────────
 function StageLayout({ isBroadcaster }: { isBroadcaster: boolean }) {
+    const { localParticipant, isScreenShareEnabled } = useLocalParticipant();
     const allTracks = useTracks(
         [
             { source: Track.Source.Camera, withPlaceholder: true },
@@ -285,8 +287,33 @@ function StageLayout({ isBroadcaster }: { isBroadcaster: boolean }) {
             </GridLayout>
 
             {isBroadcaster && (
-                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50">
-                    <ControlBar controls={{ camera: true, microphone: true, screenShare: true, leave: false, chat: false }} />
+                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-3 w-full max-w-sm sm:max-w-md">
+                    {!isScreenShareEnabled && (
+                        <div className="bg-zinc-950/90 text-zinc-300 text-xs px-4 py-2.5 rounded-2xl border border-indigo-500/30 shadow-2xl text-center backdrop-blur-md max-w-[90%] transition-all duration-300 select-none animate-bounce">
+                            <p className="font-semibold text-indigo-400 mb-0.5">💡 Video Sound Tip</p>
+                            <p className="text-[11px] leading-relaxed text-zinc-400">
+                                Screenshare par video sound sunane ke liye <span className="text-white font-medium">"Chrome Tab"</span> ya <span className="text-white font-medium">"Entire Screen"</span> select karein aur popup me <span className="text-white font-medium">"Share audio"</span> ko tick karein.
+                            </p>
+                        </div>
+                    )}
+
+                    <div className="flex items-center gap-2 bg-zinc-900/90 p-1.5 rounded-xl border border-white/10 shadow-2xl backdrop-blur-md">
+                        <ControlBar controls={{ camera: true, microphone: true, screenShare: false, leave: false, chat: false }} />
+                        <TrackToggle
+                            source={Track.Source.ScreenShare}
+                            captureOptions={{
+                                audio: {
+                                    echoCancellation: false,
+                                    noiseSuppression: false,
+                                    autoGainControl: false,
+                                },
+                                systemAudio: "include",
+                            }}
+                            showIcon={true}
+                        >
+                            {isScreenShareEnabled ? "Stop screen share" : "Share screen"}
+                        </TrackToggle>
+                    </div>
                 </div>
             )}
 
