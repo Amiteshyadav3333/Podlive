@@ -4,6 +4,7 @@ import { useEffect, useState, createContext, useContext } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useRouter } from 'next/navigation';
 import { getSocketUrl } from '@/lib/api';
+import axios from 'axios';
 
 interface SocketContextData {
     socket: Socket | null;
@@ -19,6 +20,56 @@ export default function SocketProvider({ children }: { children: React.ReactNode
     const router = useRouter();
 
     useEffect(() => {
+        // Intercept native fetch
+        const originalFetch = window.fetch;
+        window.fetch = async (...args) => {
+            const res = await originalFetch(...args);
+            if (res.status === 401) {
+                const currentPath = window.location.pathname;
+                if (!currentPath.includes('/login') && !currentPath.includes('/register')) {
+                    localStorage.removeItem('accessToken');
+                    localStorage.removeItem('refreshToken');
+                    localStorage.removeItem('user');
+                    window.location.href = '/login?expired=true';
+                }
+            }
+            return res;
+        };
+
+        // Intercept Axios
+        const axiosInterceptor = axios.interceptors.response.use(
+            response => response,
+            error => {
+                if (error.response && error.response.status === 401) {
+                    const currentPath = window.location.pathname;
+                    if (!currentPath.includes('/login') && !currentPath.includes('/register')) {
+                        localStorage.removeItem('accessToken');
+                        localStorage.removeItem('refreshToken');
+                        localStorage.removeItem('user');
+                        window.location.href = '/login?expired=true';
+                    }
+                }
+                return Promise.reject(error);
+            }
+        );
+
+        // Intercept XMLHttpRequest (e.g. video uploads)
+        const originalSend = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.send = function(...args) {
+            this.addEventListener('load', () => {
+                if (this.status === 401) {
+                    const currentPath = window.location.pathname;
+                    if (!currentPath.includes('/login') && !currentPath.includes('/register')) {
+                        localStorage.removeItem('accessToken');
+                        localStorage.removeItem('refreshToken');
+                        localStorage.removeItem('user');
+                        window.location.href = '/login?expired=true';
+                    }
+                }
+            });
+            return originalSend.apply(this, args);
+        };
+
         const token = localStorage.getItem('accessToken');
         const userData = localStorage.getItem('user');
 
@@ -39,6 +90,9 @@ export default function SocketProvider({ children }: { children: React.ReactNode
         setSocket(newSocket);
 
         return () => {
+            window.fetch = originalFetch;
+            axios.interceptors.response.eject(axiosInterceptor);
+            XMLHttpRequest.prototype.send = originalSend;
             newSocket.disconnect();
         };
     }, []);

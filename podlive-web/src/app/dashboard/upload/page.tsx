@@ -13,17 +13,10 @@ export default function UploadPage() {
   const [formData, setFormData] = useState({ title: "", description: "", category: "Technology" });
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
-  const [sessionId, setSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
   const [uploadProgress, setUploadProgress] = useState(0);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const sid = params.get("sessionId");
-    if (sid) setSessionId(sid);
-  }, []);
 
   const handleUpload = async () => {
     if (!formData.title || !videoFile) { setError("Title and video file are required."); return; }
@@ -38,7 +31,6 @@ export default function UploadPage() {
       data.append("category", formData.category);
       data.append("video", videoFile);
       if (thumbnailFile) data.append("thumbnail", thumbnailFile);
-      if (sessionId) data.append("sessionId", sessionId);
 
       // Simulate progress (XHR for real progress tracking)
       const xhr = new XMLHttpRequest();
@@ -72,7 +64,7 @@ export default function UploadPage() {
       <DashboardSidebar />
       <div className="md:ml-60">
         <div className="sticky top-0 z-40 border-b border-white/[0.06] bg-[#080808]/90 backdrop-blur-xl px-6 h-14 flex items-center">
-          <h1 className="font-bold text-base">{sessionId ? "Upload Recording" : "Upload Video"}</h1>
+          <h1 className="font-bold text-base">Upload Video</h1>
         </div>
 
         <div className="p-6 max-w-4xl">

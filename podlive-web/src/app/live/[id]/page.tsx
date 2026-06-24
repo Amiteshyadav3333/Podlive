@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 
 import { useParams, useRouter } from "next/navigation";
-import { Mic, MicOff, VideoIcon, VideoOff, PhoneOff, Users, MessageSquare, Loader2, Share2, Circle, UserX } from "lucide-react";
+import { Mic, MicOff, VideoIcon, VideoOff, PhoneOff, Users, MessageSquare, Loader2, Share2, Circle, UserX, Maximize, Eye, EyeOff } from "lucide-react";
 import {
     LiveKitRoom,
     RoomAudioRenderer,
@@ -210,49 +210,57 @@ function RoomHeader({
     };
 
     return (
-        <header className="h-16 px-6 border-b border-white/10 flex flex-row items-center justify-between shrink-0 bg-zinc-950 z-50 relative">
-            <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2 bg-red-500/20 text-red-500 px-3 py-1.5 rounded-md text-sm font-bold">
-                    <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+        <header className="h-16 px-3 sm:px-6 border-b border-white/10 flex flex-row items-center justify-between shrink-0 bg-zinc-950 z-50 relative">
+            <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+                <div className="flex items-center gap-1.5 bg-red-500/20 text-red-500 px-2 py-1 sm:px-3 sm:py-1.5 rounded-md text-xs sm:text-sm font-bold shrink-0">
+                    <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-red-500 animate-pulse"></span>
                     LIVE
                 </div>
-                <span className="font-semibold px-4 border-l border-white/10 text-zinc-300">
-                    Room: {roomName || id}
+                <span className="font-semibold px-2 sm:px-4 border-l border-white/10 text-zinc-300 text-xs sm:text-sm truncate max-w-[100px] sm:max-w-[200px] md:max-w-none">
+                    {roomName || id}
                 </span>
 
                 {/* Recording indicator — only visible to host when recording */}
                 {isHost && isRecording && (
-                    <div className="flex items-center gap-1.5 bg-rose-500/10 border border-rose-500/20 text-rose-400 px-3 py-1 rounded-full text-xs font-semibold">
+                    <div className="flex items-center gap-1 bg-rose-500/10 border border-rose-500/20 text-rose-400 px-2 py-1 rounded-full text-[10px] sm:text-xs font-semibold shrink-0">
                         <Circle className="w-2.5 h-2.5 fill-rose-500 text-rose-500 animate-pulse" />
-                        Recording locally
+                        <span className="hidden md:inline">Recording locally</span>
                     </div>
                 )}
             </div>
 
-            <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2 sm:gap-4 md:gap-6 shrink-0">
                 <button
                     onClick={handleShare}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600/10 hover:bg-indigo-600/20 rounded-lg font-medium text-indigo-400 transition-all border border-indigo-500/20 text-sm"
+                    className="flex items-center gap-1.5 px-2 py-1.5 sm:px-3 sm:py-1.5 bg-indigo-600/10 hover:bg-indigo-600/20 rounded-lg font-medium text-indigo-400 transition-all border border-indigo-500/20 text-xs sm:text-sm"
                 >
-                    <Share2 className="w-4 h-4" />
-                    Share
+                    <Share2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    <span className="hidden sm:inline">Share</span>
                 </button>
-                <div className="flex items-center gap-2 text-zinc-400 font-semibold px-4 py-1.5 rounded-full bg-zinc-900 border border-zinc-800">
-                    <Users className="w-4 h-4 text-indigo-400" />
+                <div className="flex items-center gap-1.5 text-zinc-400 font-semibold px-2 py-1.5 sm:px-4 sm:py-1.5 rounded-full bg-zinc-900 border border-zinc-800 text-xs sm:text-sm">
+                    <Users className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-400" />
                     <span>{viewerCount}</span>
                 </div>
                 <button
                     onClick={handleEndStream}
                     disabled={isSaving}
-                    className="bg-red-600 hover:bg-red-500 px-4 py-2 rounded-lg font-bold flex items-center gap-2 transition-colors border-none cursor-pointer disabled:opacity-50"
+                    className="bg-red-600 hover:bg-red-500 px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg font-bold flex items-center gap-1.5 transition-colors border-none cursor-pointer disabled:opacity-50 text-xs sm:text-sm"
                 >
                     {isSaving ? (
                         <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Saving…
+                            <Loader2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 animate-spin" />
+                            <span>Saving…</span>
+                        </>
+                    ) : isHost ? (
+                        <>
+                            <span className="hidden sm:inline">End Podcast</span>
+                            <span className="sm:hidden">End</span>
                         </>
                     ) : (
-                        "End Podcast"
+                        <>
+                            <span className="hidden sm:inline">Leave Room</span>
+                            <span className="sm:hidden">Leave</span>
+                        </>
                     )}
                 </button>
             </div>
@@ -263,15 +271,22 @@ function RoomHeader({
 // ─────────────────────────────────────────────────────────────
 // StageLayout
 // ─────────────────────────────────────────────────────────────
-function StageLayout({ isBroadcaster }: { isBroadcaster: boolean }) {
+function StageLayout({
+    isBroadcaster,
+    allTracks,
+    hiddenTracks,
+    setHiddenTracks,
+    focusedTrackId,
+    setFocusedTrackId
+}: {
+    isBroadcaster: boolean;
+    allTracks: any[];
+    hiddenTracks: string[];
+    setHiddenTracks: React.Dispatch<React.SetStateAction<string[]>>;
+    focusedTrackId: string | null;
+    setFocusedTrackId: React.Dispatch<React.SetStateAction<string | null>>;
+}) {
     const { localParticipant, isScreenShareEnabled } = useLocalParticipant();
-    const allTracks = useTracks(
-        [
-            { source: Track.Source.Camera, withPlaceholder: true },
-            { source: Track.Source.ScreenShare, withPlaceholder: false },
-        ],
-        { onlySubscribed: false }
-    );
 
     const activeTracks = allTracks.filter((t) => {
         const p = t.participant;
@@ -280,18 +295,128 @@ function StageLayout({ isBroadcaster }: { isBroadcaster: boolean }) {
         return false;
     });
 
+    const visibleTracks = activeTracks.filter((t) => {
+        const trackId = `${t.participant.identity}-${t.source}`;
+        return !hiddenTracks.includes(trackId);
+    });
+
+    const focusedTrack = visibleTracks.find(
+        (t) => `${t.participant.identity}-${t.source}` === focusedTrackId
+    );
+
+    const toggleHide = (trackId: string) => {
+        setHiddenTracks((prev) => [...prev, trackId]);
+        if (focusedTrackId === trackId) {
+            setFocusedTrackId(null);
+        }
+    };
+
+    const toggleFocus = (trackId: string) => {
+        if (focusedTrackId === trackId) {
+            setFocusedTrackId(null);
+        } else {
+            setFocusedTrackId(trackId);
+        }
+    };
+
+    const isFocusedMode = !!focusedTrack;
+    const otherTracks = visibleTracks.filter(
+        (t) => `${t.participant.identity}-${t.source}` !== focusedTrackId
+    );
+
+    const renderTileOverlay = (t: any) => {
+        const trackId = `${t.participant.identity}-${t.source}`;
+        const isFocused = focusedTrackId === trackId;
+        return (
+            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-30 flex items-center gap-1.5 bg-zinc-950/80 p-1 rounded-lg border border-white/10 backdrop-blur-md">
+                <button
+                    onClick={() => toggleFocus(trackId)}
+                    title={isFocused ? "Unpin Stream" : "Pin Stream"}
+                    className={`p-1.5 rounded-md hover:bg-zinc-800 transition-colors cursor-pointer ${
+                        isFocused ? "text-indigo-400" : "text-zinc-400"
+                    }`}
+                >
+                    <Maximize className="w-3.5 h-3.5" />
+                </button>
+                <button
+                    onClick={() => toggleHide(trackId)}
+                    title="Hide Stream"
+                    className="p-1.5 rounded-md hover:bg-red-500/20 hover:text-red-400 text-zinc-400 transition-colors cursor-pointer"
+                >
+                    <Eye className="w-3.5 h-3.5" />
+                </button>
+            </div>
+        );
+    };
+
     return (
-        <div className="flex-1 p-6 flex flex-col relative border-r border-white/10 bg-black/50 overflow-hidden">
-            <GridLayout tracks={activeTracks} style={{ height: "calc(100% - 60px)", width: "100%" }}>
-                <ParticipantTile />
-            </GridLayout>
+        <div className="flex-1 p-2 sm:p-4 md:p-6 flex flex-col relative border-r border-white/10 bg-black/50 overflow-hidden h-[38vh] lg:h-auto w-full shrink-0 border-r-0 lg:border-r border-b lg:border-b-0">
+            <div className="flex-1 relative w-full h-full min-h-0 flex items-center justify-center mb-16 lg:mb-20">
+                {isFocusedMode ? (
+                    <div className="w-full h-full relative flex items-center justify-center">
+                        {/* Focused Main Stream */}
+                        <div className="w-full h-full relative group rounded-2xl overflow-hidden border border-white/10 bg-zinc-950">
+                            <ParticipantTile trackRef={focusedTrack} className="w-full h-full object-contain" />
+                            {renderTileOverlay(focusedTrack)}
+                        </div>
+
+                        {/* Other Streams Carousel overlayed at the bottom */}
+                        {otherTracks.length > 0 && (
+                            <div className="absolute bottom-4 left-4 right-4 flex flex-row gap-2 overflow-x-auto p-1.5 bg-black/60 border border-white/10 rounded-2xl z-30 max-h-24 scrollbar-hide backdrop-blur-md max-w-fit mx-auto shadow-2xl">
+                                {otherTracks.map((t) => {
+                                    const tId = `${t.participant.identity}-${t.source}`;
+                                    return (
+                                        <div
+                                            key={tId}
+                                            className="w-24 sm:w-28 aspect-video shrink-0 relative rounded-xl overflow-hidden border border-white/10 group bg-zinc-900"
+                                        >
+                                            <ParticipantTile trackRef={t} className="w-full h-full object-cover" />
+                                            {renderTileOverlay(t)}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    /* Custom responsive grid */
+                    <div className="w-full h-full min-h-0 flex items-center justify-center">
+                        {visibleTracks.length === 0 ? (
+                            <div className="text-center text-zinc-500">
+                                <VideoIcon className="w-12 h-12 mx-auto mb-2 opacity-30 animate-pulse" />
+                                <p className="text-sm">No visible video streams.</p>
+                            </div>
+                        ) : (
+                            <div className={`grid gap-3 w-full h-full items-center justify-center auto-rows-fr ${
+                                visibleTracks.length === 1 ? 'grid-cols-1 max-w-3xl aspect-video' :
+                                visibleTracks.length === 2 ? 'grid-cols-1 sm:grid-cols-2 max-w-5xl' :
+                                visibleTracks.length <= 4 ? 'grid-cols-2 max-w-5xl' :
+                                'grid-cols-2 md:grid-cols-3'
+                            }`}>
+                                {visibleTracks.map((t) => {
+                                    const tId = `${t.participant.identity}-${t.source}`;
+                                    return (
+                                        <div
+                                            key={tId}
+                                            className="w-full h-full relative group rounded-2xl overflow-hidden border border-white/10 bg-zinc-900 shadow-lg aspect-video sm:aspect-auto"
+                                        >
+                                            <ParticipantTile trackRef={t} className="w-full h-full object-cover" />
+                                            {renderTileOverlay(t)}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
 
             {isBroadcaster && (
-                <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center gap-3 w-full max-w-sm sm:max-w-md">
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-2 w-full max-w-sm sm:max-w-md">
                     {!isScreenShareEnabled && (
-                        <div className="bg-zinc-950/90 text-zinc-300 text-xs px-4 py-2.5 rounded-2xl border border-indigo-500/30 shadow-2xl text-center backdrop-blur-md max-w-[90%] transition-all duration-300 select-none animate-bounce">
+                        <div className="bg-zinc-950/90 text-zinc-300 text-xs px-4 py-2.5 rounded-2xl border border-indigo-500/30 shadow-2xl text-center backdrop-blur-md max-w-[90%] transition-all duration-300 select-none animate-bounce hidden sm:block">
                             <p className="font-semibold text-indigo-400 mb-0.5">💡 Video Sound Tip</p>
-                            <p className="text-[11px] leading-relaxed text-zinc-400">
+                            <p className="text-[11px] leading-relaxed text-zinc-400 mb-0">
                                 Screenshare par video sound sunane ke liye <span className="text-white font-medium">"Chrome Tab"</span> ya <span className="text-white font-medium">"Entire Screen"</span> select karein aur popup me <span className="text-white font-medium">"Share audio"</span> ko tick karein.
                             </p>
                         </div>
@@ -318,7 +443,7 @@ function StageLayout({ isBroadcaster }: { isBroadcaster: boolean }) {
             )}
 
             {!isBroadcaster && (
-                <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50">
+                <div className="absolute top-6 left-1/2 -translate-x-1/2 z-40">
                     <StartAudio
                         label="Click here to Hear Podcast 🔈"
                         className="bg-indigo-600 px-6 py-3 rounded-full font-bold shadow-2xl hover:bg-indigo-500 cursor-pointer text-white animate-bounce"
@@ -667,14 +792,239 @@ function GuestManager({ sessionId, isHost, socket }: { sessionId: string; isHost
 // ─────────────────────────────────────────────────────────────
 // HostPanel — tabbed panel: Controls | Chat
 // ─────────────────────────────────────────────────────────────
-function HostPanel({
-    sessionId, socket, inviteHandle, setInviteHandle, handleSendInvite
+// ─────────────────────────────────────────────────────────────
+// StreamsPanel — lists active/hidden streams & handles pin/hide
+// ─────────────────────────────────────────────────────────────
+function StreamsPanel({
+    allTracks,
+    hiddenTracks,
+    setHiddenTracks,
+    focusedTrackId,
+    setFocusedTrackId
 }: {
-    sessionId: string; socket: any;
-    inviteHandle: string; setInviteHandle: (v: string) => void;
-    handleSendInvite: () => void;
+    allTracks: any[];
+    hiddenTracks: string[];
+    setHiddenTracks: React.Dispatch<React.SetStateAction<string[]>>;
+    focusedTrackId: string | null;
+    setFocusedTrackId: React.Dispatch<React.SetStateAction<string | null>>;
 }) {
-    const [tab, setTab] = useState<"controls" | "chat">("controls");
+    const activeTracks = allTracks.filter((t) => {
+        const p = t.participant;
+        return p.permissions?.canPublish || p.isSpeaking;
+    });
+
+    const hiddenList = activeTracks.filter(t => {
+        const trackId = `${t.participant.identity}-${t.source}`;
+        return hiddenTracks.includes(trackId);
+    });
+
+    const visibleList = activeTracks.filter(t => {
+        const trackId = `${t.participant.identity}-${t.source}`;
+        return !hiddenTracks.includes(trackId);
+    });
+
+    const toggleHide = (trackId: string) => {
+        if (hiddenTracks.includes(trackId)) {
+            setHiddenTracks(prev => prev.filter(id => id !== trackId));
+        } else {
+            setHiddenTracks(prev => [...prev, trackId]);
+            if (focusedTrackId === trackId) {
+                setFocusedTrackId(null);
+            }
+        }
+    };
+
+    const toggleFocus = (trackId: string) => {
+        if (focusedTrackId === trackId) {
+            setFocusedTrackId(null);
+        } else {
+            setFocusedTrackId(trackId);
+        }
+    };
+
+    return (
+        <div className="flex-1 flex flex-col h-full bg-zinc-950 p-4 overflow-y-auto space-y-6">
+            <div>
+                <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">
+                    Active Streams ({visibleList.length})
+                </h4>
+                {visibleList.length === 0 ? (
+                    <p className="text-xs text-zinc-600 italic">No active streams on stage.</p>
+                ) : (
+                    <div className="space-y-2">
+                        {visibleList.map(t => {
+                            const trackId = `${t.participant.identity}-${t.source}`;
+                            const isFocused = focusedTrackId === trackId;
+                            const handle = t.participant.identity.replace("@", "");
+                            const isScreen = t.source === Track.Source.ScreenShare;
+
+                            return (
+                                <div key={trackId} className="flex items-center justify-between p-2.5 bg-zinc-900 border border-white/[0.05] rounded-xl">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        {isScreen ? (
+                                            <Share2 className="w-4 h-4 text-indigo-400 shrink-0" />
+                                        ) : (
+                                            <VideoIcon className="w-4 h-4 text-emerald-400 shrink-0" />
+                                        )}
+                                        <span className="text-sm font-semibold text-zinc-200 truncate">
+                                            {isScreen ? `@${handle}'s Screen` : `@${handle}`}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-1 shrink-0">
+                                        <button
+                                            onClick={() => toggleFocus(trackId)}
+                                            title={isFocused ? "Unpin Stream" : "Pin Stream"}
+                                            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                                                isFocused 
+                                                    ? "bg-indigo-600/20 text-indigo-400 border border-indigo-500/30"
+                                                    : "text-zinc-500 hover:bg-zinc-800 hover:text-zinc-300"
+                                            }`}
+                                        >
+                                            <Maximize className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                            onClick={() => toggleHide(trackId)}
+                                            title="Hide Stream"
+                                            className="p-1.5 rounded-lg text-zinc-500 hover:bg-red-500/15 hover:text-red-400 transition-colors cursor-pointer"
+                                        >
+                                            <Eye className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+
+            {hiddenList.length > 0 && (
+                <div>
+                    <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-3">
+                        Hidden Streams ({hiddenList.length})
+                    </h4>
+                    <div className="space-y-2">
+                        {hiddenList.map(t => {
+                            const trackId = `${t.participant.identity}-${t.source}`;
+                            const handle = t.participant.identity.replace("@", "");
+                            const isScreen = t.source === Track.Source.ScreenShare;
+
+                            return (
+                                <div key={trackId} className="flex items-center justify-between p-2.5 bg-zinc-900/40 border border-white/[0.03] rounded-xl opacity-60">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        {isScreen ? (
+                                            <Share2 className="w-4 h-4 text-zinc-500 shrink-0" />
+                                        ) : (
+                                            <VideoIcon className="w-4 h-4 text-zinc-500 shrink-0" />
+                                        )}
+                                        <span className="text-sm font-semibold text-zinc-400 truncate">
+                                            {isScreen ? `@${handle}'s Screen` : `@${handle}`}
+                                        </span>
+                                    </div>
+                                    <button
+                                        onClick={() => toggleHide(trackId)}
+                                        title="Show Stream"
+                                        className="p-1.5 rounded-lg text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors cursor-pointer"
+                                    >
+                                        <EyeOff className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ─────────────────────────────────────────────────────────────
+// ListenerPanel — tabbed panel for normal viewers: Chat | Streams
+// ─────────────────────────────────────────────────────────────
+function ListenerPanel({
+    sessionId,
+    socket,
+    allTracks,
+    hiddenTracks,
+    setHiddenTracks,
+    focusedTrackId,
+    setFocusedTrackId
+}: {
+    sessionId: string;
+    socket: any;
+    allTracks: any[];
+    hiddenTracks: string[];
+    setHiddenTracks: React.Dispatch<React.SetStateAction<string[]>>;
+    focusedTrackId: string | null;
+    setFocusedTrackId: React.Dispatch<React.SetStateAction<string | null>>;
+}) {
+    const [tab, setTab] = useState<"chat" | "streams">("chat");
+
+    return (
+        <div className="flex flex-col h-full">
+            {/* Tab bar */}
+            <div className="flex border-b border-white/[0.07] shrink-0">
+                {(["chat", "streams"] as const).map(t => (
+                    <button
+                        key={t}
+                        onClick={() => setTab(t)}
+                        className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors relative cursor-pointer ${
+                            tab === t ? "text-white" : "text-zinc-500 hover:text-zinc-300"
+                        }`}
+                    >
+                        {t === "chat" ? "💬 Chat" : "🎥 Streams"}
+                        {tab === t && (
+                            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-500 rounded-t-full" />
+                        )}
+                    </button>
+                ))}
+            </div>
+
+            {tab === "chat" ? (
+                <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+                    <CustomChat socket={socket} sessionId={sessionId} />
+                </div>
+            ) : (
+                <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+                    <StreamsPanel
+                        allTracks={allTracks}
+                        hiddenTracks={hiddenTracks}
+                        setHiddenTracks={setHiddenTracks}
+                        focusedTrackId={focusedTrackId}
+                        setFocusedTrackId={setFocusedTrackId}
+                    />
+                </div>
+            )}
+        </div>
+    );
+}
+
+// ─────────────────────────────────────────────────────────────
+// HostPanel — tabbed panel: Controls | Streams | Chat
+// ─────────────────────────────────────────────────────────────
+function HostPanel({
+    sessionId,
+    socket,
+    inviteHandle,
+    setInviteHandle,
+    handleSendInvite,
+    allTracks,
+    hiddenTracks,
+    setHiddenTracks,
+    focusedTrackId,
+    setFocusedTrackId
+}: {
+    sessionId: string;
+    socket: any;
+    inviteHandle: string;
+    setInviteHandle: (v: string) => void;
+    handleSendInvite: () => void;
+    allTracks: any[];
+    hiddenTracks: string[];
+    setHiddenTracks: React.Dispatch<React.SetStateAction<string[]>>;
+    focusedTrackId: string | null;
+    setFocusedTrackId: React.Dispatch<React.SetStateAction<string | null>>;
+}) {
+    const [tab, setTab] = useState<"controls" | "streams" | "chat">("controls");
     const [inviteStatus, setInviteStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
     // Show invite status from socket
@@ -698,15 +1048,15 @@ function HostPanel({
         <div className="flex flex-col h-full">
             {/* Tab bar */}
             <div className="flex border-b border-white/[0.07] shrink-0">
-                {(["controls", "chat"] as const).map(t => (
+                {(["controls", "streams", "chat"] as const).map(t => (
                     <button
                         key={t}
                         onClick={() => setTab(t)}
-                        className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors relative ${
+                        className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors relative cursor-pointer ${
                             tab === t ? "text-white" : "text-zinc-500 hover:text-zinc-300"
                         }`}
                     >
-                        {t === "controls" ? "🎤 Controls" : "💬 Chat"}
+                        {t === "controls" ? "🎤 Controls" : t === "streams" ? "🎥 Streams" : "💬 Chat"}
                         {tab === t && (
                             <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-500 rounded-t-full" />
                         )}
@@ -742,7 +1092,7 @@ function HostPanel({
                             <button
                                 onClick={sendInvite}
                                 disabled={!inviteHandle.trim()}
-                                className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-bold text-sm px-4 rounded-lg transition-colors"
+                                className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white font-bold text-sm px-4 rounded-lg transition-colors cursor-pointer"
                             >
                                 Invite
                             </button>
@@ -755,11 +1105,137 @@ function HostPanel({
                     {/* Guest controls */}
                     <GuestManager sessionId={sessionId} isHost={true} socket={socket} />
                 </div>
+            ) : tab === "streams" ? (
+                <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+                    <StreamsPanel
+                        allTracks={allTracks}
+                        hiddenTracks={hiddenTracks}
+                        setHiddenTracks={setHiddenTracks}
+                        focusedTrackId={focusedTrackId}
+                        setFocusedTrackId={setFocusedTrackId}
+                    />
+                </div>
             ) : (
                 <div className="flex-1 overflow-hidden flex flex-col min-h-0">
                     <CustomChat socket={socket} sessionId={sessionId} />
                 </div>
             )}
+        </div>
+    );
+}
+
+// ─────────────────────────────────────────────────────────────
+// LiveRoomContent wrapper — runs inside LiveKitRoom
+// ─────────────────────────────────────────────────────────────
+function LiveRoomContent({
+    id,
+    roomName,
+    isHost,
+    onStage,
+    socket,
+    isRecording,
+    setIsRecording,
+    stopRecordingRef,
+    inviteHandle,
+    setInviteHandle,
+    handleSendInvite
+}: {
+    id: string;
+    roomName: string;
+    isHost: boolean;
+    onStage: boolean;
+    socket: any;
+    isRecording: boolean;
+    setIsRecording: React.Dispatch<React.SetStateAction<boolean>>;
+    stopRecordingRef: React.MutableRefObject<(() => Promise<void>) | null>;
+    inviteHandle: string;
+    setInviteHandle: React.Dispatch<React.SetStateAction<string>>;
+    handleSendInvite: () => void;
+}) {
+    const [hiddenTracks, setHiddenTracks] = useState<string[]>([]);
+    const [focusedTrackId, setFocusedTrackId] = useState<string | null>(null);
+
+    const allTracks = useTracks(
+        [
+            { source: Track.Source.Camera, withPlaceholder: true },
+            { source: Track.Source.ScreenShare, withPlaceholder: false },
+        ],
+        { onlySubscribed: false }
+    );
+
+    // Auto-focus screenshare when screenshare starts. If stops, reset.
+    const autoPinnedScreenshares = useRef<Set<string>>(new Set());
+    useEffect(() => {
+        const screenshareTrack = allTracks.find(t => t.source === Track.Source.ScreenShare);
+        if (screenshareTrack) {
+            const trackId = `${screenshareTrack.participant.identity}-${Track.Source.ScreenShare}`;
+            if (!autoPinnedScreenshares.current.has(trackId)) {
+                autoPinnedScreenshares.current.add(trackId);
+                setFocusedTrackId(trackId);
+            }
+        } else {
+            autoPinnedScreenshares.current.clear();
+            if (focusedTrackId && focusedTrackId.endsWith(`-${Track.Source.ScreenShare}`)) {
+                setFocusedTrackId(null);
+            }
+        }
+    }, [allTracks, focusedTrackId]);
+
+    const isBroadcaster = isHost || onStage;
+
+    return (
+        <div className="min-h-screen bg-black text-white flex flex-col w-full h-full">
+            {!isHost && onStage && <GuestSocketListener socket={socket} />}
+
+            <RoomHeader
+                roomName={roomName}
+                isHost={isHost}
+                id={id}
+                isRecording={isRecording}
+                stopRecording={async () => {
+                    if (stopRecordingRef.current) await stopRecordingRef.current();
+                }}
+            />
+
+            <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
+                {/* Left Stage */}
+                <StageLayout
+                    isBroadcaster={isBroadcaster}
+                    allTracks={allTracks}
+                    hiddenTracks={hiddenTracks}
+                    setHiddenTracks={setHiddenTracks}
+                    focusedTrackId={focusedTrackId}
+                    setFocusedTrackId={setFocusedTrackId}
+                />
+
+                {/* Right Panel */}
+                <div className="w-full lg:w-96 bg-zinc-950 flex flex-col z-20 flex-1 min-h-0">
+                    {isHost ? (
+                        <HostPanel
+                            sessionId={id}
+                            socket={socket}
+                            inviteHandle={inviteHandle}
+                            setInviteHandle={setInviteHandle}
+                            handleSendInvite={handleSendInvite}
+                            allTracks={allTracks}
+                            hiddenTracks={hiddenTracks}
+                            setHiddenTracks={setHiddenTracks}
+                            focusedTrackId={focusedTrackId}
+                            setFocusedTrackId={setFocusedTrackId}
+                        />
+                    ) : (
+                        <ListenerPanel
+                            sessionId={id}
+                            socket={socket}
+                            allTracks={allTracks}
+                            hiddenTracks={hiddenTracks}
+                            setHiddenTracks={setHiddenTracks}
+                            focusedTrackId={focusedTrackId}
+                            setFocusedTrackId={setFocusedTrackId}
+                        />
+                    )}
+                </div>
+            </div>
         </div>
     );
 }
@@ -989,47 +1465,19 @@ export default function LiveRoom() {
                     onRecordingStart={() => setIsRecording(true)}
                 />
 
-                <div className="min-h-screen bg-black text-white flex flex-col w-full h-full">
-                    {!isHost && onStage && <GuestSocketListener socket={socket} />}
-
-                    <RoomHeader
-                        roomName={roomName}
-                        isHost={isHost}
-                        id={id}
-                        isRecording={isRecording}
-                        stopRecording={async () => {
-                            if (stopRecordingRef.current) await stopRecordingRef.current();
-                        }}
-                    />
-
-                    <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
-                        {/* Left Stage */}
-                        <StageLayout isBroadcaster={isBroadcaster} />
-
-                        {/* Right Panel */}
-                        <div className="w-full lg:w-96 bg-zinc-950 flex flex-col z-20">
-
-                            {isHost ? (
-                                <HostPanel
-                                    sessionId={id}
-                                    socket={socket}
-                                    inviteHandle={inviteHandle}
-                                    setInviteHandle={setInviteHandle}
-                                    handleSendInvite={handleSendInvite}
-                                />
-                            ) : (
-                                <>
-                                    <div className="py-3.5 px-4 border-b border-white/10">
-                                        <h3 className="font-semibold text-sm">Live Chat</h3>
-                                    </div>
-                                    <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-                                        <CustomChat socket={socket} sessionId={id} />
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    </div>
-                </div>
+                <LiveRoomContent
+                    id={id}
+                    roomName={roomName}
+                    isHost={isHost}
+                    onStage={onStage}
+                    socket={socket}
+                    isRecording={isRecording}
+                    setIsRecording={setIsRecording}
+                    stopRecordingRef={stopRecordingRef}
+                    inviteHandle={inviteHandle}
+                    setInviteHandle={setInviteHandle}
+                    handleSendInvite={handleSendInvite}
+                />
             </LiveKitRoom>
         </>
     );

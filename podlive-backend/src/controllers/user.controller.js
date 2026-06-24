@@ -55,7 +55,8 @@ exports.getRecordings = async (req, res) => {
         const sessions = await prisma.liveSession.findMany({
             where: {
                 host_user_id: req.user.id,
-                status: 'ended'
+                status: 'ended',
+                recording_url: { not: null }
             },
             orderBy: { created_at: 'desc' }
         });

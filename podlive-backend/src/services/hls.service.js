@@ -122,15 +122,42 @@ exports.processHLS = async (sessionId, inputPath, baseUrl) => {
 
                         resolve(final_hls_url);
                     } catch (s3Error) {
-                        console.error('[HLS Engine] S3 Upload Error:', s3Error);
+                        console.error('[HLS Engine] S3 Upload Error:', s3Error.message);
+                        console.log('[HLS Engine] Falling back to local HLS storage...');
+                        try {
+                            const tempUploadsDir = path.join(os.tmpdir(), 'podlive-uploads');
+                            const localHlsDir = path.join(tempUploadsDir, `hls_${sessionId}`);
+                            if (!fs.existsSync(localHlsDir)) {
+                                fs.mkdirSync(localHlsDir, { recursive: true });
+                            }
+                            // Copy all files from outputDir to localHlsDir
+                            const files = fs.readdirSync(outputDir);
+                            files.forEach(file => {
+                                fs.copyFileSync(path.join(outputDir, file), path.join(localHlsDir, file));
+                            });
 
-                        // Mark failed processing status
-                        await prisma.liveSession.update({
-                            where: { id: sessionId },
-                            data: { is_processing: false }
-                        });
+                            const final_hls_url = `${baseUrl}/uploads/hls_${sessionId}/master.m3u8`;
+                            await prisma.liveSession.update({
+                                where: { id: sessionId },
+                                data: {
+                                    is_processing: false,
+                                    recording_url: final_hls_url
+                                }
+                            });
+                            console.log(`[HLS Engine] Local HLS fallback successful: ${final_hls_url}`);
 
-                        reject(s3Error);
+                            // Clean up
+                            fs.rmSync(outputDir, { recursive: true, force: true });
+                            try { fs.unlinkSync(inputPath); } catch (e) { }
+                            resolve(final_hls_url);
+                        } catch (fallbackError) {
+                            console.error('[HLS Engine] Local HLS fallback copy failed:', fallbackError);
+                            await prisma.liveSession.update({
+                                where: { id: sessionId },
+                                data: { is_processing: false }
+                            });
+                            reject(s3Error);
+                        }
                     }
                 })
                 .on('error', async (err) => {

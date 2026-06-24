@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Mic, Eye, EyeOff, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -12,6 +12,16 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [expiredMsg, setExpiredMsg] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("expired") === "true") {
+        setExpiredMsg(true);
+      }
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,6 +86,12 @@ export default function Login() {
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
+            {expiredMsg && (
+              <div className="bg-amber-500/10 border border-amber-500/30 text-amber-400 text-sm p-3 rounded-xl text-center">
+                Session expired. Please log in again.
+              </div>
+            )}
+
             {error && (
               <div className="bg-red-500/10 border border-red-500/30 text-red-400 text-sm p-3 rounded-xl text-center">
                 {error}

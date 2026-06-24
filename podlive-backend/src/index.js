@@ -55,12 +55,20 @@ app.use((req, res, next) => {
 });
 
 const path = require('path');
+const os = require('os');
 
 // Serve local uploads (fallback when S3 is unavailable)
 const uploadsDir = path.join(__dirname, '../uploads');
+const tempUploadsDir = path.join(os.tmpdir(), 'podlive-uploads');
+
 if (!require('fs').existsSync(uploadsDir)) {
   require('fs').mkdirSync(uploadsDir, { recursive: true });
 }
+if (!require('fs').existsSync(tempUploadsDir)) {
+  require('fs').mkdirSync(tempUploadsDir, { recursive: true });
+}
+
+app.use('/uploads', express.static(tempUploadsDir));
 app.use('/uploads', express.static(uploadsDir));
 
 app.get('/', (req, res) => {

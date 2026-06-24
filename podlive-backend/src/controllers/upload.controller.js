@@ -62,41 +62,21 @@ exports.uploadVideo = async (req, res) => {
         }
 
         // ── Save to DB ──
-        let newVOD;
-        if (sessionId) {
-            const existingSession = await prisma.liveSession.findUnique({ where: { id: sessionId } });
-            if (!existingSession || existingSession.host_user_id !== host_user_id) {
-                return res.status(403).json({ error: 'Unauthorized or session not found' });
+        const newVOD = await prisma.liveSession.create({
+            data: {
+                host_user_id,
+                title: title.trim(),
+                description: description?.trim() || null,
+                category: category || 'General',
+                status: 'ended',
+                viewer_count_peak: 0,
+                recording_url: videoUrl,
+                thumbnail_url: thumbnailUrl,
+                started_at: new Date(),
+                ended_at: new Date(),
+                is_processing: true
             }
-            newVOD = await prisma.liveSession.update({
-                where: { id: sessionId },
-                data: {
-                    title: title.trim(),
-                    description: description?.trim() || null,
-                    category: category || 'General',
-                    recording_url: videoUrl,
-                    thumbnail_url: thumbnailFile ? thumbnailUrl : existingSession.thumbnail_url,
-                    is_processing: true,
-                    status: 'ended'
-                }
-            });
-        } else {
-            newVOD = await prisma.liveSession.create({
-                data: {
-                    host_user_id,
-                    title: title.trim(),
-                    description: description?.trim() || null,
-                    category: category || 'General',
-                    status: 'ended',
-                    viewer_count_peak: 0,
-                    recording_url: videoUrl,
-                    thumbnail_url: thumbnailUrl,
-                    started_at: new Date(),
-                    ended_at: new Date(),
-                    is_processing: true
-                }
-            });
-        }
+        });
 
         console.log(`[Upload] DB record created: ${newVOD.id}`);
 

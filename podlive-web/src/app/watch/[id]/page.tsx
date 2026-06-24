@@ -7,7 +7,9 @@ import {
     Play,
     Pause,
     Volume2,
+    VolumeX,
     Maximize,
+    Minimize,
     Heart,
     Share2,
     MoreVertical,
@@ -24,13 +26,26 @@ import {
 import Hls from "hls.js";
 import { buildApiUrl } from "@/lib/api";
 
-// Custom HLS Player Component with Quality Selector
+// Custom HLS Player Component with YouTube-like Video Player Controls
 function HlsPlayer({ url, poster, subtitles }: { url: string, poster: string, subtitles: any[] }) {
     const videoRef = React.useRef<HTMLVideoElement>(null);
+    const containerRef = React.useRef<HTMLDivElement>(null);
+    const progressBarRef = React.useRef<HTMLDivElement>(null);
+
     const [qualities, setQualities] = useState<any[]>([]);
     const [currentQuality, setCurrentQuality] = useState<number>(-1); // -1 is Auto
     const [hlsInstance, setHlsInstance] = useState<Hls | null>(null);
+
+    // Player States
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [currentTime, setCurrentTime] = useState(0);
+    const [duration, setDuration] = useState(0);
+    const [volume, setVolume] = useState(1);
+    const [isMuted, setIsMuted] = useState(false);
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const [showControls, setShowControls] = useState(true);
     const [showSettings, setShowSettings] = useState(false);
+    const [playbackRate, setPlaybackRate] = useState(1);
 
     useEffect(() => {
         const video = videoRef.current;
@@ -47,7 +62,6 @@ function HlsPlayer({ url, poster, subtitles }: { url: string, poster: string, su
             hls.attachMedia(video);
 
             hls.on(Hls.Events.MANIFEST_PARSED, function (event, data) {
-                // Auto is at index -1, then list from lowest to highest
                 setQualities(data.levels);
             });
 
@@ -57,13 +71,8 @@ function HlsPlayer({ url, poster, subtitles }: { url: string, poster: string, su
 
             setHlsInstance(hls);
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-            // Safari supports HLS natively
             video.src = url;
-            video.addEventListener('loadedmetadata', () => {
-                // Quality selection not cleanly supported on native Safari without custom controls
-            });
         } else {
-            // Fallback for non-HLS URLs (like raw MP4)
             video.src = url;
             setQualities([{ height: 'Original (MP4)' }]);
         }
@@ -75,6 +84,126 @@ function HlsPlayer({ url, poster, subtitles }: { url: string, poster: string, su
         };
     }, [url]);
 
+    const handleTogglePlay = () => {
+        const video = videoRef.current;
+        if (!video) return;
+        if (video.paused) {
+            video.play();
+        } else {
+            video.pause();
+        }
+    };
+
+    const handleVolumeSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const val = parseFloat(e.target.value);
+        setVolume(val);
+        setIsMuted(val === 0);
+        if (videoRef.current) {
+            videoRef.current.volume = val;
+            videoRef.current.muted = val === 0;
+        }
+    };
+
+    const handleToggleMute = () => {
+        const video = videoRef.current;
+        if (!video) return;
+        const nextMute = !isMuted;
+        setIsMuted(nextMute);
+        video.muted = nextMute;
+        if (!nextMute && volume === 0) {
+            setVolume(0.5);
+            video.volume = 0.5;
+        }
+    };
+
+    const formatTime = (secs: number) => {
+        if (isNaN(secs)) return "00:00";
+        const m = Math.floor(secs / 60);
+        const s = Math.floor(secs % 60);
+        const h = Math.floor(m / 60);
+
+        const mStr = String(m % 60).padStart(2, "0");
+        const sStr = String(s).padStart(2, "0");
+
+        if (h > 0) {
+            return `${String(h).padStart(2, "0")}:${mStr}:${sStr}`;
+        }
+        return `${mStr}:${sStr}`;
+    };
+
+    const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
+        const bar = progressBarRef.current;
+        const video = videoRef.current;
+        if (!bar || !video || duration === 0) return;
+
+        const rect = bar.getBoundingClientRect();
+        const clickX = e.clientX - rect.left;
+        const width = rect.width;
+        const pct = Math.max(0, Math.min(1, clickX / width));
+        
+        video.currentTime = pct * duration;
+        setCurrentTime(pct * duration);
+    };
+
+    const handleProgressDrag = (e: React.MouseEvent<HTMLDivElement>) => {
+        if (e.buttons !== 1) return;
+        handleProgressClick(e);
+    };
+
+    const handleToggleFullscreen = () => {
+        const container = containerRef.current;
+        if (!container) return;
+
+        if (!document.fullscreenElement) {
+            container.requestFullscreen().then(() => setIsFullscreen(true)).catch(err => {
+                console.error("Fullscreen failed:", err);
+            });
+        } else {
+            document.exitFullscreen().then(() => setIsFullscreen(false));
+        }
+    };
+
+    useEffect(() => {
+        const onFullscreenChange = () => {
+            setIsFullscreen(!!document.fullscreenElement);
+        };
+        document.addEventListener("fullscreenchange", onFullscreenChange);
+        return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+    }, []);
+
+    // Auto-hide controls
+    useEffect(() => {
+        let timer: NodeJS.Timeout;
+        const handleMouseMove = () => {
+            setShowControls(true);
+            clearTimeout(timer);
+            if (isPlaying) {
+                timer = setTimeout(() => {
+                    setShowControls(false);
+                    setShowSettings(false);
+                }, 3000);
+            }
+        };
+
+        const container = containerRef.current;
+        if (container) {
+            container.addEventListener("mousemove", handleMouseMove);
+            container.addEventListener("mouseleave", () => {
+                if (isPlaying) {
+                    setShowControls(false);
+                    setShowSettings(false);
+                }
+            });
+        }
+
+        return () => {
+            if (container) {
+                container.removeEventListener("mousemove", handleMouseMove);
+            }
+            clearTimeout(timer);
+        };
+    }, [isPlaying]);
+
     const handleQualityChange = (levelIndex: number) => {
         if (hlsInstance) {
             hlsInstance.currentLevel = levelIndex;
@@ -83,15 +212,40 @@ function HlsPlayer({ url, poster, subtitles }: { url: string, poster: string, su
         }
     };
 
+    const handleSpeedChange = (rate: number) => {
+        const video = videoRef.current;
+        if (video) {
+            video.playbackRate = rate;
+            setPlaybackRate(rate);
+            setShowSettings(false);
+        }
+    };
+
+    const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+
     return (
-        <div className="relative aspect-video w-full bg-black rounded-2xl overflow-hidden border border-white/10 shadow-2xl group">
+        <div
+            ref={containerRef}
+            className="relative aspect-video w-full bg-black rounded-2xl overflow-hidden border border-white/10 shadow-2xl group/player select-none"
+        >
             <video
                 ref={videoRef}
-                controls
                 autoPlay
                 crossOrigin="anonymous"
-                className="w-full h-full object-contain"
+                className="w-full h-full object-contain cursor-pointer"
                 poster={poster}
+                onClick={handleTogglePlay}
+                onDoubleClick={handleToggleFullscreen}
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
+                onTimeUpdate={() => videoRef.current && setCurrentTime(videoRef.current.currentTime)}
+                onDurationChange={() => videoRef.current && setDuration(videoRef.current.duration)}
+                onVolumeChange={() => {
+                    if (videoRef.current) {
+                        setVolume(videoRef.current.volume);
+                        setIsMuted(videoRef.current.muted);
+                    }
+                }}
             >
                 {subtitles && subtitles.map((sub: any, idx: number) => (
                     <track
@@ -105,56 +259,156 @@ function HlsPlayer({ url, poster, subtitles }: { url: string, poster: string, su
                 ))}
             </video>
 
-            {/* Quality Settings UI Overlay */}
-            {qualities.length > 0 && (
-                <div className="absolute top-4 right-4 z-10 flex flex-col items-end opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                        onClick={() => setShowSettings(!showSettings)}
-                        className="bg-black/60 backdrop-blur-md p-2 rounded-full border border-white/10 text-white hover:bg-white/10 transition-colors"
-                    >
-                        <Settings className="w-5 h-5" />
-                    </button>
-
-                    {showSettings && (
-                        <div className="mt-2 bg-black/80 backdrop-blur-xl border border-white/10 rounded-xl overflow-hidden w-48 shadow-2xl">
-                            <div className="px-4 py-2 border-b border-white/10 shadow-sm text-xs font-bold text-zinc-400 uppercase tracking-wider">
-                                Video Quality
-                            </div>
-                            <button
-                                onClick={() => handleQualityChange(-1)}
-                                className={`w-full text-left px-4 py-3 text-sm flex items-center justify-between hover:bg-white/5 transition-colors ${currentQuality === -1 ? 'text-indigo-400 font-bold bg-indigo-500/10' : 'text-zinc-200'}`}
-                            >
-                                Auto
-                                {currentQuality === -1 && <CheckCircle2 className="w-4 h-4" />}
-                            </button>
-                            {/* Reverse to show Highest to Lowest */}
-                            {qualities.length === 1 && qualities[0].height === 'Original (MP4)' ? (
-                                <button
-                                    className="w-full text-left px-4 py-3 text-sm flex items-center justify-between hover:bg-white/5 transition-colors border-t border-white/5 text-indigo-400 font-bold bg-indigo-500/10"
-                                >
-                                    Original (MP4)
-                                    <CheckCircle2 className="w-4 h-4" />
-                                </button>
-                            ) : (
-                                [...qualities].reverse().map((level, i) => {
-                                    const actualIndex = qualities.length - 1 - i;
-                                    const isActive = currentQuality === actualIndex;
-                                    return (
-                                        <button
-                                            key={actualIndex}
-                                            onClick={() => handleQualityChange(actualIndex)}
-                                            className={`w-full text-left px-4 py-3 text-sm flex items-center justify-between hover:bg-white/5 transition-colors border-t border-white/5 ${isActive ? 'text-indigo-400 font-bold bg-indigo-500/10' : 'text-zinc-200'}`}
-                                        >
-                                            {level.height}p
-                                            {isActive && <CheckCircle2 className="w-4 h-4" />}
-                                        </button>
-                                    );
-                                })
-                            )}
-                        </div>
-                    )}
+            {/* Custom Play/Pause Large Center Icon Overlay */}
+            <div
+                onClick={handleTogglePlay}
+                className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 active:opacity-100 hover:bg-black/10 transition-all duration-300 cursor-pointer z-10"
+            >
+                <div className="w-16 h-16 bg-black/60 rounded-full flex items-center justify-center text-white scale-90 group-active/player:scale-100 transition-transform">
+                    {isPlaying ? <Pause className="w-8 h-8 fill-current" /> : <Play className="w-8 h-8 fill-current ml-1" />}
                 </div>
-            )}
+            </div>
+
+            {/* YouTube-like controls container */}
+            <div
+                className={`absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-black/95 via-black/50 to-transparent p-4 flex flex-col gap-3 transition-opacity duration-300 ${
+                    showControls ? "opacity-100" : "opacity-0 pointer-events-none"
+                }`}
+            >
+                {/* 1. Progress Bar / Red Scrubber */}
+                <div
+                    ref={progressBarRef}
+                    onClick={handleProgressClick}
+                    onMouseMove={handleProgressDrag}
+                    className="w-full h-1.5 hover:h-2 bg-white/20 rounded-full cursor-pointer relative group/scrubber transition-all"
+                >
+                    {/* Played progress fill (YouTube Red) */}
+                    <div
+                        className="absolute top-0 left-0 h-full bg-red-600 rounded-full flex items-center justify-end"
+                        style={{ width: `${progressPercent}%` }}
+                    >
+                        {/* Scrubber Knob */}
+                        <div className="w-3.5 h-3.5 bg-red-600 rounded-full scale-0 group-hover/scrubber:scale-100 group-hover/player:scale-100 absolute right-[-7px] top-1/2 -translate-y-1/2 shadow-lg transition-transform duration-100" />
+                    </div>
+                </div>
+
+                {/* 2. Control bar items */}
+                <div className="flex items-center justify-between">
+                    {/* Left: Play/Pause, Volume, Time */}
+                    <div className="flex items-center gap-4">
+                        <button
+                            onClick={handleTogglePlay}
+                            className="text-white hover:text-red-500 transition-colors cursor-pointer border-none bg-transparent outline-none"
+                        >
+                            {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
+                        </button>
+
+                        <div className="flex items-center gap-2 group/volume">
+                            <button
+                                onClick={handleToggleMute}
+                                className="text-white hover:text-red-500 transition-colors cursor-pointer border-none bg-transparent outline-none"
+                            >
+                                {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+                            </button>
+                            <input
+                                type="range"
+                                min={0}
+                                max={1}
+                                step={0.05}
+                                value={isMuted ? 0 : volume}
+                                onChange={handleVolumeSliderChange}
+                                className="w-0 group-hover/volume:w-16 hover:w-16 h-1 bg-white/30 rounded-lg appearance-none cursor-pointer accent-red-600 transition-all duration-300"
+                            />
+                        </div>
+
+                        <div className="text-xs font-mono text-zinc-300">
+                            <span>{formatTime(currentTime)}</span>
+                            <span className="mx-1.5 text-zinc-500">/</span>
+                            <span>{formatTime(duration)}</span>
+                        </div>
+                    </div>
+
+                    {/* Right: Settings (Speed / Quality), Fullscreen */}
+                    <div className="flex items-center gap-4 relative">
+                        <button
+                            onClick={() => setShowSettings(!showSettings)}
+                            className={`text-white hover:text-red-500 transition-colors cursor-pointer border-none bg-transparent outline-none ${
+                                showSettings ? "text-red-500 rotate-45" : ""
+                            } transition-transform duration-300`}
+                        >
+                            <Settings className="w-5 h-5" />
+                        </button>
+
+                        <button
+                            onClick={handleToggleFullscreen}
+                            className="text-white hover:text-red-500 transition-colors cursor-pointer border-none bg-transparent outline-none"
+                        >
+                            {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+                        </button>
+
+                        {/* Custom Quality / Speed Settings menu overlay */}
+                        {showSettings && (
+                            <div className="absolute bottom-10 right-0 bg-zinc-950/95 border border-white/10 rounded-xl overflow-hidden w-52 shadow-2xl z-30 backdrop-blur-md animate-fade-in text-white">
+                                <div className="px-3 py-2 border-b border-white/10 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                                    Quality
+                                </div>
+                                <div className="max-h-36 overflow-y-auto">
+                                    <button
+                                        onClick={() => handleQualityChange(-1)}
+                                        className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-white/5 transition-colors cursor-pointer border-none bg-transparent outline-none ${
+                                            currentQuality === -1 ? "text-red-500 font-bold bg-red-500/10" : "text-zinc-200"
+                                        }`}
+                                    >
+                                        Auto
+                                        {currentQuality === -1 && <CheckCircle2 className="w-3.5 h-3.5 text-red-500" />}
+                                    </button>
+                                    {qualities.length === 1 && qualities[0].height === "Original (MP4)" ? (
+                                        <button className="w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-white/5 transition-colors border-t border-white/5 text-red-500 font-bold bg-red-500/10 cursor-pointer border-none bg-transparent outline-none">
+                                            Original (MP4)
+                                            <CheckCircle2 className="w-3.5 h-3.5 text-red-500" />
+                                        </button>
+                                    ) : (
+                                        [...qualities].reverse().map((level, i) => {
+                                            const actualIndex = qualities.length - 1 - i;
+                                            const isActive = currentQuality === actualIndex;
+                                            return (
+                                                <button
+                                                    key={actualIndex}
+                                                    onClick={() => handleQualityChange(actualIndex)}
+                                                    className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-white/5 transition-colors border-t border-white/5 cursor-pointer border-none bg-transparent outline-none ${
+                                                        isActive ? "text-red-500 font-bold bg-red-500/10" : "text-zinc-200"
+                                                    }`}
+                                                >
+                                                    {level.height}p
+                                                    {isActive && <CheckCircle2 className="w-3.5 h-3.5 text-red-500" />}
+                                                </button>
+                                            );
+                                        })
+                                    )}
+                                </div>
+
+                                <div className="px-3 py-2 border-t border-b border-white/10 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                                    Speed
+                                </div>
+                                <div className="flex flex-col">
+                                    {[0.5, 1, 1.25, 1.5, 2].map((rate) => (
+                                        <button
+                                            key={rate}
+                                            onClick={() => handleSpeedChange(rate)}
+                                            className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-white/5 transition-colors cursor-pointer border-none bg-transparent outline-none ${
+                                                playbackRate === rate ? "text-red-500 font-bold bg-red-500/10" : "text-zinc-200"
+                                            }`}
+                                        >
+                                            {rate === 1 ? "Normal" : `${rate}x`}
+                                            {playbackRate === rate && <CheckCircle2 className="w-3.5 h-3.5 text-red-500" />}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
         </div>
     );
 }
@@ -169,6 +423,11 @@ export default function WatchPage() {
     const [newComment, setNewComment] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
 
+    // Suggested videos states
+    const [recommendedVideos, setRecommendedVideos] = useState<any[]>([]);
+    const [recommendedLoading, setRecommendedLoading] = useState(true);
+    const [recommendedFilter, setRecommendedFilter] = useState<'all' | 'creator' | 'related'>('all');
+
     useEffect(() => {
         const fetchRecording = async () => {
             try {
@@ -181,22 +440,6 @@ export default function WatchPage() {
                 console.error("Failed to fetch recording:", err);
             } finally {
                 setLoading(false);
-            }
-        };
-
-        const checkFollowStatus = async () => {
-            try {
-                const token = localStorage.getItem("accessToken");
-                if (!token || !recording?.host?.id) return;
-                const res = await fetch(buildApiUrl(`/api/user/follow-status/${recording.host.id}`), {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                const data = await res.json();
-                if (res.ok) {
-                    setIsFollowing(data.following);
-                }
-            } catch (err) {
-                console.error("Failed to fetch follow status", err);
             }
         };
 
@@ -242,6 +485,35 @@ export default function WatchPage() {
             checkFollowStatus();
         }
     }, [recording]);
+
+    useEffect(() => {
+        const fetchRecommendations = async () => {
+            if (!recording) return;
+            setRecommendedLoading(true);
+            try {
+                const res = await fetch(buildApiUrl("/api/live/vods?limit=30"));
+                const data = await res.json();
+                if (res.ok) {
+                    const filtered = data.filter((vod: any) => vod.id !== params.id);
+                    setRecommendedVideos(filtered);
+                }
+            } catch (err) {
+                console.error("Failed to fetch recommended videos:", err);
+            } finally {
+                setRecommendedLoading(false);
+            }
+        };
+
+        if (recording) {
+            fetchRecommendations();
+        }
+    }, [recording, params.id]);
+
+    const displayedVideos = recommendedVideos.filter((vod) => {
+        if (recommendedFilter === 'creator') return vod.host?.id === recording.host?.id;
+        if (recommendedFilter === 'related') return vod.category === recording.category;
+        return true;
+    });
 
     const handleFollowToggle = async (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -526,9 +798,7 @@ export default function WatchPage() {
                                 >
                                     {isFollowing ? "Following" : "Follow"}
                                 </button>
-                            </div>
-
-                            {/* DESCRIPTION SECTION */}
+                            </div>                            {/* DESCRIPTION SECTION */}
                             <div className="mt-6 p-5 rounded-xl bg-zinc-900/50 border border-white/5">
                                 <h4 className="font-semibold text-white mb-2">Description</h4>
                                 <p className="text-zinc-300 leading-relaxed whitespace-pre-wrap text-sm md:text-base">
@@ -536,73 +806,179 @@ export default function WatchPage() {
                                 </p>
                             </div>
 
+                            {/* COMMENTS SECTION (YouTube-style wider section) */}
+                            <div className="mt-8 bg-zinc-900/30 border border-white/5 rounded-2xl flex flex-col overflow-hidden">
+                                <div className="p-4 border-b border-white/5 flex items-center justify-between bg-zinc-950/20">
+                                    <h3 className="font-bold flex items-center gap-2">
+                                        <MessageSquare className="w-5 h-5 text-indigo-400" />
+                                        Comments ({recording.chat_messages?.length || 0})
+                                    </h3>
+                                </div>
+
+                                {/* Comment Input */}
+                                <div className="p-4 bg-zinc-950/10 border-b border-white/5">
+                                    <form onSubmit={handlePostComment} className="flex items-center gap-3">
+                                        <input
+                                            type="text"
+                                            value={newComment}
+                                            onChange={(e) => setNewComment(e.target.value)}
+                                            placeholder="Add a public comment..."
+                                            className="w-full bg-zinc-900/80 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500/70 placeholder:text-zinc-500 text-white"
+                                            disabled={isSubmitting}
+                                        />
+                                        <button
+                                            type="submit"
+                                            disabled={!newComment.trim() || isSubmitting}
+                                            className="px-5 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95 text-sm shrink-0 flex items-center gap-2"
+                                        >
+                                            {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                                            Comment
+                                        </button>
+                                    </form>
+                                </div>
+
+                                {/* Comment List */}
+                                <div className="p-5 max-h-[400px] overflow-y-auto space-y-4">
+                                    {(!recording.chat_messages || recording.chat_messages.length === 0) ? (
+                                        <div className="flex flex-col items-center justify-center py-8 text-zinc-500">
+                                            <MessageSquare className="w-8 h-8 mb-2 opacity-50" />
+                                            <p className="text-sm">No comments yet. Share your thoughts!</p>
+                                        </div>
+                                    ) : (
+                                        recording.chat_messages.map((chat: any) => {
+                                            const hash = [...chat.sender_handle].reduce((acc, char) => acc + char.charCodeAt(0), 0);
+                                            const colors = ['bg-orange-500', 'bg-green-500', 'bg-blue-500', 'bg-pink-500', 'bg-purple-500', 'bg-indigo-500'];
+                                            const textColor = colors[hash % colors.length].replace('bg-', 'text-');
+                                            const bgColor = colors[hash % colors.length];
+
+                                            return (
+                                                <div key={chat.id} className="flex gap-3">
+                                                    <div className={`w-9 h-9 rounded-full ${bgColor} flex items-center justify-center shrink-0`}>
+                                                        <span className="text-sm font-bold text-white uppercase">{chat.sender_handle.charAt(0)}</span>
+                                                    </div>
+                                                    <div>
+                                                        <div className="flex items-baseline gap-2">
+                                                            <span className={`font-semibold text-sm ${textColor}`}>{chat.sender_handle}</span>
+                                                            <span className="text-[10px] text-zinc-500 font-medium">
+                                                                {new Date(chat.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-sm text-zinc-300 mt-1 whitespace-pre-wrap break-words">{chat.message}</p>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })
+                                    )}
+                                </div>
+                            </div>
+
                         </div>
                     </div>
 
-                    {/* ===== RIGHT COLUMN (COMMENTS / SIDEPANEL) ===== */}
-                    <div className="w-full lg:w-[380px] shrink-0">
-                        <div className="bg-zinc-900 border border-white/10 rounded-2xl h-[600px] flex flex-col overflow-hidden">
-                            <div className="p-4 border-b border-white/10 flex items-center justify-between bg-zinc-950/50">
-                                <h3 className="font-bold flex items-center gap-2">
-                                    <MessageSquare className="w-5 h-5 text-indigo-400" />
-                                    Comments / Live Replay
+                    {/* ===== RIGHT COLUMN (SUGGESTED VIDEOS) ===== */}
+                    <div className="w-full lg:w-[400px] shrink-0">
+                        <div className="space-y-4">
+                            {/* Header & Filter Pills */}
+                            <div>
+                                <h3 className="font-bold text-lg mb-3 text-white flex items-center gap-2">
+                                    <Activity className="w-4 h-4 text-indigo-400" />
+                                    Suggested Videos
                                 </h3>
+                                <div className="flex flex-wrap gap-2 mb-4">
+                                    <button
+                                        onClick={() => setRecommendedFilter('all')}
+                                        className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                                            recommendedFilter === 'all'
+                                                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                                                : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white'
+                                        }`}
+                                    >
+                                        All
+                                    </button>
+                                    <button
+                                        onClick={() => setRecommendedFilter('creator')}
+                                        className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                                            recommendedFilter === 'creator'
+                                                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                                                : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white'
+                                        }`}
+                                    >
+                                        From Creator
+                                    </button>
+                                    <button
+                                        onClick={() => setRecommendedFilter('related')}
+                                        className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                                            recommendedFilter === 'related'
+                                                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
+                                                : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-white'
+                                        }`}
+                                    >
+                                        Related (Category)
+                                    </button>
+                                </div>
                             </div>
 
-                            {/* Chat Messages Area */}
-                            <div className="flex-1 p-4 overflow-y-auto space-y-4">
-                                {(!recording.chat_messages || recording.chat_messages.length === 0) ? (
-                                    <div className="flex flex-col items-center justify-center h-full text-zinc-500">
-                                        <MessageSquare className="w-8 h-8 mb-2 opacity-50" />
-                                        <p className="text-sm">No chat history available.</p>
+                            {/* Videos Stack */}
+                            <div className="space-y-3.5">
+                                {recommendedLoading ? (
+                                    [...Array(6)].map((_, i) => (
+                                        <div key={i} className="flex gap-3 animate-pulse">
+                                            <div className="w-36 h-20 bg-zinc-900 rounded-lg shrink-0" />
+                                            <div className="flex-1 space-y-2 py-1">
+                                                <div className="h-3.5 bg-zinc-900 rounded w-11/12" />
+                                                <div className="h-3 bg-zinc-900 rounded w-2/3" />
+                                                <div className="h-2.5 bg-zinc-900 rounded w-1/2" />
+                                            </div>
+                                        </div>
+                                    ))
+                                ) : displayedVideos.length === 0 ? (
+                                    <div className="text-center py-8 bg-zinc-900/30 rounded-xl border border-white/5 p-4 text-zinc-500">
+                                        <Clock className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                                        <p className="text-xs">No suggested videos found.</p>
                                     </div>
                                 ) : (
-                                    recording.chat_messages.map((chat: any) => {
-                                        // Simple hash for consistent colors based on handle
-                                        const hash = [...chat.sender_handle].reduce((acc, char) => acc + char.charCodeAt(0), 0);
-                                        const colors = ['bg-orange-500', 'bg-green-500', 'bg-blue-500', 'bg-pink-500', 'bg-purple-500', 'bg-indigo-500'];
-                                        const textColor = colors[hash % colors.length].replace('bg-', 'text-');
-                                        const bgColor = colors[hash % colors.length];
-
+                                    displayedVideos.map((vod: any) => {
                                         return (
-                                            <div key={chat.id} className="flex gap-3">
-                                                <div className={`w-8 h-8 rounded-full ${bgColor} flex items-center justify-center shrink-0`}>
-                                                    <span className="text-xs font-bold text-white uppercase">{chat.sender_handle.charAt(0)}</span>
+                                            <div
+                                                key={vod.id}
+                                                onClick={() => router.push(`/watch/${vod.id}`)}
+                                                className="flex gap-3 group cursor-pointer hover:bg-white/[0.02] p-1.5 rounded-xl transition-all duration-200"
+                                            >
+                                                {/* Thumbnail */}
+                                                <div className="relative w-36 h-20 bg-zinc-950 rounded-lg overflow-hidden shrink-0 border border-white/5">
+                                                    <img
+                                                        src={vod.thumbnail_url || "https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&q=80&w=300"}
+                                                        alt={vod.title}
+                                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                                    />
+                                                    <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/85 text-[10px] font-bold text-white uppercase tracking-wider scale-90">
+                                                        {vod.category || "VOD"}
+                                                    </span>
                                                 </div>
-                                                <div>
-                                                    <div className="flex items-baseline gap-2">
-                                                        <span className={`font-medium text-sm ${textColor}`}>{chat.sender_handle}</span>
-                                                        <span className="text-[10px] text-zinc-500">
-                                                            {new Date(chat.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                        </span>
+
+                                                {/* Info */}
+                                                <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
+                                                    <div>
+                                                        <h4 className="text-xs font-bold text-zinc-100 group-hover:text-indigo-400 line-clamp-2 transition-colors leading-snug duration-150">
+                                                            {vod.title}
+                                                        </h4>
+                                                        <div className="flex items-center gap-1 mt-1">
+                                                            <span className="text-[11px] text-zinc-400 truncate hover:text-zinc-200">
+                                                                {vod.host?.display_name}
+                                                            </span>
+                                                            {vod.host?.is_verified && (
+                                                                <CheckCircle2 className="w-3 h-3 text-blue-500 shrink-0" fill="currentColor" stroke="white" />
+                                                            )}
+                                                        </div>
                                                     </div>
-                                                    <p className="text-sm text-zinc-300 mt-0.5 whitespace-pre-wrap break-words">{chat.message}</p>
+                                                    <p className="text-[10px] text-zinc-500 truncate mt-1">
+                                                        {vod.views || 0} views • {formatDistanceToNow(new Date(vod.ended_at || vod.created_at), { addSuffix: true })}
+                                                    </p>
                                                 </div>
                                             </div>
                                         );
                                     })
                                 )}
-                            </div>
-
-                            {/* Chat Input */}
-                            <div className="p-4 bg-zinc-800/50 border-t border-white/5">
-                                <form onSubmit={handlePostComment} className="relative flex items-center gap-2">
-                                    <input
-                                        type="text"
-                                        value={newComment}
-                                        onChange={(e) => setNewComment(e.target.value)}
-                                        placeholder="Add a comment..."
-                                        className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-indigo-500"
-                                        disabled={isSubmitting}
-                                    />
-                                    <button
-                                        type="submit"
-                                        disabled={!newComment.trim() || isSubmitting}
-                                        className="p-2.5 bg-indigo-600 rounded-lg hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                                    >
-                                        {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                                    </button>
-                                </form>
                             </div>
                         </div>
                     </div>
