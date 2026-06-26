@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 
 import { useParams, useRouter } from "next/navigation";
-import { Mic, MicOff, VideoIcon, VideoOff, PhoneOff, Users, MessageSquare, Loader2, Share2, Circle, UserX, Maximize, Eye, EyeOff } from "lucide-react";
+import { Mic, MicOff, VideoIcon, VideoOff, PhoneOff, Users, MessageSquare, Loader2, Share2, Circle, UserX, Maximize, Eye, EyeOff, ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen } from "lucide-react";
 import {
     LiveKitRoom,
     RoomAudioRenderer,
@@ -1154,6 +1154,7 @@ function LiveRoomContent({
 }) {
     const [hiddenTracks, setHiddenTracks] = useState<string[]>([]);
     const [focusedTrackId, setFocusedTrackId] = useState<string | null>(null);
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
     const allTracks = useTracks(
         [
@@ -1198,43 +1199,91 @@ function LiveRoomContent({
             />
 
             <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
-                {/* Left Stage */}
-                <StageLayout
-                    isBroadcaster={isBroadcaster}
-                    allTracks={allTracks}
-                    hiddenTracks={hiddenTracks}
-                    setHiddenTracks={setHiddenTracks}
-                    focusedTrackId={focusedTrackId}
-                    setFocusedTrackId={setFocusedTrackId}
-                />
+                {/* Left Stage — grows when sidebar collapses */}
+                <div className={`relative flex-1 flex flex-col transition-all duration-500 ease-in-out`}>
+                    <StageLayout
+                        isBroadcaster={isBroadcaster}
+                        allTracks={allTracks}
+                        hiddenTracks={hiddenTracks}
+                        setHiddenTracks={setHiddenTracks}
+                        focusedTrackId={focusedTrackId}
+                        setFocusedTrackId={setFocusedTrackId}
+                    />
 
-                {/* Right Panel */}
-                <div className="w-full lg:w-96 bg-zinc-950 flex flex-col z-20 flex-1 min-h-0">
-                    {isHost ? (
-                        <HostPanel
-                            sessionId={id}
-                            socket={socket}
-                            inviteHandle={inviteHandle}
-                            setInviteHandle={setInviteHandle}
-                            handleSendInvite={handleSendInvite}
-                            allTracks={allTracks}
-                            hiddenTracks={hiddenTracks}
-                            setHiddenTracks={setHiddenTracks}
-                            focusedTrackId={focusedTrackId}
-                            setFocusedTrackId={setFocusedTrackId}
-                        />
-                    ) : (
-                        <ListenerPanel
-                            sessionId={id}
-                            socket={socket}
-                            allTracks={allTracks}
-                            hiddenTracks={hiddenTracks}
-                            setHiddenTracks={setHiddenTracks}
-                            focusedTrackId={focusedTrackId}
-                            setFocusedTrackId={setFocusedTrackId}
-                        />
-                    )}
+                    {/* Floating Sidebar Toggle Button — always visible on stage edge */}
+                    <button
+                        onClick={() => setSidebarCollapsed(prev => !prev)}
+                        title={sidebarCollapsed ? "Open Panel" : "Close Panel"}
+                        className="hidden lg:flex absolute right-0 top-1/2 -translate-y-1/2 z-50 items-center justify-center w-7 h-16 rounded-l-xl bg-zinc-800/90 hover:bg-indigo-600 border border-white/10 hover:border-indigo-500/50 text-zinc-400 hover:text-white transition-all duration-300 shadow-2xl backdrop-blur-sm cursor-pointer group"
+                        style={{ right: sidebarCollapsed ? 0 : 0 }}
+                    >
+                        <div className="flex flex-col items-center gap-0.5">
+                            {sidebarCollapsed ? (
+                                <>
+                                    <ChevronLeft className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                </>
+                            ) : (
+                                <>
+                                    <ChevronRight className="w-4 h-4 group-hover:scale-110 transition-transform" />
+                                </>
+                            )}
+                        </div>
+                    </button>
                 </div>
+
+                {/* Right Panel — slides in/out */}
+                <div
+                    className={`
+                        bg-zinc-950 flex flex-col z-20 flex-shrink-0
+                        transition-all duration-500 ease-in-out overflow-hidden
+                        w-full lg:flex-none
+                        ${
+                            sidebarCollapsed
+                                ? 'lg:w-0 lg:opacity-0 lg:pointer-events-none'
+                                : 'lg:w-96 lg:opacity-100'
+                        }
+                    `}
+                >
+                    {/* Inner wrapper prevents content jump during animation */}
+                    <div className="w-full lg:w-96 flex flex-col h-full min-h-0">
+                        {isHost ? (
+                            <HostPanel
+                                sessionId={id}
+                                socket={socket}
+                                inviteHandle={inviteHandle}
+                                setInviteHandle={setInviteHandle}
+                                handleSendInvite={handleSendInvite}
+                                allTracks={allTracks}
+                                hiddenTracks={hiddenTracks}
+                                setHiddenTracks={setHiddenTracks}
+                                focusedTrackId={focusedTrackId}
+                                setFocusedTrackId={setFocusedTrackId}
+                            />
+                        ) : (
+                            <ListenerPanel
+                                sessionId={id}
+                                socket={socket}
+                                allTracks={allTracks}
+                                hiddenTracks={hiddenTracks}
+                                setHiddenTracks={setHiddenTracks}
+                                focusedTrackId={focusedTrackId}
+                                setFocusedTrackId={setFocusedTrackId}
+                            />
+                        )}
+                    </div>
+                </div>
+
+                {/* Mobile toggle button — bottom bar on small screens */}
+                <button
+                    onClick={() => setSidebarCollapsed(prev => !prev)}
+                    className="lg:hidden fixed bottom-20 right-4 z-50 flex items-center gap-2 px-4 py-2.5 bg-indigo-600/90 hover:bg-indigo-500 text-white font-semibold text-xs rounded-full shadow-2xl backdrop-blur-sm border border-indigo-400/30 transition-all duration-300 cursor-pointer"
+                >
+                    {sidebarCollapsed ? (
+                        <><PanelRightOpen className="w-4 h-4" /> Open Panel</>
+                    ) : (
+                        <><PanelRightClose className="w-4 h-4" /> Close Panel</>
+                    )}
+                </button>
             </div>
         </div>
     );
