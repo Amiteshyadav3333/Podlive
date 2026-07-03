@@ -1317,20 +1317,29 @@ export default function LiveRoom() {
     useEffect(() => {
         const initRoom = async () => {
             try {
-                const lsToken = localStorage.getItem("accessToken");
-                if (!lsToken) { router.push("/login"); return; }
-
                 const wsUrl = await fetchLiveKitWsUrl();
                 setLiveKitServerUrl(wsUrl);
 
                 try {
-                    const tokenAttempt = await axios.get(buildApiUrl(`/api/live/${id}/token`), {
-                        headers: { Authorization: `Bearer ${lsToken}` },
-                    });
-                    setToken(tokenAttempt.data.token);
-                    setRoomName(tokenAttempt.data.roomName);
-                    setIsHost(!!tokenAttempt.data.isHost);
-                    setPreJoinComplete(!tokenAttempt.data.isHost);
+                    const lsToken = localStorage.getItem("accessToken");
+
+                    if (lsToken) {
+                        // Logged-in user: get proper token (host or viewer)
+                        const tokenAttempt = await axios.get(buildApiUrl(`/api/live/${id}/token`), {
+                            headers: { Authorization: `Bearer ${lsToken}` },
+                        });
+                        setToken(tokenAttempt.data.token);
+                        setRoomName(tokenAttempt.data.roomName);
+                        setIsHost(!!tokenAttempt.data.isHost);
+                        setPreJoinComplete(!tokenAttempt.data.isHost); // viewers skip prejoin
+                    } else {
+                        // Anonymous viewer: use public guest token
+                        const guestAttempt = await axios.get(buildApiUrl(`/api/live/${id}/guest-token`));
+                        setToken(guestAttempt.data.token);
+                        setRoomName(guestAttempt.data.roomName);
+                        setIsHost(false);
+                        setPreJoinComplete(true); // viewers skip prejoin
+                    }
                 } catch (tokenError: any) {
                     if (tokenError.response?.status === 404) {
                         try {
@@ -1341,7 +1350,7 @@ export default function LiveRoom() {
                             }
                         } catch { }
                     }
-                    router.push("/dashboard");
+                    router.push("/");
                 }
             } catch {
                 router.push("/dashboard");

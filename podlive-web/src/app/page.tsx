@@ -14,28 +14,41 @@ function VideoCard({ session, isLive = false }: { session: any; isLive?: boolean
   const avatar = session.host?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(session.host?.display_name || "H")}&background=6366f1&color=fff`;
 
   return (
-    <div
-      onClick={() => router.push(href)}
-      className="group cursor-pointer fade-up"
-    >
+    <div onClick={() => router.push(href)} className="group cursor-pointer fade-up">
       {/* Thumbnail */}
       <div className="relative aspect-video rounded-xl overflow-hidden bg-zinc-900 border border-white/5 group-hover:border-indigo-500/40 transition-all duration-300">
         {session.thumbnail_url ? (
-          <img
-            src={session.thumbnail_url}
-            alt={session.title}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-          />
+          <img src={session.thumbnail_url} alt={session.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
         ) : (
-          <div className="w-full h-full skeleton flex items-center justify-center">
-            <Video className="w-10 h-10 text-zinc-700" />
+          <div className="w-full h-full bg-gradient-to-br from-zinc-900 to-zinc-800 flex items-center justify-center">
+            {isLive ? (
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-12 h-12 rounded-full bg-red-500/20 border border-red-500/30 flex items-center justify-center">
+                  <Radio className="w-6 h-6 text-red-400 animate-pulse" />
+                </div>
+                <span className="text-xs text-zinc-500 font-medium">Live Stream</span>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-2">
+                <div className="w-12 h-12 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center">
+                  <Video className="w-6 h-6 text-indigo-400" />
+                </div>
+                <span className="text-xs text-zinc-500 font-medium">No thumbnail</span>
+              </div>
+            )}
           </div>
         )}
 
-        {/* Hover Play */}
+        {/* Hover overlay with Join/Play button */}
         <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-          <div className="w-14 h-14 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center border border-white/30">
-            <Play className="w-6 h-6 text-white ml-1" fill="white" />
+          <div className={`flex items-center gap-2 px-5 py-2.5 rounded-full font-bold text-sm text-white ${
+            isLive ? "bg-red-600 shadow-lg shadow-red-900/50" : "bg-white/20 backdrop-blur-md border border-white/30"
+          }`}>
+            {isLive ? (
+              <><Users className="w-4 h-4" /> Join Live</>
+            ) : (
+              <><Play className="w-4 h-4" fill="white" /> Watch</>
+            )}
           </div>
         </div>
 
@@ -57,13 +70,11 @@ function VideoCard({ session, isLive = false }: { session: any; isLive?: boolean
 
         {/* Processing badge */}
         {!isLive && session.is_processing && (
-          <div className="absolute bottom-2 left-2 bg-amber-500 text-black text-[10px] font-bold px-2 py-0.5 rounded">
-            Processing...
-          </div>
+          <div className="absolute bottom-2 left-2 bg-amber-500 text-black text-[10px] font-bold px-2 py-0.5 rounded">Processing...</div>
         )}
 
         {/* Category tag */}
-        {!isLive && session.category && (
+        {session.category && (
           <div className="absolute bottom-2 right-2 bg-black/70 backdrop-blur-sm text-white text-[10px] font-semibold px-2 py-0.5 rounded">
             {session.category}
           </div>
@@ -72,36 +83,19 @@ function VideoCard({ session, isLive = false }: { session: any; isLive?: boolean
 
       {/* Info */}
       <div className="mt-3 flex gap-3">
-        <div
-          onClick={(e) => { e.stopPropagation(); router.push(`/creator/${session.host?.id}`); }}
-          className="shrink-0 mt-0.5"
-        >
-          <img
-            src={avatar}
-            alt={session.host?.display_name}
-            className="w-9 h-9 rounded-full object-cover border border-white/10 hover:border-indigo-500 transition-colors"
-          />
+        <div onClick={(e) => { e.stopPropagation(); router.push(`/creator/${session.host?.id}`); }} className="shrink-0 mt-0.5">
+          <img src={avatar} alt={session.host?.display_name} className="w-9 h-9 rounded-full object-cover border border-white/10 hover:border-indigo-500 transition-colors" />
         </div>
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-sm text-white line-clamp-2 leading-snug group-hover:text-indigo-400 transition-colors">
-            {session.title}
-          </h3>
-          <div
-            onClick={(e) => { e.stopPropagation(); router.push(`/creator/${session.host?.id}`); }}
-            className="mt-1 text-xs text-zinc-400 hover:text-white transition-colors cursor-pointer"
-          >
+          <h3 className="font-semibold text-sm text-white line-clamp-2 leading-snug group-hover:text-indigo-400 transition-colors">{session.title}</h3>
+          <div onClick={(e) => { e.stopPropagation(); router.push(`/creator/${session.host?.id}`); }} className="mt-1 text-xs text-zinc-400 hover:text-white transition-colors cursor-pointer">
             @{session.host?.unique_handle || session.host?.username}
           </div>
           <div className="mt-0.5 flex items-center gap-1.5 text-xs text-zinc-500">
             {isLive ? (
-              <span className="text-red-400 font-medium">Live now</span>
+              <span className="text-red-400 font-medium flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-red-500 live-dot" />Live now</span>
             ) : (
-              <>
-                <Eye className="w-3 h-3" />
-                <span>{session.views || session.viewer_count_peak || 0} views</span>
-                <span>•</span>
-                <span>{formatDistanceToNow(new Date(session.ended_at || session.created_at), { addSuffix: true })}</span>
-              </>
+              <><Eye className="w-3 h-3" /><span>{session.views || session.viewer_count_peak || 0} views</span><span>•</span><span>{formatDistanceToNow(new Date(session.ended_at || session.created_at), { addSuffix: true })}</span></>
             )}
           </div>
         </div>
@@ -125,17 +119,6 @@ export default function Home() {
 
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const defaultUser = {
-        id: '49f733ff-9adb-4a80-a249-6cc2b181033e',
-        unique_handle: '@amitesh',
-        display_name: 'amitesh Yadav',
-        email: '236301036@gkv.ac.in'
-      };
-      if (!localStorage.getItem('user') || !localStorage.getItem('accessToken')) {
-        localStorage.setItem('user', JSON.stringify(defaultUser));
-        localStorage.setItem('accessToken', 'mock-access-token');
-        localStorage.setItem('refreshToken', 'mock-refresh-token');
-      }
       const u = localStorage.getItem("user");
       if (u) setUser(JSON.parse(u));
     }
@@ -216,14 +199,12 @@ export default function Home() {
               </Link>
             ) : (
               <>
-                {/* 
                 <Link href="/login" className="text-sm text-zinc-400 hover:text-white transition-colors px-3 py-1.5 rounded-full hover:bg-white/5">
                   Log in
                 </Link>
                 <Link href="/register" className="text-sm font-semibold bg-white text-black px-4 py-1.5 rounded-full hover:bg-zinc-100 transition-colors">
                   Sign up
                 </Link>
-                */}
               </>
             )}
           </div>

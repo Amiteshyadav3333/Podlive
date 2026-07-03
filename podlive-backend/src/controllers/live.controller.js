@@ -165,6 +165,27 @@ exports.endLiveSession = async (req, res) => {
     }
 };
 
+// Public guest token — no login required, viewer-only (canPublish: false)
+exports.getGuestToken = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const session = await prisma.liveSession.findUnique({ where: { id } });
+
+        if (!session || session.status !== 'live') {
+            return res.status(404).json({ error: 'Active live session not found' });
+        }
+
+        // Generate anonymous viewer identity
+        const identity = `viewer-${crypto.randomBytes(4).toString('hex')}`;
+        const token = await createToken(session.livekit_room_name, identity, false);
+
+        res.json({ token, roomName: session.livekit_room_name, isHost: false, isGuest: true });
+    } catch (error) {
+        console.error('Get Guest Token Error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+};
+
 exports.getViewerToken = async (req, res) => {
     try {
         const { id } = req.params;
