@@ -20,6 +20,20 @@ export default function SocketProvider({ children }: { children: React.ReactNode
     const router = useRouter();
 
     useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const defaultUser = {
+                id: '49f733ff-9adb-4a80-a249-6cc2b181033e',
+                unique_handle: '@amitesh',
+                display_name: 'amitesh Yadav',
+                email: '236301036@gkv.ac.in'
+            };
+            if (!localStorage.getItem('user') || !localStorage.getItem('accessToken')) {
+                localStorage.setItem('user', JSON.stringify(defaultUser));
+                localStorage.setItem('accessToken', 'mock-access-token');
+                localStorage.setItem('refreshToken', 'mock-refresh-token');
+            }
+        }
+
         // Intercept native fetch
         const originalFetch = window.fetch;
         window.fetch = async (...args) => {
