@@ -74,7 +74,7 @@ exports.uploadVideo = async (req, res) => {
                 thumbnail_url: thumbnailUrl,
                 started_at: new Date(),
                 ended_at: new Date(),
-                is_processing: true
+                is_processing: false
             }
         });
 
@@ -82,7 +82,7 @@ exports.uploadVideo = async (req, res) => {
 
         // ── Respond immediately (don't wait for HLS/subtitles) ──
         res.status(201).json({
-            message: 'Video uploaded. Processing started in background.',
+            message: 'Video uploaded and published. Background optimization started.',
             video: newVOD
         });
 

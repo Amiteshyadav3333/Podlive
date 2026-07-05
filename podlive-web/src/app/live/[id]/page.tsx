@@ -14,11 +14,10 @@ import {
     ParticipantTile,
     ControlBar,
     StartAudio,
-    useLocalParticipant,
-    TrackToggle
+    useLocalParticipant
 } from "@livekit/components-react";
 
-import { Track } from "livekit-client";
+import { createLocalScreenTracks, Track, type LocalTrack } from "livekit-client";
 import "@livekit/components-styles";
 import axios from "axios";
 import { useSocket } from "@/providers/SocketProvider";
@@ -157,7 +156,90 @@ function StageLayout({
     focusedTrackId: string | null;
     setFocusedTrackId: React.Dispatch<React.SetStateAction<string | null>>;
 }) {
-    const { localParticipant, isScreenShareEnabled } = useLocalParticipant();
+    const { localParticipant } = useLocalParticipant();
+    const [screenTracks, setScreenTracks] = useState<LocalTrack[]>([]);
+    const screenTracksRef = useRef<LocalTrack[]>([]);
+    const [isScreenShareStarting, setIsScreenShareStarting] = useState(false);
+    const [screenShareError, setScreenShareError] = useState("");
+    const isScreenShareEnabled = screenTracks.length > 0;
+
+    const stopScreenShare = useCallback(async () => {
+        const tracksToStop = [...screenTracksRef.current];
+        screenTracksRef.current = [];
+        setScreenTracks([]);
+        setScreenShareError("");
+
+        await Promise.allSettled(
+            tracksToStop.map((track) => localParticipant.unpublishTrack(track, true))
+        );
+        tracksToStop.forEach((track) => track.stop());
+    }, [localParticipant]);
+
+    const startScreenShare = useCallback(async () => {
+        setIsScreenShareStarting(true);
+        setScreenShareError("");
+
+        try {
+            const tracks = await createLocalScreenTracks({
+                audio: {
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false,
+                },
+                video: true,
+                systemAudio: "include",
+                selfBrowserSurface: "include",
+                surfaceSwitching: "include",
+                contentHint: "motion",
+            });
+
+            const streamName = `screen-${localParticipant.identity}`;
+            await Promise.all(
+                tracks.map((track) =>
+                    localParticipant.publishTrack(track, {
+                        source: track.source,
+                        stream: streamName,
+                    })
+                )
+            );
+
+            tracks.forEach((track) => {
+                track.mediaStreamTrack.onended = () => {
+                    void stopScreenShare();
+                };
+            });
+
+            screenTracksRef.current = tracks;
+            setScreenTracks(tracks);
+
+            const hasScreenAudio = tracks.some((track) => track.source === Track.Source.ScreenShareAudio);
+            if (!hasScreenAudio) {
+                setScreenShareError("Screen audio share nahi hua. Chrome Tab/Entire Screen choose karke Share audio tick karein.");
+            }
+        } catch (error: any) {
+            setScreenShareError(error?.message || "Screen share start nahi ho paya.");
+        } finally {
+            setIsScreenShareStarting(false);
+        }
+    }, [localParticipant, stopScreenShare]);
+
+    const handleScreenShareToggle = useCallback(() => {
+        if (isScreenShareEnabled) {
+            void stopScreenShare();
+        } else {
+            void startScreenShare();
+        }
+    }, [isScreenShareEnabled, startScreenShare, stopScreenShare]);
+
+    useEffect(() => {
+        return () => {
+            screenTracksRef.current.forEach((track) => {
+                localParticipant.unpublishTrack(track, true).catch(() => {});
+                track.stop();
+            });
+            screenTracksRef.current = [];
+        };
+    }, [localParticipant]);
 
     const activeTracks = allTracks.filter((t) => {
         const p = t.participant;
@@ -286,29 +368,30 @@ function StageLayout({
                 <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-40 flex flex-col items-center gap-2 w-full max-w-sm sm:max-w-md">
                     {!isScreenShareEnabled && (
                         <div className="bg-zinc-950/90 text-zinc-300 text-xs px-4 py-2.5 rounded-2xl border border-indigo-500/30 shadow-2xl text-center backdrop-blur-md max-w-[90%] transition-all duration-300 select-none animate-bounce hidden sm:block">
-                            <p className="font-semibold text-indigo-400 mb-0.5">💡 Video Sound Tip</p>
+                            <p className="font-semibold text-indigo-400 mb-0.5">Video Sound Tip</p>
                             <p className="text-[11px] leading-relaxed text-zinc-400 mb-0">
                                 Screenshare par video sound sunane ke liye <span className="text-white font-medium">"Chrome Tab"</span> ya <span className="text-white font-medium">"Entire Screen"</span> select karein aur popup me <span className="text-white font-medium">"Share audio"</span> ko tick karein.
                             </p>
                         </div>
                     )}
+                    {screenShareError && (
+                        <div className="bg-amber-500/15 text-amber-200 text-xs px-4 py-2 rounded-2xl border border-amber-500/30 shadow-2xl text-center backdrop-blur-md max-w-[90%]">
+                            {screenShareError}
+                        </div>
+                    )}
 
                     <div className="flex items-center gap-2 bg-zinc-900/90 p-1.5 rounded-xl border border-white/10 shadow-2xl backdrop-blur-md">
                         <ControlBar controls={{ camera: true, microphone: true, screenShare: false, leave: false, chat: false }} />
-                        <TrackToggle
-                            source={Track.Source.ScreenShare}
-                            captureOptions={{
-                                audio: {
-                                    echoCancellation: false,
-                                    noiseSuppression: false,
-                                    autoGainControl: false,
-                                },
-                                systemAudio: "include",
-                            }}
-                            showIcon={true}
+                        <button
+                            type="button"
+                            onClick={handleScreenShareToggle}
+                            disabled={isScreenShareStarting}
+                            className="lk-button"
+                            data-lk-source={Track.Source.ScreenShare}
+                            data-lk-enabled={isScreenShareEnabled}
                         >
-                            {isScreenShareEnabled ? "Stop screen share" : "Share screen"}
-                        </TrackToggle>
+                            {isScreenShareStarting ? "Starting..." : isScreenShareEnabled ? "Stop screen share" : "Share screen"}
+                        </button>
                     </div>
                 </div>
             )}
