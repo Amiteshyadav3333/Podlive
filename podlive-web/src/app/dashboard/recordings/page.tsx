@@ -50,7 +50,7 @@ export default function Recordings() {
       <DashboardSidebar />
       <div className="md:ml-60">
         <div className="sticky top-0 z-40 border-b border-white/[0.06] bg-[#080808]/90 backdrop-blur-xl px-6 h-14 flex items-center justify-between">
-          <h1 className="font-bold text-base">My Recordings</h1>
+          <h1 className="font-bold text-base">My Videos</h1>
           <span className="text-xs text-zinc-500">{recordings.length} videos</span>
         </div>
 
@@ -72,8 +72,8 @@ export default function Recordings() {
               <div className="w-16 h-16 rounded-2xl bg-indigo-500/15 flex items-center justify-center mb-4">
                 <Video className="w-8 h-8 text-indigo-400" />
               </div>
-              <h2 className="text-xl font-bold mb-2">No recordings yet</h2>
-              <p className="text-zinc-400 text-sm max-w-sm mb-6">Your live sessions will be saved here automatically. Upload a recording to get started.</p>
+              <h2 className="text-xl font-bold mb-2">No videos yet</h2>
+              <p className="text-zinc-400 text-sm max-w-sm mb-6">Upload a video to get started.</p>
               <button onClick={() => router.push("/dashboard/setup")} className="bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-full text-sm font-semibold flex items-center gap-2 transition-colors">
                 <Play className="w-4 h-4" /> Start First Broadcast
               </button>

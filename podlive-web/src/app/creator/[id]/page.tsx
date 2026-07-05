@@ -24,7 +24,7 @@ export default function CreatorProfilePage() {
     const { socket } = useSocket();
     const [creatorData, setCreatorData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState("recordings");
+    const [activeTab, setActiveTab] = useState("videos");
     const [isFollowing, setIsFollowing] = useState(false);
 
     useEffect(() => {
@@ -240,7 +240,7 @@ export default function CreatorProfilePage() {
 
                 {/* ===== TABS ===== */}
                 <div className="flex items-center gap-8 border-b border-gray-800 mt-2">
-                    {['recordings', 'about', 'community'].map((tab) => (
+                    {['videos', 'about', 'community'].map((tab) => (
                         <button
                             key={tab}
                             onClick={() => setActiveTab(tab)}
@@ -260,7 +260,7 @@ export default function CreatorProfilePage() {
 
                 {/* ===== TAB CONTENT ===== */}
                 <div className="py-8">
-                    {activeTab === "recordings" && (
+                    {activeTab === "videos" && (
                         <motion.div
                             initial={{ opacity: 0, y: 10 }}
                             animate={{ opacity: 1, y: 0 }}
@@ -269,7 +269,7 @@ export default function CreatorProfilePage() {
                             <div className="flex items-center justify-between mb-6">
                                 <h2 className="text-xl font-bold flex items-center gap-2">
                                     <Video className="w-5 h-5 text-indigo-400" />
-                                    Past Broadcasts
+                                    Uploaded Videos
                                 </h2>
                             </div>
 
@@ -277,8 +277,8 @@ export default function CreatorProfilePage() {
                             {(!creatorData.recordings || creatorData.recordings.length === 0) ? (
                                 <div className="p-12 text-center bg-zinc-900 border border-zinc-800 rounded-2xl">
                                     <Video className="w-12 h-12 mx-auto mb-4 text-zinc-600" />
-                                    <h3 className="text-lg font-bold text-zinc-300 mb-1">No recordings yet</h3>
-                                    <p className="text-zinc-500">This creator hasn't published any past sessions.</p>
+                                    <h3 className="text-lg font-bold text-zinc-300 mb-1">No videos yet</h3>
+                                    <p className="text-zinc-500">This creator hasn't published any videos.</p>
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

@@ -24,123 +24,8 @@ import axios from "axios";
 import { useSocket } from "@/providers/SocketProvider";
 import { buildApiUrl, fetchLiveKitWsUrl } from "@/lib/api";
 
-// ─────────────────────────────────────────────────────────────
-// LocalRecorder — runs inside LiveKitRoom, captures host's
-// camera + mic via MediaRecorder and downloads on stop.
-// Nothing is uploaded to the server.
-// ─────────────────────────────────────────────────────────────
-function LocalRecorder({
-    isHost,
-    onRecorderReady,
-    onRecordingStart,
-}: {
-    isHost: boolean;
-    onRecorderReady: (stopFn: () => Promise<void>) => void;
-    onRecordingStart: () => void;
-}) {
-    const { localParticipant } = useLocalParticipant();
-    const recorderRef = useRef<MediaRecorder | null>(null);
-    const chunksRef = useRef<Blob[]>([]);
-    const startedRef = useRef(false);
-    const onRecorderReadyRef = useRef(onRecorderReady);
-    const onRecordingStartRef = useRef(onRecordingStart);
 
-    useEffect(() => {
-        onRecorderReadyRef.current = onRecorderReady;
-        onRecordingStartRef.current = onRecordingStart;
-    });
 
-    const stopFn = useCallback((): Promise<void> => {
-        return new Promise((resolve) => {
-            const recorder = recorderRef.current;
-            if (!recorder || recorder.state === "inactive") {
-                resolve();
-                return;
-            }
-            recorder.onstop = () => {
-                const mimeType = recorder.mimeType || "video/webm";
-                const ext = mimeType.includes("mp4") ? "mp4" : "webm";
-                const blob = new Blob(chunksRef.current, { type: mimeType });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `podlive-${new Date()
-                    .toISOString()
-                    .slice(0, 19)
-                    .replace(/:/g, "-")}.${ext}`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-                resolve();
-            };
-            recorder.stop();
-        });
-    }, []);
-
-    // Register the stop function as soon as host is known
-    useEffect(() => {
-        if (!isHost) return;
-        onRecorderReadyRef.current(stopFn);
-    }, [isHost, stopFn]);
-
-    // Start recording once local tracks become available
-    useEffect(() => {
-        if (!isHost || !localParticipant || startedRef.current) return;
-
-        const tryStart = () => {
-            const tracks: MediaStreamTrack[] = [];
-            localParticipant.getTrackPublications().forEach((pub) => {
-                const mst = pub.track?.mediaStreamTrack;
-                if (mst && mst.readyState === "live") {
-                    tracks.push(mst.clone()); // clone so recorder stop ≠ LiveKit track stop
-                }
-            });
-            if (tracks.length === 0) return false;
-
-            const mimeTypes = [
-                "video/webm;codecs=vp9,opus",
-                "video/webm;codecs=vp8,opus",
-                "video/webm",
-                "video/mp4",
-            ];
-            const mimeType = mimeTypes.find((t) => MediaRecorder.isTypeSupported(t)) ?? "";
-
-            try {
-                const stream = new MediaStream(tracks);
-                const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
-                chunksRef.current = [];
-                recorder.ondataavailable = (e) => {
-                    if (e.data.size > 0) chunksRef.current.push(e.data);
-                };
-                recorder.start(2000); // chunk every 2s
-                recorderRef.current = recorder;
-                startedRef.current = true;
-                onRecordingStartRef.current();
-                console.log("🔴 Local recording started:", mimeType || "default");
-                return true;
-            } catch (e) {
-                console.error("MediaRecorder init failed:", e);
-                return false;
-            }
-        };
-
-        if (!tryStart()) {
-            const interval = setInterval(() => {
-                if (tryStart()) clearInterval(interval);
-            }, 2000);
-            return () => clearInterval(interval);
-        }
-
-        return () => {
-            if (recorderRef.current && recorderRef.current.state !== "inactive") {
-                recorderRef.current.stop();
-            }
-        };
-    }, [localParticipant, isHost, stopFn]);
-
-    return null;
-}
 
 // ─────────────────────────────────────────────────────────────
 // RoomHeader
@@ -149,14 +34,10 @@ function RoomHeader({
     roomName,
     isHost,
     id,
-    isRecording,
-    stopRecording,
 }: {
     roomName: string;
     isHost: boolean;
     id: string;
-    isRecording: boolean;
-    stopRecording: () => Promise<void>;
 }) {
     const router = useRouter();
     const participants = useParticipants();
@@ -181,9 +62,9 @@ function RoomHeader({
         }
     };
 
-    const handleEndStream = async () => {
+        const handleEndStream = async () => {
         if (!isHost) {
-            router.push("/dashboard/recordings");
+            router.push("/dashboard");
             return;
         }
 
@@ -191,12 +72,7 @@ function RoomHeader({
         const lsToken = localStorage.getItem("accessToken");
 
         try {
-            // 1️⃣ Stop local recording → browser auto-downloads the file
-            if (isRecording) {
-                await stopRecording();
-            }
-
-            // 2️⃣ Mark session as ended on backend (no video upload)
+            // Mark session as ended on backend (no video upload)
             await axios.post(
                 buildApiUrl(`/api/live/${id}/end`),
                 {},
@@ -205,7 +81,7 @@ function RoomHeader({
         } catch (err) {
             console.error("Failed to end stream:", err);
         } finally {
-            router.push("/dashboard/recordings");
+            router.push("/dashboard");
         }
     };
 
@@ -220,13 +96,8 @@ function RoomHeader({
                     {roomName || id}
                 </span>
 
-                {/* Recording indicator — only visible to host when recording */}
-                {isHost && isRecording && (
-                    <div className="flex items-center gap-1 bg-rose-500/10 border border-rose-500/20 text-rose-400 px-2 py-1 rounded-full text-[10px] sm:text-xs font-semibold shrink-0">
-                        <Circle className="w-2.5 h-2.5 fill-rose-500 text-rose-500 animate-pulse" />
-                        <span className="hidden md:inline">Recording locally</span>
-                    </div>
-                )}
+
+
             </div>
 
             <div className="flex items-center gap-2 sm:gap-4 md:gap-6 shrink-0">
@@ -1133,9 +1004,6 @@ function LiveRoomContent({
     isHost,
     onStage,
     socket,
-    isRecording,
-    setIsRecording,
-    stopRecordingRef,
     inviteHandle,
     setInviteHandle,
     handleSendInvite
@@ -1145,9 +1013,6 @@ function LiveRoomContent({
     isHost: boolean;
     onStage: boolean;
     socket: any;
-    isRecording: boolean;
-    setIsRecording: React.Dispatch<React.SetStateAction<boolean>>;
-    stopRecordingRef: React.MutableRefObject<(() => Promise<void>) | null>;
     inviteHandle: string;
     setInviteHandle: React.Dispatch<React.SetStateAction<string>>;
     handleSendInvite: () => void;
@@ -1192,10 +1057,6 @@ function LiveRoomContent({
                 roomName={roomName}
                 isHost={isHost}
                 id={id}
-                isRecording={isRecording}
-                stopRecording={async () => {
-                    if (stopRecordingRef.current) await stopRecordingRef.current();
-                }}
             />
 
             <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
@@ -1306,9 +1167,8 @@ export default function LiveRoom() {
     const [preJoinComplete, setPreJoinComplete] = useState(false);
     const [liveKitServerUrl, setLiveKitServerUrl] = useState("");
 
-    // ── Local recording state ──────────────────────────────
-    const [isRecording, setIsRecording] = useState(false);
-    const stopRecordingRef = useRef<(() => Promise<void>) | null>(null);
+
+
 
     // Stage invite state
     const [inviteHandle, setInviteHandle] = useState("");
@@ -1516,22 +1376,12 @@ export default function LiveRoom() {
                 data-lk-theme="default"
                 style={{ height: "100vh", display: "flex", flexDirection: "column", backgroundColor: "#000" }}
             >
-                {/* 🔴 Background local recorder — host only, no server upload */}
-                <LocalRecorder
-                    isHost={isHost}
-                    onRecorderReady={(fn) => { stopRecordingRef.current = fn; }}
-                    onRecordingStart={() => setIsRecording(true)}
-                />
-
                 <LiveRoomContent
                     id={id}
                     roomName={roomName}
                     isHost={isHost}
                     onStage={onStage}
                     socket={socket}
-                    isRecording={isRecording}
-                    setIsRecording={setIsRecording}
-                    stopRecordingRef={stopRecordingRef}
                     inviteHandle={inviteHandle}
                     setInviteHandle={setInviteHandle}
                     handleSendInvite={handleSendInvite}
