@@ -3,40 +3,73 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_URL")
 }
 
 model User {
-  id              String   @id @default(uuid())
-  unique_handle   String   @unique
-  email           String   @unique
-  password_hash   String
-  display_name    String
-  avatar_url      String?
-  bio             String?
-  follower_count  Int      @default(0)
-  following_count Int      @default(0)
-  is_verified     Boolean  @default(false)
-  created_at      DateTime @default(now())
-  last_seen       DateTime @default(now())
+  id               String   @id @default(uuid())
+  unique_handle    String   @unique
+  email            String   @unique
+  password_hash    String
+  display_name     String
+  avatar_url       String?
+  cover_image_url  String?
+  bio              String?
+  links            Json?
+  follower_count   Int      @default(0)
+  following_count  Int      @default(0)
+  subscriber_count Int      @default(0)
+  total_views      BigInt   @default(0)
+  total_likes      BigInt   @default(0)
+  is_verified      Boolean  @default(false)
+  created_at       DateTime @default(now())
+  last_seen        DateTime @default(now())
 
   // Relations
-  hosted_sessions LiveSession[] @relation("HostSessions")
-  sent_invites    StageInvite[] @relation("HostInvites")
-  received_invites StageInvite[] @relation("InviteeInvites")
+  profile          Profile?
+  videos           Video[]
+  upload_sessions  UploadSession[]
+  hosted_sessions  LiveSession[]   @relation("HostSessions")
+  sent_invites     StageInvite[]   @relation("HostInvites")
+  received_invites StageInvite[]   @relation("InviteeInvites")
 
-  followers       Follows[] @relation("UserFollowers")
-  following       Follows[] @relation("UserFollowing")
-  likes           Like[]
+  followers      Follows[]       @relation("UserFollowers")
+  following      Follows[]       @relation("UserFollowing")
+  likes          Like[]
+  video_likes    VideoLike[]
+  comments       Comment[]
+  subscriptions  Subscription[]  @relation("Subscriber")
+  subscribers    Subscription[]  @relation("SubscribedTo")
+  playlists      Playlist[]
+  notifications  Notification[]
+  watch_history  History[]
+  reports        Report[]
+  search_history SearchHistory[]
+  sessions       Session[]
+}
+
+model Profile {
+  id            String   @id @default(uuid())
+  user_id       String   @unique
+  profile_photo String?
+  cover_image   String?
+  bio           String?
+  links         Json?
+  location      String?
+  language      String?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
 }
 
 model Follows {
-  id          String   @id @default(uuid())
-  follower_id String
+  id           String   @id @default(uuid())
+  follower_id  String
   following_id String
-  created_at  DateTime @default(now())
+  created_at   DateTime @default(now())
 
   follower  User @relation("UserFollowing", fields: [follower_id], references: [id])
   following User @relation("UserFollowers", fields: [following_id], references: [id])
@@ -45,64 +78,393 @@ model Follows {
 }
 
 model LiveSession {
-  id                String    @id @default(uuid())
-  host_user_id      String
-  title             String
-  description       String?
-  thumbnail_url     String?
-  status            String    @default("scheduled") // scheduled, live, ended
-  livekit_room_name String?
-  livekit_egress_id String?
-  viewer_count_peak Int       @default(0)
-  recording_url     String?
-  started_at        DateTime?
-  ended_at          DateTime?
-  category          String?
-  like_count        Int       @default(0)
-  views             Int       @default(0)
-  is_processing     Boolean   @default(false)
-  created_at        DateTime  @default(now())
+  id                 String    @id @default(uuid())
+  host_user_id       String
+  title              String
+  description        String?
+  thumbnail_url      String?
+  status             String    @default("scheduled") // scheduled, live, ended
+  visibility         String    @default("public") // public, private, unlisted
+  scheduled_at       DateTime?
+  livekit_room_name  String?
+  livekit_egress_id  String?
+  livekit_ingress_id String?
+  ingress_type       String?
+  ingest_url         String?
+  stream_key         String?
+  hls_url            String?
+  dvr_enabled        Boolean   @default(true)
+  low_latency        Boolean   @default(true)
+  moderation_enabled Boolean   @default(true)
+  chat_enabled       Boolean   @default(true)
+  viewer_count_peak  Int       @default(0)
+  viewer_count       Int       @default(0)
+  recording_url      String?
+  started_at         DateTime?
+  ended_at           DateTime?
+  category           String?
+  like_count         Int       @default(0)
+  gift_count         Int       @default(0)
+  super_chat_amount  Int       @default(0)
+  views              Int       @default(0)
+  is_processing      Boolean   @default(false)
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
 
   // Relations
-  host        User          @relation("HostSessions", fields: [host_user_id], references: [id])
-  invites     StageInvite[]
+  host          User          @relation("HostSessions", fields: [host_user_id], references: [id])
+  invites       StageInvite[]
   chat_messages ChatMessage[]
-  likes       Like[]
-  subtitles   Subtitle[]
+  likes         Like[]
+  subtitles     Subtitle[]
+  video         Video?
+
+  @@index([status, visibility, started_at])
+  @@index([host_user_id, status])
+}
+
+model UploadSession {
+  id              String    @id @default(uuid())
+  owner_id        String
+  original_name   String
+  content_type    String
+  total_size      BigInt
+  chunk_size      Int
+  total_chunks    Int
+  received_chunks Int[]     @default([])
+  status          String    @default("active") // active, paused, completed, cancelled, failed
+  metadata        Json?
+  assembled_path  String?
+  r2_key          String?
+  created_at      DateTime  @default(now())
+  updated_at      DateTime  @updatedAt
+  completed_at    DateTime?
+
+  owner User @relation(fields: [owner_id], references: [id], onDelete: Cascade)
+
+  @@index([owner_id, status])
+}
+
+model Video {
+  id                String    @id @default(uuid())
+  owner_id          String
+  live_session_id   String?   @unique
+  title             String
+  description       String?
+  tags              String[]  @default([])
+  thumbnail         String?
+  duration_seconds  Int?
+  resolution        String?
+  bitrate           Int?
+  filesize          BigInt
+  upload_date       DateTime  @default(now())
+  category_id       String?
+  visibility        String    @default("private") // public, private, unlisted, scheduled
+  language          String?
+  location          String?
+  views             BigInt    @default(0)
+  likes             Int       @default(0)
+  dislikes          Int       @default(0)
+  comments_count    Int       @default(0)
+  shares            Int       @default(0)
+  watch_time        BigInt    @default(0)
+  hls_master_url    String?
+  source_url        String?
+  processing_status String    @default("queued") // queued, processing, ready, failed
+  scheduled_at      DateTime?
+  age_restricted    Boolean   @default(false)
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+
+  owner          User            @relation(fields: [owner_id], references: [id], onDelete: Cascade)
+  liveSession    LiveSession?    @relation(fields: [live_session_id], references: [id])
+  category       Category?       @relation(fields: [category_id], references: [id])
+  files          VideoFile[]
+  thumbnails     Thumbnail[]
+  comments       Comment[]
+  likes_rows     VideoLike[]
+  views_rows     View[]
+  playlistVideos PlaylistVideo[]
+  history        History[]
+  reports        Report[]
+  analytics      Analytics[]
+
+  @@index([owner_id, upload_date])
+  @@index([visibility, processing_status])
+}
+
+model VideoFile {
+  id           String   @id @default(uuid())
+  video_id     String
+  quality      String
+  url          String
+  playlist_url String?
+  width        Int?
+  height       Int?
+  bitrate      Int?
+  filesize     BigInt?
+  codec        String?
+  container    String?
+  created_at   DateTime @default(now())
+
+  video Video @relation(fields: [video_id], references: [id], onDelete: Cascade)
+
+  @@unique([video_id, quality])
+}
+
+model Thumbnail {
+  id         String   @id @default(uuid())
+  video_id   String
+  url        String
+  kind       String   @default("thumbnail") // thumbnail, preview, gif, waveform
+  width      Int?
+  height     Int?
+  created_at DateTime @default(now())
+
+  video Video @relation(fields: [video_id], references: [id], onDelete: Cascade)
+}
+
+model Comment {
+  id                String    @id @default(uuid())
+  video_id          String
+  user_id           String
+  parent_id         String?
+  body              String
+  is_pinned         Boolean   @default(false)
+  is_hearted        Boolean   @default(false)
+  like_count        Int       @default(0)
+  dislike_count     Int       @default(0)
+  moderation_status String    @default("visible")
+  edited_at         DateTime?
+  deleted_at        DateTime?
+  created_at        DateTime  @default(now())
+
+  video   Video     @relation(fields: [video_id], references: [id], onDelete: Cascade)
+  user    User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  parent  Comment?  @relation("CommentReplies", fields: [parent_id], references: [id])
+  replies Comment[] @relation("CommentReplies")
+}
+
+model VideoLike {
+  id         String   @id @default(uuid())
+  user_id    String
+  video_id   String
+  reaction   String // like, dislike
+  created_at DateTime @default(now())
+
+  user  User  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  video Video @relation(fields: [video_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, video_id])
+}
+
+model View {
+  id                 String   @id @default(uuid())
+  video_id           String
+  user_id            String?
+  device_id          String?
+  watch_time_seconds Int      @default(0)
+  completion_rate    Float    @default(0)
+  ip_hash            String?
+  created_at         DateTime @default(now())
+
+  video Video @relation(fields: [video_id], references: [id], onDelete: Cascade)
+
+  @@index([video_id, created_at])
+}
+
+model Subscription {
+  id                 String   @id @default(uuid())
+  subscriber_id      String
+  subscribed_to_id   String
+  notification_level String   @default("personalized") // all, personalized, none
+  created_at         DateTime @default(now())
+
+  subscriber   User @relation("Subscriber", fields: [subscriber_id], references: [id], onDelete: Cascade)
+  subscribedTo User @relation("SubscribedTo", fields: [subscribed_to_id], references: [id], onDelete: Cascade)
+
+  @@unique([subscriber_id, subscribed_to_id])
+}
+
+model Playlist {
+  id               String   @id @default(uuid())
+  owner_id         String
+  title            String
+  description      String?
+  visibility       String   @default("private")
+  kind             String   @default("custom") // custom, watch_later, favorites, history
+  is_collaborative Boolean  @default(false)
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+
+  owner  User            @relation(fields: [owner_id], references: [id], onDelete: Cascade)
+  videos PlaylistVideo[]
+}
+
+model PlaylistVideo {
+  id          String   @id @default(uuid())
+  playlist_id String
+  video_id    String
+  position    Int      @default(0)
+  added_at    DateTime @default(now())
+
+  playlist Playlist @relation(fields: [playlist_id], references: [id], onDelete: Cascade)
+  video    Video    @relation(fields: [video_id], references: [id], onDelete: Cascade)
+
+  @@unique([playlist_id, video_id])
+}
+
+model Notification {
+  id         String    @id @default(uuid())
+  user_id    String
+  type       String
+  title      String
+  body       String?
+  data       Json?
+  read_at    DateTime?
+  created_at DateTime  @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model History {
+  id               String   @id @default(uuid())
+  user_id          String
+  video_id         String
+  position_seconds Int      @default(0)
+  completed        Boolean  @default(false)
+  updated_at       DateTime @updatedAt
+  created_at       DateTime @default(now())
+
+  user  User  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  video Video @relation(fields: [video_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, video_id])
+}
+
+model Report {
+  id          String   @id @default(uuid())
+  reporter_id String
+  video_id    String?
+  reason      String
+  details     String?
+  status      String   @default("open")
+  created_at  DateTime @default(now())
+
+  reporter User   @relation(fields: [reporter_id], references: [id], onDelete: Cascade)
+  video    Video? @relation(fields: [video_id], references: [id], onDelete: SetNull)
+}
+
+model Category {
+  id         String   @id @default(uuid())
+  name       String   @unique
+  slug       String   @unique
+  created_at DateTime @default(now())
+
+  videos Video[]
+}
+
+model Tag {
+  id         String   @id @default(uuid())
+  name       String   @unique
+  created_at DateTime @default(now())
+}
+
+model SearchHistory {
+  id         String   @id @default(uuid())
+  user_id    String?
+  query      String
+  created_at DateTime @default(now())
+
+  user User? @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model Device {
+  id         String   @id @default(uuid())
+  user_id    String?
+  name       String?
+  platform   String?
+  push_token String?
+  created_at DateTime @default(now())
+}
+
+model Session {
+  id                 String    @id @default(uuid())
+  user_id            String
+  refresh_token_hash String?
+  user_agent         String?
+  ip_hash            String?
+  revoked_at         DateTime?
+  created_at         DateTime  @default(now())
+  expires_at         DateTime?
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+model Analytics {
+  id              String   @id @default(uuid())
+  video_id        String
+  metric_date     DateTime
+  views           Int      @default(0)
+  watch_time      Int      @default(0)
+  ctr             Float    @default(0)
+  retention       Json?
+  countries       Json?
+  devices         Json?
+  traffic_sources Json?
+  created_at      DateTime @default(now())
+
+  video Video @relation(fields: [video_id], references: [id], onDelete: Cascade)
+
+  @@unique([video_id, metric_date])
+}
+
+model Settings {
+  id         String   @id @default(uuid())
+  key        String   @unique
+  value      Json
+  updated_at DateTime @updatedAt
 }
 
 model Subtitle {
-  id          String   @id @default(uuid())
-  session_id  String
-  language    String
-  label       String
-  vtt_url     String
-  created_at  DateTime @default(now())
+  id         String   @id @default(uuid())
+  session_id String
+  language   String
+  label      String
+  vtt_url    String
+  created_at DateTime @default(now())
 
-  session     LiveSession @relation(fields: [session_id], references: [id])
+  session LiveSession @relation(fields: [session_id], references: [id])
 }
 
 model Like {
-  id          String   @id @default(uuid())
-  user_id     String
-  session_id  String
-  created_at  DateTime @default(now())
+  id         String   @id @default(uuid())
+  user_id    String
+  session_id String
+  created_at DateTime @default(now())
 
-  user        User        @relation(fields: [user_id], references: [id])
-  session     LiveSession @relation(fields: [session_id], references: [id])
+  user    User        @relation(fields: [user_id], references: [id])
+  session LiveSession @relation(fields: [session_id], references: [id])
 
   @@unique([user_id, session_id])
 }
 
 model ChatMessage {
-  id          String   @id @default(uuid())
-  session_id  String
+  id            String    @id @default(uuid())
+  session_id    String
   sender_handle String
-  message     String
-  created_at  DateTime @default(now())
+  message       String
+  type          String    @default("message") // message, gift, super_chat, system
+  amount        Int?
+  is_deleted    Boolean   @default(false)
+  is_pinned     Boolean   @default(false)
+  moderated_at  DateTime?
+  created_at    DateTime  @default(now())
 
   // Relations
-  session     LiveSession @relation(fields: [session_id], references: [id])
+  session LiveSession @relation(fields: [session_id], references: [id])
+
+  @@index([session_id, created_at])
 }
 
 model StageInvite {

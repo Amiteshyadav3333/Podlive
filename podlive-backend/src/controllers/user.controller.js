@@ -1,13 +1,30 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
+const serializeUser = (user) => {
+    if (!user) return user;
+    const { password_hash, ...safeUser } = user;
+    return {
+        ...safeUser,
+        total_views: safeUser.total_views?.toString?.() || safeUser.total_views,
+        total_likes: safeUser.total_likes?.toString?.() || safeUser.total_likes,
+        videos: safeUser.videos?.map((video) => ({
+            ...video,
+            filesize: video.filesize?.toString?.() || video.filesize,
+            views: video.views?.toString?.() || video.views,
+            watch_time: video.watch_time?.toString?.() || video.watch_time
+        }))
+    };
+};
+
 // Get Host Settings
 exports.getProfile = async (req, res) => {
     try {
         const user = await prisma.user.findUnique({
-            where: { id: req.user.id }
+            where: { id: req.user.id },
+            include: { profile: true }
         });
-        res.json(user);
+        res.json(serializeUser(user));
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch profile' });
     }
@@ -16,13 +33,41 @@ exports.getProfile = async (req, res) => {
 // Update Host Settings
 exports.updateProfile = async (req, res) => {
     try {
-        const { display_name, bio } = req.body;
+        const { display_name, bio, avatar_url, cover_image_url, links, location, language } = req.body;
         const user = await prisma.user.update({
             where: { id: req.user.id },
-            data: { display_name, bio }
+            data: {
+                ...(display_name !== undefined ? { display_name } : {}),
+                ...(bio !== undefined ? { bio } : {}),
+                ...(avatar_url !== undefined ? { avatar_url } : {}),
+                ...(cover_image_url !== undefined ? { cover_image_url } : {}),
+                ...(links !== undefined ? { links } : {}),
+                profile: {
+                    upsert: {
+                        create: {
+                            bio,
+                            profile_photo: avatar_url,
+                            cover_image: cover_image_url,
+                            links,
+                            location,
+                            language
+                        },
+                        update: {
+                            ...(bio !== undefined ? { bio } : {}),
+                            ...(avatar_url !== undefined ? { profile_photo: avatar_url } : {}),
+                            ...(cover_image_url !== undefined ? { cover_image: cover_image_url } : {}),
+                            ...(links !== undefined ? { links } : {}),
+                            ...(location !== undefined ? { location } : {}),
+                            ...(language !== undefined ? { language } : {})
+                        }
+                    }
+                }
+            },
+            include: { profile: true }
         });
-        res.json({ message: 'Profile updated', user });
+        res.json({ message: 'Profile updated', user: serializeUser(user) });
     } catch (error) {
+        console.error('Update profile error:', error);
         res.status(500).json({ error: 'Failed to update profile' });
     }
 };
@@ -38,11 +83,21 @@ exports.getAudienceStats = async (req, res) => {
         // Calculate stats
         const totalLives = user.hosted_sessions.length;
         const totalViews = user.hosted_sessions.reduce((acc, curr) => acc + curr.viewer_count_peak, 0);
+        const videoStats = await prisma.video.aggregate({
+            where: { owner_id: req.user.id },
+            _sum: { views: true, likes: true, watch_time: true },
+            _count: { id: true }
+        });
 
         res.json({
             followers: user.follower_count,
+            following: user.following_count,
+            subscribers: user.subscriber_count,
             totalLives,
-            totalViews
+            totalVideos: videoStats._count.id,
+            totalViews: (videoStats._sum.views || BigInt(totalViews)).toString(),
+            totalLikes: videoStats._sum.likes || 0,
+            totalWatchTime: (videoStats._sum.watch_time || BigInt(0)).toString()
         });
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch audience stats' });
@@ -73,6 +128,15 @@ exports.getCreatorProfile = async (req, res) => {
         const creator = await prisma.user.findUnique({
             where: { id },
             include: {
+                profile: true,
+                videos: {
+                    where: {
+                        visibility: 'public',
+                        processing_status: { in: ['ready', 'processing'] }
+                    },
+                    orderBy: { upload_date: 'desc' },
+                    take: 30
+                },
                 hosted_sessions: {
                     orderBy: { created_at: 'desc' }
                 }
@@ -88,10 +152,8 @@ exports.getCreatorProfile = async (req, res) => {
         const recordings = creator.hosted_sessions.filter(s => s.status === 'ended');
 
         // We don't want to expose the password hash
-        const { password_hash, ...publicProfile } = creator;
-
         res.json({
-            ...publicProfile,
+            ...serializeUser(creator),
             totalLives,
             totalViews,
             recordings

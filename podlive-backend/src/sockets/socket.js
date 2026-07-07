@@ -1,10 +1,40 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const livekitEgressService = require('../services/livekit-egress.service');
 
 // In-memory store — works for single-instance.
 // For multi-instance scale, replace with Redis adapter: socket.io/redis-adapter
 const activeUsers = new Map();    // userId -> socketId
 const pendingDisconnects = new Map(); // userId -> timeoutId
+const liveRoomViewers = new Map(); // sessionId -> Set(socketId)
+
+const emitViewerCount = async (io, sessionId) => {
+    const count = liveRoomViewers.get(sessionId)?.size || 0;
+    try {
+        const session = await prisma.liveSession.update({
+            where: { id: sessionId },
+            data: {
+                viewer_count: count,
+                viewer_count_peak: { increment: 0 }
+            }
+        });
+
+        if (count > session.viewer_count_peak) {
+            await prisma.liveSession.update({
+                where: { id: sessionId },
+                data: { viewer_count_peak: count }
+            });
+        }
+
+        io.to(sessionId).emit('viewer_count_update', {
+            sessionId,
+            viewerCount: count,
+            viewerCountPeak: Math.max(count, session.viewer_count_peak)
+        });
+    } catch (err) {
+        console.error('[Socket] Viewer count update error:', err.message);
+    }
+};
 
 module.exports = (io) => {
     io.on('connection', (socket) => {
@@ -78,23 +108,47 @@ module.exports = (io) => {
 
         // ── Live chat ──────────────────────────────────────────
         socket.on('join_chat_room', (sessionId) => {
-            if (sessionId) socket.join(sessionId);
+            if (!sessionId) return;
+            socket.join(sessionId);
+
+            if (!liveRoomViewers.has(sessionId)) {
+                liveRoomViewers.set(sessionId, new Set());
+            }
+            liveRoomViewers.get(sessionId).add(socket.id);
+            emitViewerCount(io, sessionId);
         });
 
         socket.on('leave_chat_room', (sessionId) => {
-            if (sessionId) socket.leave(sessionId);
+            if (!sessionId) return;
+            socket.leave(sessionId);
+            liveRoomViewers.get(sessionId)?.delete(socket.id);
+            emitViewerCount(io, sessionId);
         });
 
         socket.on('send_chat_message', async ({ sessionId, senderHandle, message }) => {
             if (!sessionId || !message?.trim()) return;
 
-            const payload = { senderHandle, message: message.trim(), created_at: new Date() };
+            const session = await prisma.liveSession.findUnique({ where: { id: sessionId } }).catch(() => null);
+            if (!session || !session.chat_enabled || !['live', 'scheduled'].includes(session.status)) {
+                return socket.emit('chat_error', { message: 'Live chat is not available.' });
+            }
+
+            const payload = { senderHandle, message: message.trim(), type: 'message', created_at: new Date() };
             io.to(sessionId).emit('receive_chat_message', payload);
 
             // Persist to DB asynchronously
             prisma.chatMessage.create({
-                data: { session_id: sessionId, sender_handle: senderHandle, message: message.trim() }
+                data: { session_id: sessionId, sender_handle: senderHandle, message: message.trim(), type: 'message' }
             }).catch(err => console.error('[Socket] Chat save error:', err.message));
+        });
+
+        socket.on('send_live_reaction', ({ sessionId, reaction }) => {
+            if (!sessionId) return;
+            io.to(sessionId).emit('receive_live_reaction', {
+                sessionId,
+                reaction: reaction || 'like',
+                created_at: new Date()
+            });
         });
 
         // ── Follower count update ──────────────────────────────
@@ -105,6 +159,19 @@ module.exports = (io) => {
         // ── Disconnect ─────────────────────────────────────────
         socket.on('disconnect', async () => {
             let disconnectedUserId = null;
+            const affectedRooms = [];
+
+            for (const [sessionId, viewers] of liveRoomViewers.entries()) {
+                if (viewers.delete(socket.id)) {
+                    affectedRooms.push(sessionId);
+                }
+                if (viewers.size === 0) {
+                    liveRoomViewers.delete(sessionId);
+                }
+            }
+
+            affectedRooms.forEach((sessionId) => emitViewerCount(io, sessionId));
+
             for (const [userId, socketId] of activeUsers.entries()) {
                 if (socketId === socket.id) {
                     disconnectedUserId = userId;
@@ -127,11 +194,30 @@ module.exports = (io) => {
                     const timeoutId = setTimeout(async () => {
                         for (const session of activeSessions) {
                             try {
+                                if (session.livekit_egress_id) {
+                                    livekitEgressService.stopEgress(session.livekit_egress_id).catch((err) => {
+                                        console.error(`[Socket] Stop egress failed for ${session.id}:`, err.message);
+                                    });
+                                }
+                                if (session.livekit_ingress_id) {
+                                    livekitEgressService.deleteIngress(session.livekit_ingress_id).catch((err) => {
+                                        console.error(`[Socket] Delete ingress failed for ${session.id}:`, err.message);
+                                    });
+                                }
+
                                 await prisma.liveSession.update({
                                     where: { id: session.id },
-                                    data: { status: 'ended', ended_at: new Date(), livekit_egress_id: null }
+                                    data: {
+                                        status: 'ended',
+                                        ended_at: new Date(),
+                                        livekit_egress_id: null,
+                                        livekit_ingress_id: null,
+                                        viewer_count: 0,
+                                        is_processing: false
+                                    }
                                 });
                                 io.to(session.id).emit('podcast_ended');
+                                io.emit('live_ended', { id: session.id });
                                 console.log(`[Socket] Auto-ended session ${session.id}`);
                             } catch (err) {
                                 console.error(`[Socket] Auto-end failed for ${session.id}:`, err.message);
