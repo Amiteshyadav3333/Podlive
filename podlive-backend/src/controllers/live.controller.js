@@ -16,6 +16,7 @@ const createToken = async (roomName, participantName, isHost = false) => {
 
     const at = new AccessToken(apiKey, apiSecret, {
         identity: participantName,
+        metadata: JSON.stringify({ role: isHost ? 'host' : 'viewer' })
     });
     at.addGrant({ roomJoin: true, room: roomName, canPublish: isHost, canSubscribe: true, canPublishData: true });
 
@@ -302,7 +303,21 @@ exports.getGuestToken = async (req, res) => {
         const identity = `viewer-${crypto.randomBytes(4).toString('hex')}`;
         const token = await createToken(session.livekit_room_name, identity, false);
 
-        res.json({ token, roomName: session.livekit_room_name, livekitUrl: process.env.LIVEKIT_URL, isHost: false, isGuest: true });
+        res.json({
+            token,
+            roomName: session.livekit_room_name,
+            livekitUrl: process.env.LIVEKIT_URL,
+            isHost: false,
+            isGuest: true,
+            isStage: false,
+            role: 'viewer',
+            permissions: {
+                canPublish: false,
+                canSubscribe: true,
+                canPublishData: true
+            },
+            chatEnabled: session.chat_enabled
+        });
     } catch (error) {
         console.error('Get Guest Token Error:', error);
         res.status(500).json({ error: 'Internal Server Error' });
@@ -326,9 +341,29 @@ exports.getViewerToken = async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
         const isHost = session.host_user_id === req.user.id;
+        const stageInvite = isHost ? null : await prisma.stageInvite.findFirst({
+            where: {
+                session_id: id,
+                invitee_id: req.user.id,
+                status: 'accepted'
+            }
+        });
         const token = await createToken(session.livekit_room_name, user.unique_handle, isHost);
 
-        res.json({ token, roomName: session.livekit_room_name, livekitUrl: process.env.LIVEKIT_URL, isHost });
+        res.json({
+            token,
+            roomName: session.livekit_room_name,
+            livekitUrl: process.env.LIVEKIT_URL,
+            isHost,
+            isStage: !!stageInvite,
+            role: isHost ? 'host' : 'viewer',
+            permissions: {
+                canPublish: isHost,
+                canSubscribe: true,
+                canPublishData: true
+            },
+            chatEnabled: session.chat_enabled
+        });
     } catch (error) {
         console.error('Get Viewer Token Error:', error);
         res.status(500).json({ error: 'Internal Server Error' });
@@ -343,17 +378,38 @@ exports.upgradeViewerToken = async (req, res) => {
         if (!session || session.status !== 'live') {
             return res.status(404).json({ error: 'Active live session not found' });
         }
-        if (session.host_user_id !== req.user.id) {
-            return res.status(403).json({ error: 'Only the host can publish to this live session' });
-        }
-
         const user = await prisma.user.findUnique({ where: { id: req.user.id } });
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
         }
+
+        const isHost = session.host_user_id === req.user.id;
+        const stageInvite = isHost ? null : await prisma.stageInvite.findFirst({
+            where: {
+                session_id: id,
+                invitee_id: req.user.id,
+                status: 'accepted'
+            }
+        });
+        if (!isHost && !stageInvite) {
+            return res.status(403).json({ error: 'Only the host or accepted stage guests can publish to this live session' });
+        }
+
         const token = await createToken(session.livekit_room_name, user.unique_handle, true);
 
-        res.json({ token, roomName: session.livekit_room_name, livekitUrl: process.env.LIVEKIT_URL });
+        res.json({
+            token,
+            roomName: session.livekit_room_name,
+            livekitUrl: process.env.LIVEKIT_URL,
+            isHost,
+            isStage: !isHost,
+            role: isHost ? 'host' : 'stage',
+            permissions: {
+                canPublish: true,
+                canSubscribe: true,
+                canPublishData: true
+            }
+        });
     } catch (error) {
         console.error('Upgrade Viewer Token Error:', error);
         res.status(500).json({ error: 'Internal Server Error' });
@@ -772,14 +828,31 @@ exports.removeLiveParticipant = async (req, res) => {
         if (!identity) {
             return res.status(400).json({ error: 'identity is required' });
         }
+        const targetUser = await prisma.user.findFirst({
+            where: { unique_handle: identity },
+            select: publicUserSelect
+        });
+        if (targetUser?.id === session.host_user_id) {
+            return res.status(400).json({ error: 'Host cannot be removed from their own live session' });
+        }
         if (!livekitRoomService.hasLiveKitConfig()) {
             return res.status(503).json({ error: 'LiveKit is not configured' });
         }
 
         await livekitRoomService.removeParticipant(session.livekit_room_name, identity);
 
+        if (targetUser) {
+            await prisma.stageInvite.updateMany({
+                where: { session_id: id, invitee_id: targetUser.id, status: 'accepted' },
+                data: { status: 'ended', left_at: new Date() }
+            });
+        }
+
         if (req.io) {
             req.io.to(id).emit('live_participant_removed', { identity });
+            if (targetUser) {
+                req.io.to(targetUser.id).emit('guest_removed', { sessionId: id, identity });
+            }
         }
 
         res.json({ message: 'Participant removed', identity });
@@ -801,6 +874,21 @@ exports.updateParticipantPermissions = async (req, res) => {
         if (!identity) {
             return res.status(400).json({ error: 'identity is required' });
         }
+        const targetUser = await prisma.user.findFirst({
+            where: { unique_handle: identity },
+            select: publicUserSelect
+        });
+        if (targetUser?.id === session.host_user_id && !canPublish) {
+            return res.status(400).json({ error: 'Host publish permission cannot be disabled here' });
+        }
+        if (canPublish && targetUser?.id !== session.host_user_id) {
+            const activeInvite = targetUser ? await prisma.stageInvite.findFirst({
+                where: { session_id: id, invitee_id: targetUser.id, status: 'accepted' }
+            }) : null;
+            if (!activeInvite) {
+                return res.status(403).json({ error: 'User must accept a stage invite before publish permission is allowed' });
+            }
+        }
         if (!livekitRoomService.hasLiveKitConfig()) {
             return res.status(503).json({ error: 'LiveKit is not configured' });
         }
@@ -818,6 +906,14 @@ exports.updateParticipantPermissions = async (req, res) => {
                 canSubscribe,
                 canPublishData
             });
+            if (targetUser) {
+                req.io.to(targetUser.id).emit('stage_permissions_updated', {
+                    sessionId: id,
+                    canPublish,
+                    canSubscribe,
+                    canPublishData
+                });
+            }
         }
 
         res.json({ message: 'Participant permissions updated', participant });

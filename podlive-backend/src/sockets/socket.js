@@ -5,8 +5,33 @@ const livekitEgressService = require('../services/livekit-egress.service');
 // In-memory store — works for single-instance.
 // For multi-instance scale, replace with Redis adapter: socket.io/redis-adapter
 const activeUsers = new Map();    // userId -> socketId
+const socketUsers = new Map();    // socketId -> userId
 const pendingDisconnects = new Map(); // userId -> timeoutId
 const liveRoomViewers = new Map(); // sessionId -> Set(socketId)
+
+const publicUserSelect = {
+    id: true,
+    unique_handle: true,
+    display_name: true,
+    avatar_url: true,
+    is_verified: true
+};
+
+const normalizeHandleCandidates = (handle) => {
+    const cleaned = String(handle || '').trim();
+    if (!cleaned) return [];
+    const withoutAt = cleaned.replace(/^@+/, '');
+    return Array.from(new Set([cleaned, withoutAt, `@${withoutAt}`].filter(Boolean)));
+};
+
+const findUserByHandle = async (handle) => {
+    const candidates = normalizeHandleCandidates(handle);
+    if (candidates.length === 0) return null;
+    return prisma.user.findFirst({
+        where: { unique_handle: { in: candidates } },
+        select: publicUserSelect
+    });
+};
 
 const emitViewerCount = async (io, sessionId) => {
     const count = liveRoomViewers.get(sessionId)?.size || 0;
@@ -43,6 +68,7 @@ module.exports = (io) => {
         socket.on('register_user', (userId) => {
             if (!userId) return;
             activeUsers.set(userId, socket.id);
+            socketUsers.set(socket.id, userId);
             socket.join(userId);
 
             if (pendingDisconnects.has(userId)) {
@@ -55,28 +81,83 @@ module.exports = (io) => {
         // ── Stage invites ──────────────────────────────────────
         socket.on('send_invite', async ({ sessionId, inviteeHandle, hostId }) => {
             try {
-                let handle = (inviteeHandle || '').trim();
-                if (!handle.startsWith('@')) handle = '@' + handle;
+                const registeredHostId = socketUsers.get(socket.id);
+                const effectiveHostId = registeredHostId || hostId;
+                if (!sessionId || !inviteeHandle || !effectiveHostId) {
+                    return socket.emit('invite_status', { success: false, message: 'Session and invitee are required.' });
+                }
 
-                const [invitee, host] = await Promise.all([
-                    prisma.user.findUnique({ where: { unique_handle: handle } }),
-                    prisma.user.findUnique({ where: { id: hostId } })
-                ]);
+                const session = await prisma.liveSession.findUnique({
+                    where: { id: sessionId },
+                    include: { host: { select: publicUserSelect } }
+                });
+                if (!session || session.host_user_id !== effectiveHostId) {
+                    return socket.emit('invite_status', { success: false, message: 'Only the real host can send stage invites.' });
+                }
+                if (!['scheduled', 'live'].includes(session.status)) {
+                    return socket.emit('invite_status', { success: false, message: 'This live session is not accepting stage invites.' });
+                }
+
+                const invitee = await findUserByHandle(inviteeHandle);
 
                 if (!invitee) {
-                    return socket.emit('invite_status', { success: false, message: `User ${handle} not found.` });
+                    return socket.emit('invite_status', { success: false, message: `User ${inviteeHandle} not found.` });
+                }
+                if (invitee.id === effectiveHostId) {
+                    return socket.emit('invite_status', { success: false, message: 'Host is already on stage.' });
                 }
 
-                const targetSocketId = activeUsers.get(invitee.id);
-                if (targetSocketId) {
-                    io.to(targetSocketId).emit('receive_invite', { sessionId, host });
-                    socket.emit('invite_status', { success: true, message: `Invite sent to ${handle}!` });
+                let invite = await prisma.stageInvite.findFirst({
+                    where: {
+                        session_id: sessionId,
+                        invitee_id: invitee.id,
+                        status: { in: ['pending', 'accepted'] }
+                    },
+                    include: {
+                        invitee: { select: publicUserSelect },
+                        host: { select: publicUserSelect }
+                    }
+                });
+
+                if (!invite) {
+                    invite = await prisma.stageInvite.create({
+                        data: {
+                            session_id: sessionId,
+                            host_id: effectiveHostId,
+                            invitee_id: invitee.id,
+                            status: 'pending'
+                        },
+                        include: {
+                            invitee: { select: publicUserSelect },
+                            host: { select: publicUserSelect }
+                        }
+                    });
+                    prisma.notification.create({
+                        data: {
+                            user_id: invitee.id,
+                            type: 'stage_invite',
+                            title: 'Stage invite',
+                            body: `${session.host.display_name} invited you to join the live stage`,
+                            data: { sessionId, inviteId: invite.id }
+                        }
+                    }).catch((err) => console.error('[Socket] invite notification error:', err.message));
+                }
+
+                io.to(invitee.id).emit('receive_invite', {
+                    invite,
+                    session,
+                    host: session.host
+                });
+                io.to(sessionId).emit('stage_invite_sent', { invite, invitee });
+
+                if (activeUsers.get(invitee.id)) {
+                    socket.emit('invite_status', { success: true, message: `Invite sent to ${invitee.unique_handle}!`, invite });
                 } else {
-                    socket.emit('invite_status', { success: false, message: `${handle} is currently offline.` });
+                    socket.emit('invite_status', { success: true, message: `Invite saved. ${invitee.unique_handle} will see it when online.`, invite });
                 }
             } catch (err) {
-                console.error('[Socket] send_invite error:', err.message);
-                socket.emit('invite_status', { success: false, message: 'Server error sending invite.' });
+                console.error('[Socket] send_invite error:', err);
+                socket.emit('invite_status', { success: false, message: err.message || 'Server error sending invite.' });
             }
         });
 
@@ -133,12 +214,22 @@ module.exports = (io) => {
                 return socket.emit('chat_error', { message: 'Live chat is not available.' });
             }
 
-            const payload = { senderHandle, message: message.trim(), type: 'message', created_at: new Date() };
+            const registeredUserId = socketUsers.get(socket.id);
+            let safeSenderHandle = String(senderHandle || 'viewer').trim();
+            if (registeredUserId) {
+                const user = await prisma.user.findUnique({
+                    where: { id: registeredUserId },
+                    select: { unique_handle: true }
+                }).catch(() => null);
+                safeSenderHandle = user?.unique_handle || safeSenderHandle;
+            }
+
+            const payload = { senderHandle: safeSenderHandle, message: message.trim(), type: 'message', created_at: new Date() };
             io.to(sessionId).emit('receive_chat_message', payload);
 
             // Persist to DB asynchronously
             prisma.chatMessage.create({
-                data: { session_id: sessionId, sender_handle: senderHandle, message: message.trim(), type: 'message' }
+                data: { session_id: sessionId, sender_handle: safeSenderHandle, message: message.trim(), type: 'message' }
             }).catch(err => console.error('[Socket] Chat save error:', err.message));
         });
 
@@ -179,6 +270,7 @@ module.exports = (io) => {
                     break;
                 }
             }
+            socketUsers.delete(socket.id);
 
             if (!disconnectedUserId) return;
 
