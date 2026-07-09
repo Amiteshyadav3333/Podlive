@@ -106,6 +106,7 @@ const userRoutes = require('./routes/user.routes');
 const stageRoutes = require('./routes/stage.routes');
 const uploadRoutes = require('./routes/upload.routes');
 const searchRoutes = require('./routes/search.routes');
+const videoRoutes = require('./routes/video.routes');
 
 app.get('/api/admin/db-sync', async (req, res) => {
     try {
@@ -127,6 +128,7 @@ app.use('/api/user', userRoutes);
 app.use('/api/stage', stageRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/search', searchRoutes);
+app.use('/api/videos', videoRoutes);
 
 // Public config endpoint — exposes only what the frontend needs (no secrets)
 // API keys and secrets are NEVER sent here. Only the WebSocket URL.
