@@ -144,9 +144,11 @@ module.exports = (io) => {
                 }
 
                 io.to(invitee.id).emit('receive_invite', {
+                    sessionId,
                     invite,
                     session,
-                    host: session.host
+                    host: session.host,
+                    inviteId: invite.id
                 });
                 io.to(sessionId).emit('stage_invite_sent', { invite, invitee });
 
@@ -162,8 +164,62 @@ module.exports = (io) => {
         });
 
         socket.on('accept_invite', ({ sessionId, hostId, inviteeHandle }) => {
-            const hostSocket = activeUsers.get(hostId);
-            if (hostSocket) io.to(hostSocket).emit('invite_accepted', { sessionId, inviteeHandle });
+            (async () => {
+                try {
+                    const registeredUserId = socketUsers.get(socket.id);
+                    const invitee = registeredUserId
+                        ? await prisma.user.findUnique({ where: { id: registeredUserId }, select: publicUserSelect })
+                        : await findUserByHandle(inviteeHandle);
+                    if (!sessionId || !invitee) return;
+
+                    const invite = await prisma.stageInvite.findFirst({
+                        where: {
+                            session_id: sessionId,
+                            invitee_id: invitee.id,
+                            status: { in: ['pending', 'accepted'] }
+                        },
+                        include: {
+                            invitee: { select: publicUserSelect },
+                            host: { select: publicUserSelect },
+                            session: true
+                        },
+                        orderBy: { invited_at: 'desc' }
+                    });
+                    if (!invite) return;
+
+                    const updatedInvite = invite.status === 'accepted'
+                        ? invite
+                        : await prisma.stageInvite.update({
+                            where: { id: invite.id },
+                            data: { status: 'accepted', accepted_at: new Date() },
+                            include: {
+                                invitee: { select: publicUserSelect },
+                                host: { select: publicUserSelect },
+                                session: true
+                            }
+                        });
+
+                    io.to(sessionId).emit('stage_guest_joined', {
+                        invite: updatedInvite,
+                        user: invitee,
+                        permissions: { canPublish: true, canSubscribe: true, canPublishData: true }
+                    });
+                    io.to(invite.host_id).emit('invite_accepted', {
+                        sessionId,
+                        invite: updatedInvite,
+                        invitee,
+                        inviteeHandle: invitee.unique_handle
+                    });
+                    io.to(invitee.id).emit('stage_permissions_updated', {
+                        sessionId,
+                        canPublish: true,
+                        canSubscribe: true,
+                        canPublishData: true
+                    });
+                } catch (err) {
+                    console.error('[Socket] accept_invite error:', err.message);
+                }
+            })();
         });
 
         socket.on('reject_invite', ({ sessionId, hostId, inviteeHandle }) => {

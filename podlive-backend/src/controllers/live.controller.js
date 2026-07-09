@@ -10,15 +10,15 @@ const livekitRoomService = require('../services/livekit-room.service');
 const allowedVisibility = new Set(['public', 'private', 'unlisted']);
 const allowedIngressTypes = new Set(['rtmp', 'whip']);
 
-const createToken = async (roomName, participantName, isHost = false) => {
+const createToken = async (roomName, participantName, canPublish = false, role = 'viewer') => {
     const apiKey = process.env.LIVEKIT_API_KEY;
     const apiSecret = process.env.LIVEKIT_API_SECRET;
 
     const at = new AccessToken(apiKey, apiSecret, {
         identity: participantName,
-        metadata: JSON.stringify({ role: isHost ? 'host' : 'viewer' })
+        metadata: JSON.stringify({ role })
     });
-    at.addGrant({ roomJoin: true, room: roomName, canPublish: isHost, canSubscribe: true, canPublishData: true });
+    at.addGrant({ roomJoin: true, room: roomName, canPublish, canSubscribe: true, canPublishData: true });
 
     return await at.toJwt();
 };
@@ -205,7 +205,7 @@ exports.startLiveSession = async (req, res) => {
             }
         });
 
-        const token = await createToken(session.livekit_room_name, session.host.unique_handle, true);
+        const token = await createToken(session.livekit_room_name, session.host.unique_handle, true, 'host');
 
         let sessionForResponse = updatedSession;
         if (livekitEgressService.isHlsEgressEnabled() && !updatedSession.livekit_egress_id) {
@@ -301,7 +301,7 @@ exports.getGuestToken = async (req, res) => {
 
         // Generate anonymous viewer identity
         const identity = `viewer-${crypto.randomBytes(4).toString('hex')}`;
-        const token = await createToken(session.livekit_room_name, identity, false);
+        const token = await createToken(session.livekit_room_name, identity, false, 'viewer');
 
         res.json({
             token,
@@ -341,14 +341,48 @@ exports.getViewerToken = async (req, res) => {
             return res.status(404).json({ error: 'User not found' });
         }
         const isHost = session.host_user_id === req.user.id;
-        const stageInvite = isHost ? null : await prisma.stageInvite.findFirst({
+        let stageInvite = isHost ? null : await prisma.stageInvite.findFirst({
             where: {
                 session_id: id,
                 invitee_id: req.user.id,
-                status: 'accepted'
-            }
+                status: { in: ['pending', 'accepted'] }
+            },
+            orderBy: { invited_at: 'desc' }
         });
-        const token = await createToken(session.livekit_room_name, user.unique_handle, isHost);
+        if (stageInvite?.status === 'pending') {
+            stageInvite = await prisma.stageInvite.update({
+                where: { id: stageInvite.id },
+                data: { status: 'accepted', accepted_at: new Date() }
+            });
+            if (req.io) {
+                req.io.to(id).emit('stage_guest_joined', {
+                    invite: stageInvite,
+                    user: {
+                        id: user.id,
+                        unique_handle: user.unique_handle,
+                        display_name: user.display_name,
+                        avatar_url: user.avatar_url,
+                        is_verified: user.is_verified
+                    },
+                    permissions: { canPublish: true, canSubscribe: true, canPublishData: true }
+                });
+                req.io.to(session.host_user_id).emit('invite_accepted', {
+                    sessionId: id,
+                    invite: stageInvite,
+                    invitee: {
+                        id: user.id,
+                        unique_handle: user.unique_handle,
+                        display_name: user.display_name,
+                        avatar_url: user.avatar_url,
+                        is_verified: user.is_verified
+                    },
+                    inviteeHandle: user.unique_handle
+                });
+            }
+        }
+        const canPublish = isHost || !!stageInvite;
+        const role = isHost ? 'host' : (stageInvite ? 'stage' : 'viewer');
+        const token = await createToken(session.livekit_room_name, user.unique_handle, canPublish, role);
 
         res.json({
             token,
@@ -356,9 +390,9 @@ exports.getViewerToken = async (req, res) => {
             livekitUrl: process.env.LIVEKIT_URL,
             isHost,
             isStage: !!stageInvite,
-            role: isHost ? 'host' : 'viewer',
+            role,
             permissions: {
-                canPublish: isHost,
+                canPublish,
                 canSubscribe: true,
                 canPublishData: true
             },
@@ -384,18 +418,44 @@ exports.upgradeViewerToken = async (req, res) => {
         }
 
         const isHost = session.host_user_id === req.user.id;
-        const stageInvite = isHost ? null : await prisma.stageInvite.findFirst({
+        let stageInvite = isHost ? null : await prisma.stageInvite.findFirst({
             where: {
                 session_id: id,
                 invitee_id: req.user.id,
-                status: 'accepted'
-            }
+                status: { in: ['pending', 'accepted'] }
+            },
+            orderBy: { invited_at: 'desc' }
         });
         if (!isHost && !stageInvite) {
             return res.status(403).json({ error: 'Only the host or accepted stage guests can publish to this live session' });
         }
+        if (stageInvite && stageInvite.status === 'pending') {
+            stageInvite = await prisma.stageInvite.update({
+                where: { id: stageInvite.id },
+                data: { status: 'accepted', accepted_at: new Date() }
+            });
+            if (req.io) {
+                req.io.to(id).emit('stage_guest_joined', {
+                    invite: stageInvite,
+                    user,
+                    permissions: { canPublish: true, canSubscribe: true, canPublishData: true }
+                });
+                req.io.to(session.host_user_id).emit('invite_accepted', {
+                    sessionId: id,
+                    invite: stageInvite,
+                    invitee: {
+                        id: user.id,
+                        unique_handle: user.unique_handle,
+                        display_name: user.display_name,
+                        avatar_url: user.avatar_url,
+                        is_verified: user.is_verified
+                    },
+                    inviteeHandle: user.unique_handle
+                });
+            }
+        }
 
-        const token = await createToken(session.livekit_room_name, user.unique_handle, true);
+        const token = await createToken(session.livekit_room_name, user.unique_handle, true, isHost ? 'host' : 'stage');
 
         res.json({
             token,

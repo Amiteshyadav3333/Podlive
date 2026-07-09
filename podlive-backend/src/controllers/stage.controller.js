@@ -109,9 +109,11 @@ exports.inviteUser = async (req, res) => {
         if (existingInvite) {
             if (req.io) {
                 req.io.to(invitee.id).emit('receive_invite', {
+                    sessionId,
                     invite: existingInvite,
                     session,
-                    host: session.host
+                    host: session.host,
+                    inviteId: existingInvite.id
                 });
             }
             return res.json({
@@ -146,9 +148,11 @@ exports.inviteUser = async (req, res) => {
 
         if (req.io) {
             req.io.to(invitee.id).emit('receive_invite', {
+                sessionId,
                 invite: newInvite,
                 session,
-                host: session.host
+                host: session.host,
+                inviteId: newInvite.id
             });
             req.io.to(sessionId).emit('stage_invite_sent', {
                 invite: newInvite,
