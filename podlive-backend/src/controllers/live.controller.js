@@ -157,7 +157,7 @@ exports.startHlsEgress = async (req, res) => {
         if (!livekitEgressService.isHlsEgressEnabled()) {
             return res.status(202).json({
                 enabled: false,
-                message: 'Live HLS egress is disabled. Set ENABLE_LIVEKIT_HLS_EGRESS=true and configure R2/S3.'
+                message: 'Live HLS egress is disabled. Set ENABLE_LIVEKIT_HLS_EGRESS=true and configure Bunny Storage or S3-compatible storage.'
             });
         }
         if (session.livekit_egress_id && session.hls_url) {

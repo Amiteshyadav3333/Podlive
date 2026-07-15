@@ -3,9 +3,7 @@ const prisma = new PrismaClient();
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const subtitleService = require('../services/subtitle.service');
-const hlsService = require('../services/hls.service');
-const s3Service = require('../services/s3.service');
+const bunnyService = require('../services/bunny.service');
 
 const safeUnlink = (filePath) => {
     try { if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) { }
@@ -31,6 +29,67 @@ const serializeVideo = (video) => ({
     watch_time: video.watch_time?.toString?.() || video.watch_time
 });
 
+const createBunnyVideoFile = async (videoId, hlsUrl) => {
+    if (!videoId || !hlsUrl) return;
+
+    await prisma.videoFile.create({
+        data: {
+            video_id: videoId,
+            quality: 'auto',
+            url: hlsUrl,
+            playlist_url: hlsUrl,
+            container: 'hls'
+        }
+    }).catch((error) => {
+        console.warn(`[Upload] Could not save Bunny playback file for ${videoId}: ${error.message}`);
+    });
+};
+
+const isBunnyVideoReady = (bunnyVideo) => (
+    bunnyVideo?.encodeProgress >= 100 ||
+    bunnyVideo?.status === 4 ||
+    Boolean(bunnyVideo?.availableResolutions)
+);
+
+const isBunnyVideoFailed = (bunnyVideo) => [5, 6].includes(bunnyVideo?.status);
+
+const syncBunnyProcessingStatus = async (videoId, bunnyVideoId, attempt = 1) => {
+    const maxAttempts = Number(process.env.BUNNY_STREAM_STATUS_SYNC_ATTEMPTS || 60);
+    const intervalMs = Number(process.env.BUNNY_STREAM_STATUS_SYNC_INTERVAL_MS || 30000);
+
+    if (!videoId || !bunnyVideoId || attempt > maxAttempts) return;
+
+    try {
+        const bunnyVideo = await bunnyService.getVideo(bunnyVideoId);
+
+        if (isBunnyVideoReady(bunnyVideo)) {
+            await prisma.video.update({
+                where: { id: videoId },
+                data: {
+                    processing_status: 'ready',
+                    duration_seconds: bunnyVideo.length || undefined,
+                    resolution: bunnyVideo.width && bunnyVideo.height ? `${bunnyVideo.width}x${bunnyVideo.height}` : undefined
+                }
+            }).catch(() => {});
+            return;
+        }
+
+        if (isBunnyVideoFailed(bunnyVideo)) {
+            await prisma.video.update({
+                where: { id: videoId },
+                data: { processing_status: 'failed' }
+            }).catch(() => {});
+            return;
+        }
+    } catch (error) {
+        console.warn(`[Upload] Bunny status sync failed for ${bunnyVideoId}: ${error.message}`);
+    }
+
+    setTimeout(() => {
+        syncBunnyProcessingStatus(videoId, bunnyVideoId, attempt + 1).catch(() => {});
+    }, intervalMs);
+};
+
 exports.uploadVideo = async (req, res) => {
     let videoFilePath = null;
     let thumbnailFilePath = null;
@@ -55,32 +114,21 @@ exports.uploadVideo = async (req, res) => {
 
         console.log(`[Upload] Starting upload: title="${title}", file="${videoFile.originalname}", size=${(videoFile.size / 1024 / 1024).toFixed(1)}MB`);
 
-        const baseUrlForLocal = `${req.protocol}://${req.get('host')}`;
+        const bunnyUpload = await bunnyService.uploadVideoFile({
+            filePath: videoFilePath,
+            title: title.trim(),
+            contentType: videoFile.mimetype || 'video/mp4',
+            thumbnailPath: thumbnailFilePath,
+            thumbnailContentType: thumbnailFile?.mimetype
+        });
 
-        // ── Upload video to S3, fallback to local ──
-        let videoUrl;
-        try {
-            const videoS3Key = `videos/${Date.now()}-${videoFile.filename}`;
-            videoUrl = await s3Service.uploadFileToS3(videoFilePath, videoS3Key, videoFile.mimetype || 'video/mp4');
-            console.log(`[Upload] Video uploaded to S3: ${videoUrl}`);
-        } catch (s3Err) {
-            console.warn(`[Upload] S3 video upload failed (${s3Err.message}), using local fallback`);
-            videoUrl = `${baseUrlForLocal}/uploads/${videoFile.filename}`;
-        }
+        console.log(`[Upload] Video uploaded to Bunny Stream: ${bunnyUpload.guid}`);
 
-        // ── Upload thumbnail to S3, fallback to default ──
-        let thumbnailUrl = 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&q=80&w=1200';
+        let thumbnailUrl = bunnyUpload.thumbnailUrl || 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&q=80&w=1200';
         if (thumbnailFile) {
-            try {
-                const thumbS3Key = `thumbnails/${Date.now()}-${thumbnailFile.filename}`;
-                thumbnailUrl = await s3Service.uploadFileToS3(thumbnailFilePath, thumbS3Key, thumbnailFile.mimetype || 'image/jpeg');
-                safeUnlink(thumbnailFilePath);
-                thumbnailFilePath = null;
-                console.log(`[Upload] Thumbnail uploaded to S3: ${thumbnailUrl}`);
-            } catch (s3Err) {
-                console.warn(`[Upload] S3 thumbnail upload failed (${s3Err.message}), using local fallback`);
-                thumbnailUrl = `${baseUrlForLocal}/uploads/${thumbnailFile.filename}`;
-            }
+            thumbnailUrl = bunnyUpload.thumbnailUrl;
+            safeUnlink(thumbnailFilePath);
+            thumbnailFilePath = null;
         }
 
         // ── Save to DB ──
@@ -92,7 +140,7 @@ exports.uploadVideo = async (req, res) => {
                 category: category || 'General',
                 status: 'ended',
                 viewer_count_peak: 0,
-                recording_url: videoUrl,
+                recording_url: bunnyUpload.hlsUrl,
                 thumbnail_url: thumbnailUrl,
                 started_at: new Date(),
                 ended_at: new Date(),
@@ -121,30 +169,31 @@ exports.uploadVideo = async (req, res) => {
                 visibility: visibility || 'public',
                 language: language || null,
                 location: location || null,
-                source_url: videoUrl,
+                hls_master_url: bunnyUpload.hlsUrl,
+                source_url: bunnyUpload.hlsUrl,
                 processing_status: 'processing'
             }
         });
 
+        await createBunnyVideoFile(video.id, bunnyUpload.hlsUrl);
+
         console.log(`[Upload] DB record created: ${newVOD.id}`);
 
-        // ── Respond immediately (don't wait for HLS/subtitles) ──
+        safeUnlink(videoFilePath);
+        videoFilePath = null;
+
         res.status(201).json({
-            message: 'Video uploaded and published. Background optimization started.',
+            message: 'Video uploaded to Bunny Stream. Bunny processing has started.',
             session: newVOD,
-            video: serializeVideo(video)
+            video: serializeVideo(video),
+            bunny: {
+                videoId: bunnyUpload.guid,
+                hlsUrl: bunnyUpload.hlsUrl,
+                embedUrl: bunnyUpload.embedUrl
+            }
         });
 
-        // ── Background processing ──
-        // Subtitles
-        subtitleService.processSubtitles(newVOD.id, videoFilePath, baseUrlForLocal).catch(err => {
-            console.error('[Upload] Subtitle processing failed:', err.message);
-        });
-
-        // HLS transcoding
-        hlsService.processHLS(newVOD.id, videoFilePath, baseUrlForLocal, video.id).catch(err => {
-            console.error('[Upload] HLS processing failed:', err.message);
-        });
+        syncBunnyProcessingStatus(video.id, bunnyUpload.guid).catch(() => {});
 
     } catch (error) {
         console.error('[Upload] Controller error:', error.message, error.stack);
@@ -368,21 +417,15 @@ exports.completeChunkUpload = async (req, res) => {
 
         await new Promise((resolve) => writeStream.end(resolve));
 
-        const baseUrlForLocal = `${req.protocol}://${req.get('host')}`;
-        const sourceKey = `videos/source/${session.id}-${path.basename(assembledPath)}`;
-        let sourceUrl;
-        try {
-            sourceUrl = await s3Service.uploadFileToS3(assembledPath, sourceKey, session.content_type);
-        } catch (error) {
-            console.warn(`[ChunkUpload] R2 upload failed (${error.message}), using local assembled file`);
-            const tempUploadsDir = path.join(os.tmpdir(), 'podlive-uploads');
-            ensureDir(tempUploadsDir);
-            const localName = `${session.id}-${path.basename(assembledPath)}`;
-            fs.copyFileSync(assembledPath, path.join(tempUploadsDir, localName));
-            sourceUrl = `${baseUrlForLocal}/uploads/${localName}`;
-        }
-
         const metadata = session.metadata || {};
+        const bunnyUpload = await bunnyService.uploadVideoFile({
+            filePath: assembledPath,
+            title: metadata.title || path.parse(session.original_name).name,
+            contentType: session.content_type
+        });
+
+        console.log(`[ChunkUpload] Video uploaded to Bunny Stream: ${bunnyUpload.guid}`);
+
         const video = await prisma.video.create({
             data: {
                 owner_id: req.user.id,
@@ -393,7 +436,8 @@ exports.completeChunkUpload = async (req, res) => {
                 visibility: metadata.visibility || 'private',
                 language: metadata.language || null,
                 location: metadata.location || null,
-                source_url: sourceUrl,
+                hls_master_url: bunnyUpload.hlsUrl,
+                source_url: bunnyUpload.hlsUrl,
                 processing_status: 'processing',
                 category: metadata.category ? {
                     connectOrCreate: {
@@ -407,26 +451,34 @@ exports.completeChunkUpload = async (req, res) => {
             }
         });
 
+        await createBunnyVideoFile(video.id, bunnyUpload.hlsUrl);
+
         await prisma.uploadSession.update({
             where: { id: session.id },
             data: {
                 status: 'completed',
                 completed_at: new Date(),
-                assembled_path: assembledPath,
-                r2_key: sourceKey
+                assembled_path: null,
+                r2_key: `bunny:${bunnyUpload.guid}`
             }
         });
 
+        fs.rmSync(dir, { recursive: true, force: true });
+        assembledPath = null;
+
         res.status(201).json({
-            message: 'Upload completed. Background HLS processing started.',
-            video: serializeVideo(video)
+            message: 'Upload completed on Bunny Stream. Bunny processing has started.',
+            video: serializeVideo(video),
+            bunny: {
+                videoId: bunnyUpload.guid,
+                hlsUrl: bunnyUpload.hlsUrl,
+                embedUrl: bunnyUpload.embedUrl
+            }
         });
 
-        hlsService.processHLS(null, assembledPath, baseUrlForLocal, video.id).catch(async (error) => {
-            console.error('[ChunkUpload] HLS processing failed:', error.message);
-            await prisma.video.update({ where: { id: video.id }, data: { processing_status: 'failed' } }).catch(() => {});
-        });
+        syncBunnyProcessingStatus(video.id, bunnyUpload.guid).catch(() => {});
     } catch (error) {
+        safeUnlink(assembledPath);
         console.error('[ChunkUpload] complete error:', error);
         res.status(500).json({ error: 'Failed to complete upload', details: error.message });
     }
