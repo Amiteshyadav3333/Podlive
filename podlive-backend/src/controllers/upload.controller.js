@@ -148,6 +148,17 @@ exports.uploadVideo = async (req, res) => {
             }
         });
 
+        let categoryId = null;
+        if (category) {
+            const slug = String(category).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'general';
+            const cat = await prisma.category.upsert({
+                where: { slug },
+                update: {},
+                create: { name: category, slug }
+            });
+            categoryId = cat.id;
+        }
+
         const video = await prisma.video.create({
             data: {
                 owner_id: host_user_id,
@@ -157,15 +168,7 @@ exports.uploadVideo = async (req, res) => {
                 tags: parseTags(tags),
                 thumbnail: thumbnailUrl,
                 filesize: BigInt(videoFile.size),
-                category: category ? {
-                    connectOrCreate: {
-                        where: { slug: String(category).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'general' },
-                        create: {
-                            name: category,
-                            slug: String(category).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'general'
-                        }
-                    }
-                } : undefined,
+                category_id: categoryId,
                 visibility: visibility || 'public',
                 language: language || null,
                 location: location || null,
@@ -426,6 +429,17 @@ exports.completeChunkUpload = async (req, res) => {
 
         console.log(`[ChunkUpload] Video uploaded to Bunny Stream: ${bunnyUpload.guid}`);
 
+        let categoryId = null;
+        if (metadata.category) {
+            const slug = String(metadata.category).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'general';
+            const cat = await prisma.category.upsert({
+                where: { slug },
+                update: {},
+                create: { name: metadata.category, slug }
+            });
+            categoryId = cat.id;
+        }
+
         const video = await prisma.video.create({
             data: {
                 owner_id: req.user.id,
@@ -439,15 +453,7 @@ exports.completeChunkUpload = async (req, res) => {
                 hls_master_url: bunnyUpload.hlsUrl,
                 source_url: bunnyUpload.hlsUrl,
                 processing_status: 'processing',
-                category: metadata.category ? {
-                    connectOrCreate: {
-                        where: { slug: String(metadata.category).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'general' },
-                        create: {
-                            name: metadata.category,
-                            slug: String(metadata.category).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'general'
-                        }
-                    }
-                } : undefined
+                category_id: categoryId
             }
         });
 

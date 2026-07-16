@@ -174,12 +174,12 @@ exports.updateVideo = async (req, res) => {
 
         if (category) {
             const slug = String(category).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'general';
-            data.category = {
-                connectOrCreate: {
-                    where: { slug },
-                    create: { name: category, slug }
-                }
-            };
+            const cat = await prisma.category.upsert({
+                where: { slug },
+                update: {},
+                create: { name: category, slug }
+            });
+            data.category_id = cat.id;
         }
 
         const updated = await prisma.video.update({
