@@ -126,9 +126,9 @@ exports.uploadVideo = async (req, res) => {
 
         let thumbnailUrl = bunnyUpload.thumbnailUrl || 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&q=80&w=1200';
         if (thumbnailFile) {
-            thumbnailUrl = bunnyUpload.thumbnailUrl;
-            safeUnlink(thumbnailFilePath);
-            thumbnailFilePath = null;
+            const hostUrl = `${req.protocol}://${req.get('host')}`;
+            thumbnailUrl = `${hostUrl}/uploads/${path.basename(thumbnailFilePath)}`;
+            thumbnailFilePath = null; // Do not delete this file in finally block
         }
 
         // ── Save to DB ──

@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { buildApiUrl } from "@/lib/api";
 import DashboardSidebar from "@/components/DashboardSidebar";
 
-const CATEGORIES = ["Technology", "Music", "Comedy", "Education", "Finance", "Gaming", "General"];
+const CATEGORIES = ["Technology", "Music", "Comedy", "Education", "Finance", "Gaming", "General", "Other (Custom)"];
 
 export default function UploadPage() {
   const router = useRouter();
@@ -17,6 +17,7 @@ export default function UploadPage() {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [customCategory, setCustomCategory] = useState("");
 
   const handleUpload = async () => {
     if (!formData.title || !videoFile) { setError("Title and video file are required."); return; }
@@ -28,7 +29,7 @@ export default function UploadPage() {
       const data = new FormData();
       data.append("title", formData.title);
       data.append("description", formData.description);
-      data.append("category", formData.category);
+      data.append("category", formData.category === "Other (Custom)" ? customCategory : formData.category);
       data.append("video", videoFile);
       if (thumbnailFile) data.append("thumbnail", thumbnailFile);
 
@@ -120,6 +121,15 @@ export default function UploadPage() {
                     >
                       {CATEGORIES.map(c => <option key={c}>{c}</option>)}
                     </select>
+                    {formData.category === "Other (Custom)" && (
+                      <input
+                        type="text"
+                        placeholder="Type custom category..."
+                        value={customCategory}
+                        onChange={(e) => setCustomCategory(e.target.value)}
+                        className="mt-3 w-full bg-zinc-900/60 border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-indigo-500/70 transition-all text-white placeholder:text-zinc-600"
+                      />
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Thumbnail</label>
