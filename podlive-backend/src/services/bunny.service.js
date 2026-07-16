@@ -4,8 +4,8 @@ const https = require('https');
 const apiHost = 'video.bunnycdn.com';
 
 const requiredConfig = () => ({
-    libraryId: process.env.BUNNY_STREAM_LIBRARY_ID,
-    accessKey: process.env.BUNNY_STREAM_ACCESS_KEY,
+    libraryId: process.env.BUNNY_STREAM_LIBRARY_ID || process.env.BUNNY_LIBRARY_ID,
+    accessKey: process.env.BUNNY_STREAM_ACCESS_KEY || process.env.BUNNY_API_KEY,
     cdnHostname: normalizeHostname(process.env.BUNNY_STREAM_CDN_HOSTNAME)
 });
 
