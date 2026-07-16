@@ -8,6 +8,19 @@ import axios from "axios";
 import { buildApiUrl } from "@/lib/api";
 import { formatDistanceToNow } from "date-fns";
 
+const formatTime = (secs: number) => {
+  if (isNaN(secs)) return "0:00";
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = Math.floor(secs % 60);
+  const formattedS = s < 10 ? `0${s}` : s;
+  if (h > 0) {
+    const formattedM = m < 10 ? `0${m}` : m;
+    return `${h}:${formattedM}:${formattedS}`;
+  }
+  return `${m}:${formattedS}`;
+};
+
 function VideoCard({ session, isLive = false }: { session: any; isLive?: boolean }) {
   const router = useRouter();
   const href = isLive ? `/live/${session.id}` : `/watch/${session.id}`;
@@ -71,6 +84,13 @@ function VideoCard({ session, isLive = false }: { session: any; isLive?: boolean
         {/* Processing badge */}
         {!isLive && session.is_processing && (
           <div className="absolute bottom-2 left-2 bg-amber-500 text-black text-[10px] font-bold px-2 py-0.5 rounded">Processing...</div>
+        )}
+
+        {/* Duration badge */}
+        {!isLive && !session.is_processing && session.video?.duration_seconds && (
+          <div className="absolute bottom-2 left-2 bg-black/85 text-white text-[10px] font-bold px-2 py-0.5 rounded font-mono">
+            {formatTime(session.video.duration_seconds)}
+          </div>
         )}
 
         {/* Category tag */}

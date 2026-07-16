@@ -21,7 +21,11 @@ import {
     Loader2,
     Send,
     Settings,
-    Activity
+    Activity,
+    Trash2,
+    Bookmark,
+    ThumbsDown,
+    Flag
 } from "lucide-react";
 import Hls from "hls.js";
 import { buildApiUrl } from "@/lib/api";
@@ -419,14 +423,39 @@ export default function WatchPage() {
     const [recording, setRecording] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [isLiked, setIsLiked] = useState(false);
+    const [isDisliked, setIsDisliked] = useState(false);
     const [isFollowing, setIsFollowing] = useState(false);
     const [newComment, setNewComment] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [currentUser, setCurrentUser] = useState<any>(null);
+
+    // Playlist & Report & Menu states
+    const [isBookmarked, setIsBookmarked] = useState(false);
+    const [showPlaylistModal, setShowPlaylistModal] = useState(false);
+    const [playlists, setPlaylists] = useState<any[]>([]);
+    const [newPlaylistTitle, setNewPlaylistTitle] = useState("");
+    const [showReportModal, setShowReportModal] = useState(false);
+    const [reportReason, setReportReason] = useState("");
+    const [reportDetails, setReportDetails] = useState("");
+    const [showMenu, setShowMenu] = useState(false);
 
     // Suggested videos states
     const [recommendedVideos, setRecommendedVideos] = useState<any[]>([]);
     const [recommendedLoading, setRecommendedLoading] = useState(true);
     const [recommendedFilter, setRecommendedFilter] = useState<'all' | 'creator' | 'related'>('all');
+
+    useEffect(() => {
+        if (typeof window !== "undefined") {
+            const u = localStorage.getItem("user");
+            if (u) {
+                try {
+                    setCurrentUser(JSON.parse(u));
+                } catch (e) {
+                    console.error("Failed to parse user data", e);
+                }
+            }
+        }
+    }, []);
 
     useEffect(() => {
         const fetchRecording = async () => {
@@ -453,6 +482,7 @@ export default function WatchPage() {
                 const data = await res.json();
                 if (res.ok) {
                     setIsLiked(data.liked);
+                    setIsDisliked(data.disliked);
                 }
             } catch (err) {
                 console.error("Failed to fetch like status", err);
@@ -481,8 +511,30 @@ export default function WatchPage() {
                 console.error("Failed to fetch follow status", err);
             }
         };
+
+        const checkBookmarkStatus = async () => {
+            try {
+                const token = localStorage.getItem("accessToken");
+                if (!token || !recording?.video?.id) return;
+                const res = await fetch(buildApiUrl("/api/videos/playlists"), {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await res.json();
+                if (res.ok && Array.isArray(data.playlists)) {
+                    const watchLater = data.playlists.find((p: any) => p.kind === 'watch_later');
+                    if (watchLater) {
+                        const hasVideo = watchLater.videos?.some((v: any) => v.video?.id === recording.video.id);
+                        setIsBookmarked(!!hasVideo);
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to fetch bookmark status", err);
+            }
+        };
+
         if (recording && recording.host) {
             checkFollowStatus();
+            checkBookmarkStatus();
         }
     }, [recording]);
 
@@ -548,11 +600,11 @@ export default function WatchPage() {
         }
     };
 
-    const handleLikeToggle = async () => {
+    const handleReactionToggle = async (type: 'like' | 'dislike') => {
         try {
             const token = localStorage.getItem("accessToken");
             if (!token) {
-                alert("Please log in to like videos.");
+                alert(`Please log in to ${type} videos.`);
                 return;
             }
 
@@ -561,19 +613,246 @@ export default function WatchPage() {
                 headers: {
                     "Content-Type": "application/json",
                     "Authorization": `Bearer ${token}`
-                }
+                },
+                body: JSON.stringify({ type })
             });
 
             const data = await res.json();
             if (res.ok) {
                 setIsLiked(data.liked);
+                setIsDisliked(data.disliked);
                 setRecording((prev: any) => ({
                     ...prev,
-                    like_count: data.liked ? (prev.like_count || 0) + 1 : Math.max(0, (prev.like_count || 1) - 1)
+                    like_count: data.like_count,
+                    dislike_count: data.dislike_count
                 }));
             }
         } catch (error) {
-            console.error("Error toggling like:", error);
+            console.error(`Error toggling ${type}:`, error);
+        }
+    };
+
+    const handleBookmarkToggle = async () => {
+        try {
+            const token = localStorage.getItem("accessToken");
+            if (!token) {
+                alert("Please log in to bookmark videos.");
+                return;
+            }
+            if (!recording?.video?.id) {
+                alert("This recording is still processing and cannot be bookmarked yet.");
+                return;
+            }
+
+            const playlistsRes = await fetch(buildApiUrl("/api/videos/playlists"), {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const playlistsData = await playlistsRes.json();
+            if (!playlistsRes.ok) throw new Error(playlistsData.error || "Failed to fetch playlists");
+
+            let watchLater = playlistsData.playlists?.find((p: any) => p.kind === 'watch_later');
+
+            if (!watchLater) {
+                const createRes = await fetch(buildApiUrl("/api/videos/playlists"), {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ title: "Watch Later", kind: "watch_later" })
+                });
+                const createData = await createRes.json();
+                if (!createRes.ok) throw new Error(createData.error || "Failed to create Watch Later playlist");
+                watchLater = createData.playlist;
+            }
+
+            const videoId = recording.video.id;
+            if (isBookmarked) {
+                const removeRes = await fetch(buildApiUrl(`/api/videos/playlists/${watchLater.id}/videos/${videoId}`), {
+                    method: "DELETE",
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (removeRes.ok) {
+                    setIsBookmarked(false);
+                }
+            } else {
+                const addRes = await fetch(buildApiUrl(`/api/videos/playlists/${watchLater.id}/videos`), {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ videoId })
+                });
+                if (addRes.ok) {
+                    setIsBookmarked(true);
+                }
+            }
+        } catch (error: any) {
+            console.error("Bookmark toggle failed:", error);
+            alert(error.message || "Failed to toggle bookmark");
+        }
+    };
+
+    const handleAddToPlaylistClick = async () => {
+        try {
+            const token = localStorage.getItem("accessToken");
+            if (!token) {
+                alert("Please log in to manage playlists.");
+                return;
+            }
+            if (!recording?.video?.id) {
+                alert("This recording is still processing and cannot be added to playlists yet.");
+                return;
+            }
+
+            const res = await fetch(buildApiUrl("/api/videos/playlists"), {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setPlaylists(data.playlists || []);
+                setShowPlaylistModal(true);
+            }
+        } catch (err) {
+            console.error("Failed to fetch playlists:", err);
+        }
+    };
+
+    const handleTogglePlaylistVideo = async (playlistId: string, isAlreadyIn: boolean) => {
+        try {
+            const token = localStorage.getItem("accessToken");
+            const videoId = recording.video.id;
+
+            if (isAlreadyIn) {
+                const res = await fetch(buildApiUrl(`/api/videos/playlists/${playlistId}/videos/${videoId}`), {
+                    method: "DELETE",
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    setPlaylists(prev => prev.map(p => p.id === playlistId ? {
+                        ...p,
+                        videos: p.videos?.filter((v: any) => v.video?.id !== videoId)
+                    } : p));
+                }
+            } else {
+                const res = await fetch(buildApiUrl(`/api/videos/playlists/${playlistId}/videos`), {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ videoId })
+                });
+                if (res.ok) {
+                    setPlaylists(prev => prev.map(p => p.id === playlistId ? {
+                        ...p,
+                        videos: [...(p.videos || []), { video: { id: videoId } }]
+                    } : p));
+                }
+            }
+        } catch (err) {
+            console.error("Playlist toggle failed:", err);
+        }
+    };
+
+    const handleCreatePlaylist = async () => {
+        if (!newPlaylistTitle.trim()) return;
+        try {
+            const token = localStorage.getItem("accessToken");
+            const res = await fetch(buildApiUrl("/api/videos/playlists"), {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`
+                },
+                body: JSON.stringify({ title: newPlaylistTitle.trim() })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setPlaylists(prev => [data.playlist, ...prev]);
+                setNewPlaylistTitle("");
+            }
+        } catch (err) {
+            console.error("Create playlist failed:", err);
+        }
+    };
+
+    const handleReportVideo = async () => {
+        if (!reportReason.trim()) {
+            alert("Please select or enter a reason for reporting.");
+            return;
+        }
+        try {
+            const token = localStorage.getItem("accessToken");
+            if (!token) {
+                alert("Please log in to report videos.");
+                return;
+            }
+            if (!recording?.video?.id) {
+                alert("Cannot report this video yet.");
+                return;
+            }
+
+            const res = await fetch(buildApiUrl(`/api/videos/${recording.video.id}/report`), {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`
+                },
+                body: JSON.stringify({ reason: reportReason, details: reportDetails })
+            });
+            if (res.ok) {
+                alert("Thank you! The video has been reported to the moderators.");
+                setShowReportModal(false);
+                setReportReason("");
+                setReportDetails("");
+            } else {
+                const data = await res.json();
+                alert(data.error || "Failed to submit report.");
+            }
+        } catch (err) {
+            console.error("Report failed:", err);
+        }
+    };
+
+    const handleDeleteRecording = async () => {
+        if (!confirm("Are you sure you want to delete this podcast video? This action cannot be undone.")) return;
+        try {
+            const token = localStorage.getItem("accessToken");
+            const res = await fetch(buildApiUrl(`/api/live/${params.id}`), {
+                method: "DELETE",
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                alert("Podcast deleted successfully.");
+                router.push("/dashboard");
+            } else {
+                const data = await res.json();
+                alert(data.error || "Failed to delete podcast.");
+            }
+        } catch (err) {
+            console.error("Delete failed:", err);
+        }
+    };
+
+    const handleToggleComments = async () => {
+        try {
+            const token = localStorage.getItem("accessToken");
+            const nextState = !recording.chat_enabled;
+            const res = await fetch(buildApiUrl(`/api/live/${params.id}/settings`), {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`
+                },
+                body: JSON.stringify({ chat_enabled: nextState })
+            });
+            if (res.ok) {
+                setRecording((prev: any) => ({ ...prev, chat_enabled: nextState }));
+            }
+        } catch (err) {
+            console.error("Failed to toggle comments:", err);
         }
     };
 
@@ -588,7 +867,16 @@ export default function WatchPage() {
             if (navigator.share) {
                 await navigator.share(shareData);
             } else {
-                await navigator.clipboard.writeText(window.location.href);
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(window.location.href);
+                } else {
+                    const textArea = document.createElement("textarea");
+                    textArea.value = window.location.href;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    document.execCommand("copy");
+                    document.body.removeChild(textArea);
+                }
                 alert("Link copied to clipboard!");
             }
         } catch (err) {
@@ -671,6 +959,7 @@ export default function WatchPage() {
 
     const host = recording.host;
     const avatarUrl = host.avatar_url || `https://ui-avatars.com/api/?name=${host.display_name}&background=random`;
+    const isOwner = currentUser && host?.id === currentUser.id;
 
     return (
         <div className="min-h-screen bg-[#0a0a0a] text-white selection:bg-indigo-500/30 font-sans pb-20">
@@ -751,13 +1040,23 @@ export default function WatchPage() {
                                 </div>
 
                                 <div className="flex items-center gap-3">
-                                    <button
-                                        onClick={handleLikeToggle}
-                                        className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-all ${isLiked ? 'bg-pink-500/20 text-pink-500 border border-pink-500/50' : 'bg-white/5 hover:bg-white/10 text-white border border-transparent'}`}
-                                    >
-                                        <Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} />
-                                        <span>{recording.like_count || 0}</span>
-                                    </button>
+                                    <div className="flex items-center bg-white/5 rounded-full border border-white/10 p-0.5">
+                                        <button
+                                            onClick={() => handleReactionToggle('like')}
+                                            className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-all ${isLiked ? 'bg-pink-500/20 text-pink-500 border border-pink-500/30' : 'hover:bg-white/5 text-white'}`}
+                                        >
+                                            <Heart className={`w-4 h-4 ${isLiked ? 'fill-current' : ''}`} />
+                                            <span>{recording.like_count || 0}</span>
+                                        </button>
+                                        <div className="w-[1px] h-5 bg-white/10 mx-1" />
+                                        <button
+                                            onClick={() => handleReactionToggle('dislike')}
+                                            className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-all ${isDisliked ? 'bg-red-500/20 text-red-500 border border-red-500/30' : 'hover:bg-white/5 text-white'}`}
+                                        >
+                                            <ThumbsDown className={`w-4 h-4 ${isDisliked ? 'fill-current' : ''}`} />
+                                            <span>{recording.dislike_count || 0}</span>
+                                        </button>
+                                    </div>
                                     <button
                                         onClick={handleShare}
                                         className="flex items-center gap-2 px-4 py-2 bg-indigo-600/10 hover:bg-indigo-600/20 rounded-full font-medium text-indigo-400 transition-all border border-indigo-500/20"
@@ -765,9 +1064,56 @@ export default function WatchPage() {
                                         <Share2 className="w-5 h-5" />
                                         Share
                                     </button>
-                                    <button className="p-2 bg-white/5 hover:bg-white/10 rounded-full text-white transition-colors">
-                                        <MoreVertical className="w-5 h-5" />
+                                    <button
+                                        onClick={handleBookmarkToggle}
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-all ${isBookmarked ? 'bg-amber-500/20 text-amber-500 border border-amber-500/50' : 'bg-white/5 hover:bg-white/10 text-white border border-transparent'}`}
+                                    >
+                                        <Bookmark className={`w-5 h-5 ${isBookmarked ? 'fill-current' : ''}`} />
+                                        <span>{isBookmarked ? 'Bookmarked' : 'Bookmark'}</span>
                                     </button>
+                                    <div className="relative">
+                                        <button
+                                            onClick={() => setShowMenu(!showMenu)}
+                                            className="p-2 bg-white/5 hover:bg-white/10 rounded-full text-white transition-colors"
+                                        >
+                                            <MoreVertical className="w-5 h-5" />
+                                        </button>
+                                        {showMenu && (
+                                            <div className="absolute right-0 mt-2 w-48 bg-zinc-900 border border-zinc-800 rounded-xl shadow-xl z-50 p-1">
+                                                <button
+                                                    onClick={() => {
+                                                        setShowMenu(false);
+                                                        handleAddToPlaylistClick();
+                                                    }}
+                                                    className="w-full text-left px-4 py-2 hover:bg-white/5 text-sm rounded-lg text-zinc-300 hover:text-white transition-colors flex items-center gap-2"
+                                                >
+                                                    Add to Playlist
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        setShowMenu(false);
+                                                        setShowReportModal(true);
+                                                    }}
+                                                    className="w-full text-left px-4 py-2 hover:bg-white/5 text-sm rounded-lg text-red-400 hover:text-red-300 transition-colors flex items-center gap-2"
+                                                >
+                                                    <Flag className="w-4 h-4" />
+                                                    Report Video
+                                                </button>
+                                                {isOwner && (
+                                                    <button
+                                                        onClick={() => {
+                                                            setShowMenu(false);
+                                                            handleDeleteRecording();
+                                                        }}
+                                                        className="w-full text-left px-4 py-2 hover:bg-red-500/10 text-sm rounded-lg text-red-500 hover:text-red-400 transition-colors flex items-center gap-2 border-t border-white/5"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                        Delete Video
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
 
@@ -815,61 +1161,85 @@ export default function WatchPage() {
                                     </h3>
                                 </div>
 
-                                {/* Comment Input */}
-                                <div className="p-4 bg-zinc-950/10 border-b border-white/5">
-                                    <form onSubmit={handlePostComment} className="flex items-center gap-3">
-                                        <input
-                                            type="text"
-                                            value={newComment}
-                                            onChange={(e) => setNewComment(e.target.value)}
-                                            placeholder="Add a public comment..."
-                                            className="w-full bg-zinc-900/80 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500/70 placeholder:text-zinc-500 text-white"
-                                            disabled={isSubmitting}
-                                        />
-                                        <button
-                                            type="submit"
-                                            disabled={!newComment.trim() || isSubmitting}
-                                            className="px-5 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95 text-sm shrink-0 flex items-center gap-2"
-                                        >
-                                            {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                                            Comment
-                                        </button>
-                                    </form>
-                                </div>
-
-                                {/* Comment List */}
-                                <div className="p-5 max-h-[400px] overflow-y-auto space-y-4">
-                                    {(!recording.chat_messages || recording.chat_messages.length === 0) ? (
-                                        <div className="flex flex-col items-center justify-center py-8 text-zinc-500">
-                                            <MessageSquare className="w-8 h-8 mb-2 opacity-50" />
-                                            <p className="text-sm">No comments yet. Share your thoughts!</p>
+                                {isOwner && (
+                                    <div className="flex items-center justify-between p-3 mx-4 mt-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
+                                        <div className="flex items-center gap-2">
+                                            <Settings className="w-4 h-4 text-indigo-400" />
+                                            <span className="text-sm font-semibold text-white">Creator comment control</span>
                                         </div>
-                                    ) : (
-                                        recording.chat_messages.map((chat: any) => {
-                                            const hash = [...chat.sender_handle].reduce((acc, char) => acc + char.charCodeAt(0), 0);
-                                            const colors = ['bg-orange-500', 'bg-green-500', 'bg-blue-500', 'bg-pink-500', 'bg-purple-500', 'bg-indigo-500'];
-                                            const textColor = colors[hash % colors.length].replace('bg-', 'text-');
-                                            const bgColor = colors[hash % colors.length];
+                                        <button
+                                            onClick={handleToggleComments}
+                                            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${recording.chat_enabled ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30' : 'bg-green-500/20 text-green-400 hover:bg-green-500/30'}`}
+                                        >
+                                            {recording.chat_enabled ? "Disable Comments" : "Enable Comments"}
+                                        </button>
+                                    </div>
+                                )}
 
-                                            return (
-                                                <div key={chat.id} className="flex gap-3">
-                                                    <div className={`w-9 h-9 rounded-full ${bgColor} flex items-center justify-center shrink-0`}>
-                                                        <span className="text-sm font-bold text-white uppercase">{chat.sender_handle.charAt(0)}</span>
-                                                    </div>
-                                                    <div>
-                                                        <div className="flex items-baseline gap-2">
-                                                            <span className={`font-semibold text-sm ${textColor}`}>{chat.sender_handle}</span>
-                                                            <span className="text-[10px] text-zinc-500 font-medium">
-                                                                {new Date(chat.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                            </span>
-                                                        </div>
-                                                        <p className="text-sm text-zinc-300 mt-1 whitespace-pre-wrap break-words">{chat.message}</p>
-                                                    </div>
+                                {recording.chat_enabled ? (
+                                    <>
+                                        {/* Comment Input */}
+                                        <div className="p-4 bg-zinc-950/10 border-b border-white/5">
+                                            <form onSubmit={handlePostComment} className="flex items-center gap-3">
+                                                <input
+                                                    type="text"
+                                                    value={newComment}
+                                                    onChange={(e) => setNewComment(e.target.value)}
+                                                    placeholder="Add a public comment..."
+                                                    className="w-full bg-zinc-900/80 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500/70 placeholder:text-zinc-500 text-white"
+                                                    disabled={isSubmitting}
+                                                />
+                                                <button
+                                                    type="submit"
+                                                    disabled={!newComment.trim() || isSubmitting}
+                                                    className="px-5 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95 text-sm shrink-0 flex items-center gap-2"
+                                                >
+                                                    {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                                                    Comment
+                                                </button>
+                                            </form>
+                                        </div>
+
+                                        {/* Comment List */}
+                                        <div className="p-5 max-h-[400px] overflow-y-auto space-y-4">
+                                            {(!recording.chat_messages || recording.chat_messages.length === 0) ? (
+                                                <div className="flex flex-col items-center justify-center py-8 text-zinc-500">
+                                                    <MessageSquare className="w-8 h-8 mb-2 opacity-50" />
+                                                    <p className="text-sm">No comments yet. Share your thoughts!</p>
                                                 </div>
-                                            );
-                                        })
-                                    )}
-                                </div>
+                                            ) : (
+                                                recording.chat_messages.map((chat: any) => {
+                                                    const hash = [...chat.sender_handle].reduce((acc, char) => acc + char.charCodeAt(0), 0);
+                                                    const colors = ['bg-orange-500', 'bg-green-500', 'bg-blue-500', 'bg-pink-500', 'bg-purple-500', 'bg-indigo-500'];
+                                                    const textColor = colors[hash % colors.length].replace('bg-', 'text-');
+                                                    const bgColor = colors[hash % colors.length];
+
+                                                    return (
+                                                        <div key={chat.id} className="flex gap-3">
+                                                            <div className={`w-9 h-9 rounded-full ${bgColor} flex items-center justify-center shrink-0`}>
+                                                                <span className="text-sm font-bold text-white uppercase">{chat.sender_handle.charAt(0)}</span>
+                                                            </div>
+                                                            <div>
+                                                                <div className="flex items-baseline gap-2">
+                                                                    <span className={`font-semibold text-sm ${textColor}`}>{chat.sender_handle}</span>
+                                                                    <span className="text-[10px] text-zinc-500 font-medium">
+                                                                        {new Date(chat.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                                    </span>
+                                                                </div>
+                                                                <p className="text-sm text-zinc-300 mt-1 whitespace-pre-wrap break-words">{chat.message}</p>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })
+                                            )}
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center py-12 text-zinc-500">
+                                        <MessageSquare className="w-12 h-12 mb-3 opacity-30 text-indigo-400" />
+                                        <p className="text-zinc-400 font-medium text-sm">Comments are disabled for this video.</p>
+                                    </div>
+                                )}
                             </div>
 
                         </div>
@@ -919,23 +1289,19 @@ export default function WatchPage() {
                             </div>
 
                             {/* Videos Stack */}
-                            <div className="space-y-3.5">
+                            <div className="space-y-3">
                                 {recommendedLoading ? (
                                     [...Array(6)].map((_, i) => (
                                         <div key={i} className="flex gap-3 animate-pulse">
-                                            <div className="w-36 h-20 bg-zinc-900 rounded-lg shrink-0" />
+                                            <div className="w-32 aspect-video bg-zinc-900 rounded-lg shrink-0" />
                                             <div className="flex-1 space-y-2 py-1">
                                                 <div className="h-3.5 bg-zinc-900 rounded w-11/12" />
                                                 <div className="h-3 bg-zinc-900 rounded w-2/3" />
-                                                <div className="h-2.5 bg-zinc-900 rounded w-1/2" />
                                             </div>
                                         </div>
                                     ))
                                 ) : displayedVideos.length === 0 ? (
-                                    <div className="text-center py-8 bg-zinc-900/30 rounded-xl border border-white/5 p-4 text-zinc-500">
-                                        <Clock className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                                        <p className="text-xs">No suggested videos found.</p>
-                                    </div>
+                                    <p className="text-sm text-zinc-500 text-center py-8">No matching recommendations.</p>
                                 ) : (
                                     displayedVideos.map((vod: any) => {
                                         return (
@@ -945,31 +1311,37 @@ export default function WatchPage() {
                                                 className="flex gap-3 group cursor-pointer hover:bg-white/[0.02] p-1.5 rounded-xl transition-all duration-200"
                                             >
                                                 {/* Thumbnail */}
-                                                <div className="relative w-36 h-20 bg-zinc-950 rounded-lg overflow-hidden shrink-0 border border-white/5">
+                                                <div className="relative w-32 aspect-video shrink-0 bg-zinc-900 rounded-lg overflow-hidden border border-white/5">
                                                     <img
-                                                        src={vod.thumbnail_url || "https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&q=80&w=300"}
+                                                        src={vod.thumbnail_url || "https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&q=80&w=600"}
                                                         alt={vod.title}
                                                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                                                     />
-                                                    <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/85 text-[10px] font-bold text-white uppercase tracking-wider scale-90">
-                                                        {vod.category || "VOD"}
-                                                    </span>
+                                                    {vod.video?.duration_seconds && (
+                                                        <span className="absolute bottom-1 right-1 bg-black/80 text-white text-[10px] px-1 py-0.5 rounded font-mono font-bold z-10">
+                                                            {(() => {
+                                                                const secs = vod.video.duration_seconds;
+                                                                if (isNaN(secs)) return "0:00";
+                                                                const h = Math.floor(secs / 3600);
+                                                                const m = Math.floor((secs % 3600) / 60);
+                                                                const s = Math.floor(secs % 60);
+                                                                const formattedS = s < 10 ? `0${s}` : s;
+                                                                if (h > 0) {
+                                                                    const formattedM = m < 10 ? `0${m}` : m;
+                                                                    return `${h}:${formattedM}:${formattedS}`;
+                                                                }
+                                                                return `${m}:${formattedS}`;
+                                                            })()}
+                                                        </span>
+                                                    )}
                                                 </div>
 
-                                                {/* Info */}
+                                                {/* Metadata */}
                                                 <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
                                                     <div>
                                                         <h4 className="text-xs font-bold text-zinc-100 group-hover:text-indigo-400 line-clamp-2 transition-colors leading-snug duration-150">
                                                             {vod.title}
                                                         </h4>
-                                                        <div className="flex items-center gap-1 mt-1">
-                                                            <span className="text-[11px] text-zinc-400 truncate hover:text-zinc-200">
-                                                                {vod.host?.display_name}
-                                                            </span>
-                                                            {vod.host?.is_verified && (
-                                                                <CheckCircle2 className="w-3 h-3 text-blue-500 shrink-0" fill="currentColor" stroke="white" />
-                                                            )}
-                                                        </div>
                                                     </div>
                                                     <p className="text-[10px] text-zinc-500 truncate mt-1">
                                                         {vod.views || 0} views • {formatDistanceToNow(new Date(vod.ended_at || vod.created_at), { addSuffix: true })}
@@ -982,9 +1354,111 @@ export default function WatchPage() {
                             </div>
                         </div>
                     </div>
-
                 </div>
             </main>
+
+            {/* Playlists Modal */}
+            {showPlaylistModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-zinc-900 border border-white/10 rounded-2xl w-full max-w-md p-6 relative">
+                        <button
+                            onClick={() => setShowPlaylistModal(false)}
+                            className="absolute top-4 right-4 text-zinc-400 hover:text-white transition-colors"
+                        >
+                            ✕
+                        </button>
+                        <h3 className="text-xl font-bold text-white mb-4">Save to Playlist</h3>
+                        <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
+                            {playlists.length === 0 ? (
+                                <p className="text-zinc-500 text-sm">No playlists found. Create one below!</p>
+                            ) : (
+                                playlists.map((p) => {
+                                    const isAlreadyIn = p.videos?.some((v: any) => v.video?.id === recording?.video?.id);
+                                    return (
+                                        <label key={p.id} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl border border-white/5 cursor-pointer hover:bg-white/10 transition-colors">
+                                            <input
+                                                type="checkbox"
+                                                checked={!!isAlreadyIn}
+                                                onChange={() => handleTogglePlaylistVideo(p.id, !!isAlreadyIn)}
+                                                className="rounded border-white/20 bg-zinc-800 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-zinc-900"
+                                            />
+                                            <span className="text-sm font-semibold text-white">{p.title}</span>
+                                        </label>
+                                    );
+                                })
+                            )}
+                        </div>
+                        <div className="border-t border-white/5 mt-5 pt-4">
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    placeholder="New playlist name..."
+                                    value={newPlaylistTitle}
+                                    onChange={(e) => setNewPlaylistTitle(e.target.value)}
+                                    className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/70"
+                                />
+                                <button
+                                    onClick={handleCreatePlaylist}
+                                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-sm transition-colors"
+                                >
+                                    Create
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Report Modal */}
+            {showReportModal && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                    <div className="bg-zinc-900 border border-white/10 rounded-2xl w-full max-w-md p-6 relative">
+                        <button
+                            onClick={() => setShowReportModal(false)}
+                            className="absolute top-4 right-4 text-zinc-400 hover:text-white transition-colors"
+                        >
+                            ✕
+                        </button>
+                        <h3 className="text-xl font-bold text-white mb-4">Report Video</h3>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Reason</label>
+                                <select
+                                    value={reportReason}
+                                    onChange={(e) => setReportReason(e.target.value)}
+                                    className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/70"
+                                >
+                                    <option value="">Select a reason...</option>
+                                    <option value="Spam or misleading">Spam or misleading</option>
+                                    <option value="Sexual content">Sexual content</option>
+                                    <option value="Violent or repulsive content">Violent or repulsive content</option>
+                                    <option value="Hateful or abusive content font-medium">Hateful or abusive content</option>
+                                    <option value="Harmful or dangerous acts">Harmful or dangerous acts</option>
+                                    <option value="Child abuse">Child abuse</option>
+                                    <option value="Infringes my rights">Infringes my rights</option>
+                                    <option value="Other">Other</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold uppercase tracking-wider text-zinc-400 mb-1.5">Details (Optional)</label>
+                                <textarea
+                                    placeholder="Provide additional details..."
+                                    value={reportDetails}
+                                    onChange={(e) => setReportDetails(e.target.value)}
+                                    rows={3}
+                                    className="w-full bg-zinc-950 border border-white/10 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/70 resize-none"
+                                />
+                            </div>
+                            <button
+                                onClick={handleReportVideo}
+                                className="w-full py-2.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded-xl text-sm transition-colors mt-2"
+                            >
+                                Submit Report
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

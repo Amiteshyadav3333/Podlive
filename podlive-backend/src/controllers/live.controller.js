@@ -274,6 +274,25 @@ exports.endLiveSession = async (req, res) => {
             }
         });
 
+        // Create Video record for the ended live session
+        try {
+            await prisma.video.create({
+                data: {
+                    owner_id: updatedSession.host_user_id,
+                    live_session_id: updatedSession.id,
+                    title: updatedSession.title,
+                    description: updatedSession.description || '',
+                    thumbnail: updatedSession.thumbnail_url,
+                    hls_master_url: updatedSession.recording_url || updatedSession.hls_url,
+                    source_url: updatedSession.recording_url || updatedSession.hls_url,
+                    processing_status: 'ready',
+                    visibility: updatedSession.visibility
+                }
+            });
+        } catch (createVideoErr) {
+            console.error('[Live] Failed to create video record on stream end:', createVideoErr.message);
+        }
+
         if (req.io) {
             req.io.to(id).emit('podcast_ended', sanitizeSession(updatedSession));
             req.io.emit('live_ended', { id });
@@ -543,6 +562,7 @@ exports.getRecordingDetails = async (req, res) => {
             where: { id },
             include: {
                 host: true,
+                video: true,
                 subtitles: true,
                 chat_messages: {
                     orderBy: { created_at: 'asc' }
@@ -554,13 +574,38 @@ exports.getRecordingDetails = async (req, res) => {
             return res.status(404).json({ error: 'Recording not found' });
         }
 
-        // We can expose the details even if the session is not ended yet for future-proofing,
-        // but it's typically for 'ended' status.
+        let videoRecord = session.video;
+        if (!videoRecord && session.status === 'ended') {
+            try {
+                videoRecord = await prisma.video.create({
+                    data: {
+                        owner_id: session.host_user_id,
+                        live_session_id: session.id,
+                        title: session.title,
+                        description: session.description || '',
+                        thumbnail: session.thumbnail_url,
+                        hls_master_url: session.recording_url || session.hls_url,
+                        source_url: session.recording_url || session.hls_url,
+                        processing_status: 'ready',
+                        visibility: session.visibility
+                    }
+                });
+            } catch (createVideoErr) {
+                console.error('[Recording] Failed to auto-create video record on-the-fly:', createVideoErr.message);
+            }
+        }
+
         const { host, ...sessionData } = session;
         const { password_hash, total_views, total_likes, ...publicHost } = host;
 
         res.json({
             ...sessionData,
+            video: videoRecord ? {
+                ...videoRecord,
+                filesize: videoRecord.filesize?.toString?.() || videoRecord.filesize,
+                views: videoRecord.views?.toString?.() || videoRecord.views,
+                watch_time: videoRecord.watch_time?.toString?.() || videoRecord.watch_time
+            } : null,
             host: {
                 ...publicHost,
                 total_views: total_views?.toString?.() || total_views,
@@ -648,7 +693,12 @@ exports.addComment = async (req, res) => {
 exports.toggleLike = async (req, res) => {
     try {
         const { id } = req.params;
+        const { type = 'like' } = req.body; // 'like' or 'dislike'
         const user_id = req.user.id;
+
+        if (!['like', 'dislike'].includes(type)) {
+            return res.status(400).json({ error: 'Invalid reaction type' });
+        }
 
         const session = await prisma.liveSession.findUnique({ where: { id } });
         if (!session) {
@@ -664,30 +714,64 @@ exports.toggleLike = async (req, res) => {
             }
         });
 
+        let likeDelta = 0;
+        let dislikeDelta = 0;
+
         if (existingLike) {
-            // Unlike
-            await prisma.like.delete({ where: { id: existingLike.id } });
-            await prisma.liveSession.update({
-                where: { id },
-                data: { like_count: { decrement: 1 } }
-            });
-            if (req.io) req.io.to(id).emit('live_like_update', { sessionId: id, delta: -1 });
-            res.json({ liked: false });
+            if (existingLike.type === type) {
+                // Remove reaction (unlike / undislike)
+                await prisma.like.delete({ where: { id: existingLike.id } });
+                if (type === 'like') likeDelta = -1;
+                else dislikeDelta = -1;
+            } else {
+                // Change reaction (like -> dislike or dislike -> like)
+                await prisma.like.update({
+                    where: { id: existingLike.id },
+                    data: { type }
+                });
+                if (type === 'like') {
+                    likeDelta = 1;
+                    dislikeDelta = -1;
+                } else {
+                    likeDelta = -1;
+                    dislikeDelta = 1;
+                }
+            }
         } else {
-            // Like
+            // New reaction
             await prisma.like.create({
-                data: { user_id, session_id: id }
+                data: { user_id, session_id: id, type }
             });
-            await prisma.liveSession.update({
-                where: { id },
-                data: { like_count: { increment: 1 } }
-            });
-            if (req.io) req.io.to(id).emit('live_like_update', { sessionId: id, delta: 1 });
-            res.json({ liked: true });
+            if (type === 'like') likeDelta = 1;
+            else dislikeDelta = 1;
         }
+
+        const updatedSession = await prisma.liveSession.update({
+            where: { id },
+            data: {
+                like_count: { increment: likeDelta },
+                dislike_count: { increment: dislikeDelta }
+            }
+        });
+
+        if (req.io) {
+            req.io.to(id).emit('live_like_update', {
+                sessionId: id,
+                likeCount: updatedSession.like_count,
+                dislikeCount: updatedSession.dislike_count
+            });
+        }
+
+        res.json({
+            liked: existingLike && existingLike.type === type ? false : (type === 'like'),
+            disliked: existingLike && existingLike.type === type ? false : (type === 'dislike'),
+            like_count: updatedSession.like_count,
+            dislike_count: updatedSession.dislike_count
+        });
+
     } catch (error) {
-        console.error("Toggle like error:", error);
-        res.status(500).json({ error: 'Failed to toggle like status' });
+        console.error("Toggle reaction error:", error);
+        res.status(500).json({ error: 'Failed to toggle reaction' });
     }
 };
 
@@ -1032,9 +1116,12 @@ exports.getLikeStatus = async (req, res) => {
             }
         });
 
-        res.json({ liked: !!existingLike });
+        res.json({
+            liked: existingLike ? existingLike.type === 'like' : false,
+            disliked: existingLike ? existingLike.type === 'dislike' : false
+        });
     } catch (error) {
-        res.status(500).json({ error: 'Failed to fetch like status' });
+        res.status(500).json({ error: 'Failed to fetch reaction status' });
     }
 };
 
@@ -1141,7 +1228,10 @@ exports.getPublicVODs = async (req, res) => {
 
         const sessions = await prisma.liveSession.findMany({
             where,
-            include: { host: { select: { id: true, unique_handle: true, display_name: true, avatar_url: true, is_verified: true } } },
+            include: {
+                host: { select: { id: true, unique_handle: true, display_name: true, avatar_url: true, is_verified: true } },
+                video: { select: { duration_seconds: true } }
+            },
             orderBy,
             take: parseInt(limit)
         });

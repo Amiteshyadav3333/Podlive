@@ -17,7 +17,19 @@ import { useParams, useRouter } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
 import { buildApiUrl } from "@/lib/api";
 import { useSocket } from "@/providers/SocketProvider";
-
+const formatTime = (secs: number) => {
+    if (isNaN(secs)) return "0:00";
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = Math.floor(secs % 60);
+    
+    const formattedS = s < 10 ? `0${s}` : s;
+    if (h > 0) {
+        const formattedM = m < 10 ? `0${m}` : m;
+        return `${h}:${formattedM}:${formattedS}`;
+    }
+    return `${m}:${formattedS}`;
+};
 export default function CreatorProfilePage() {
     const params = useParams();
     const router = useRouter();
@@ -45,8 +57,8 @@ export default function CreatorProfilePage() {
 
     const handleShare = async () => {
         const shareData = {
-            title: `PodLive Creator: ${creatorData.display_name}`,
-            text: `Follow this amazing podcast creator @${creatorData.unique_handle} on PodLive!`,
+            title: `PodLive Creator: ${creatorData?.display_name}`,
+            text: `Follow this amazing podcast creator @${creatorData?.unique_handle} on PodLive!`,
             url: window.location.href,
         };
 
@@ -54,7 +66,16 @@ export default function CreatorProfilePage() {
             if (navigator.share) {
                 await navigator.share(shareData);
             } else {
-                await navigator.clipboard.writeText(window.location.href);
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(window.location.href);
+                } else {
+                    const textArea = document.createElement("textarea");
+                    textArea.value = window.location.href;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    document.execCommand("copy");
+                    document.body.removeChild(textArea);
+                }
                 alert("Profile link copied to clipboard!");
             }
         } catch (err) {
@@ -307,6 +328,11 @@ export default function CreatorProfilePage() {
                                                 <div className="absolute top-2 left-2 bg-indigo-600/90 backdrop-blur-sm text-white text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded">
                                                     {recording.category || 'Podcast'}
                                                 </div>
+                                                {recording.video?.duration_seconds && (
+                                                    <span className="absolute bottom-2 right-2 bg-black/85 text-white text-[10px] px-1.5 py-0.5 rounded font-mono font-bold z-10">
+                                                        {formatTime(recording.video.duration_seconds)}
+                                                    </span>
+                                                )}
                                             </div>
 
                                             {/* Info */}

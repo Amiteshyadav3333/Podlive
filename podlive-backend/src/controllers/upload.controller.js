@@ -144,7 +144,8 @@ exports.uploadVideo = async (req, res) => {
                 thumbnail_url: thumbnailUrl,
                 started_at: new Date(),
                 ended_at: new Date(),
-                is_processing: false
+                is_processing: false,
+                chat_enabled: false
             }
         });
 

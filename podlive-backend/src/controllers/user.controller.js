@@ -138,6 +138,13 @@ exports.getCreatorProfile = async (req, res) => {
                     take: 30
                 },
                 hosted_sessions: {
+                    include: {
+                        video: {
+                            select: {
+                                duration_seconds: true
+                            }
+                        }
+                    },
                     orderBy: { created_at: 'desc' }
                 }
             }
