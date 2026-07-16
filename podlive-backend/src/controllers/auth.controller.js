@@ -10,7 +10,6 @@ const generateTokens = (userId) => {
 };
 
 exports.register = async (req, res) => {
-    return res.status(403).json({ error: 'Registration is temporarily disabled.' });
     try {
         const { email, password, unique_handle, display_name } = req.body;
 
