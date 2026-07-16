@@ -556,13 +556,16 @@ exports.getRecordingDetails = async (req, res) => {
 
         // We can expose the details even if the session is not ended yet for future-proofing,
         // but it's typically for 'ended' status.
-        // Also exclude sensitive host data
         const { host, ...sessionData } = session;
-        const { password_hash, ...publicHost } = host;
+        const { password_hash, total_views, total_likes, ...publicHost } = host;
 
         res.json({
             ...sessionData,
-            host: publicHost
+            host: {
+                ...publicHost,
+                total_views: total_views?.toString?.() || total_views,
+                total_likes: total_likes?.toString?.() || total_likes
+            }
         });
 
     } catch (error) {
