@@ -25,7 +25,9 @@ import {
     Trash2,
     Bookmark,
     ThumbsDown,
-    Flag
+    Flag,
+    Subtitles,
+    PictureInPicture2
 } from "lucide-react";
 import Hls from "hls.js";
 import { buildApiUrl } from "@/lib/api";
@@ -50,6 +52,136 @@ function HlsPlayer({ url, poster, subtitles }: { url: string, poster: string, su
     const [showControls, setShowControls] = useState(true);
     const [showSettings, setShowSettings] = useState(false);
     const [playbackRate, setPlaybackRate] = useState(1);
+
+    // CC & Miniplayer States
+    const [subtitlesEnabled, setSubtitlesEnabled] = useState(false);
+    const [isMini, setIsMini] = useState(false);
+    const [miniPosition, setMiniPosition] = useState({ x: 20, y: 20 });
+    const isDraggingRef = React.useRef(false);
+    const dragStartRef = React.useRef({ x: 0, y: 0 });
+    const touchStartRef = React.useRef<{ x: number, y: number } | null>(null);
+
+    // Toggle Subtitles (CC)
+    const handleToggleSubtitles = () => {
+        const video = videoRef.current;
+        if (!video) return;
+
+        const nextState = !subtitlesEnabled;
+        setSubtitlesEnabled(nextState);
+
+        for (let i = 0; i < video.textTracks.length; i++) {
+            video.textTracks[i].mode = nextState ? 'showing' : 'disabled';
+        }
+    };
+
+    // Subtitles track initializer effect
+    useEffect(() => {
+        const video = videoRef.current;
+        if (!video) return;
+
+        const handleTrackInit = () => {
+            for (let i = 0; i < video.textTracks.length; i++) {
+                video.textTracks[i].mode = subtitlesEnabled ? 'showing' : 'disabled';
+            }
+        };
+
+        video.addEventListener('loadedmetadata', handleTrackInit);
+        handleTrackInit();
+
+        return () => {
+            video.removeEventListener('loadedmetadata', handleTrackInit);
+        };
+    }, [subtitlesEnabled, subtitles]);
+
+    // Touch Swipe Gesture Handlers for Mobile (Swipe UP -> Fullscreen, Swipe DOWN -> Normal)
+    const handleTouchStart = (e: React.TouchEvent) => {
+        if (e.touches.length === 1) {
+            touchStartRef.current = {
+                x: e.touches[0].clientX,
+                y: e.touches[0].clientY
+            };
+        }
+    };
+
+    const handleTouchEnd = (e: React.TouchEvent) => {
+        if (!touchStartRef.current || e.changedTouches.length !== 1) return;
+
+        const deltaX = e.changedTouches[0].clientX - touchStartRef.current.x;
+        const deltaY = e.changedTouches[0].clientY - touchStartRef.current.y;
+
+        if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 50) {
+            if (deltaY < 0) {
+                // Swiped UP -> Enter Fullscreen
+                if (!document.fullscreenElement) {
+                    containerRef.current?.requestFullscreen().then(() => setIsFullscreen(true)).catch(err => {
+                        console.error("Fullscreen failed:", err);
+                    });
+                }
+            } else {
+                // Swiped DOWN -> Exit Fullscreen
+                if (document.fullscreenElement) {
+                    document.exitFullscreen().then(() => setIsFullscreen(false));
+                }
+            }
+        }
+        touchStartRef.current = null;
+    };
+
+    // Draggable Custom Miniplayer Mode (Floating & Positionable on Screen)
+    const handleToggleMini = () => {
+        if (!isMini) {
+            const initialX = window.innerWidth - 360; // 340px width + 20px offset
+            const initialY = window.innerHeight - 220; // 191px height + 20px offset
+            setMiniPosition({ x: initialX, y: initialY });
+            setIsMini(true);
+        } else {
+            setIsMini(false);
+        }
+    };
+
+    const handleMiniDragStart = (e: any) => {
+        if (!isMini) return;
+
+        // Prevent dragging if clicking controls or inputs
+        const target = e.target as HTMLElement;
+        if (target.closest('button') || target.closest('input') || target.closest('.control-bar')) {
+            return;
+        }
+
+        isDraggingRef.current = true;
+        
+        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+        
+        dragStartRef.current = {
+            x: clientX - miniPosition.x,
+            y: clientY - miniPosition.y
+        };
+    };
+
+    const handleMiniDragMove = (e: any) => {
+        if (!isDraggingRef.current) return;
+        
+        const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+        const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+        
+        // Calculate new drag offset
+        const newX = clientX - dragStartRef.current.x;
+        const newY = clientY - dragStartRef.current.y;
+        
+        // Restrict within screen bounds
+        const maxX = window.innerWidth - 340;
+        const maxY = window.innerHeight - 191;
+        
+        setMiniPosition({
+            x: Math.max(0, Math.min(maxX, newX)),
+            y: Math.max(0, Math.min(maxY, newY))
+        });
+    };
+
+    const handleMiniDragEnd = () => {
+        isDraggingRef.current = false;
+    };
 
     useEffect(() => {
         const video = videoRef.current;
@@ -230,8 +362,61 @@ function HlsPlayer({ url, poster, subtitles }: { url: string, poster: string, su
     return (
         <div
             ref={containerRef}
-            className="relative aspect-video w-full bg-black rounded-2xl overflow-hidden border border-white/10 shadow-2xl group/player select-none"
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
+            onMouseDown={(e) => {
+                if (isMini) handleMiniDragStart(e);
+            }}
+            onMouseMove={(e) => {
+                if (isMini) handleMiniDragMove(e);
+            }}
+            onMouseUp={handleMiniDragEnd}
+            onTouchStartCapture={(e) => {
+                if (isMini) handleMiniDragStart(e);
+            }}
+            onTouchMoveCapture={(e) => {
+                if (isMini) handleMiniDragMove(e);
+            }}
+            onTouchEndCapture={handleMiniDragEnd}
+            style={isMini ? {
+                position: 'fixed',
+                left: `${miniPosition.x}px`,
+                top: `${miniPosition.y}px`,
+                width: '340px',
+                height: '191px',
+                zIndex: 9999,
+                cursor: isDraggingRef.current ? 'grabbing' : 'grab'
+            } : undefined}
+            className={`relative aspect-video w-full bg-black rounded-2xl overflow-hidden border border-white/10 shadow-2xl group/player select-none ${
+                isMini ? "shadow-[0_20px_50px_rgba(0,0,0,0.5)] border-indigo-500/30" : ""
+            }`}
         >
+            {isMini && (
+                <div className="absolute top-2 right-2 z-50 flex items-center gap-2 bg-black/85 p-1 rounded-lg border border-white/10 backdrop-blur-md">
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setIsMini(false);
+                        }}
+                        className="p-1 hover:bg-white/10 rounded text-zinc-300 hover:text-white transition-colors"
+                        title="Restore"
+                    >
+                        <Maximize className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setIsMini(false);
+                            videoRef.current?.pause();
+                        }}
+                        className="p-1 hover:bg-red-500/20 rounded text-zinc-300 hover:text-red-500 transition-colors"
+                        title="Close"
+                    >
+                        ✕
+                    </button>
+                </div>
+            )}
+
             <video
                 ref={videoRef}
                 autoPlay
@@ -332,8 +517,28 @@ function HlsPlayer({ url, poster, subtitles }: { url: string, poster: string, su
                         </div>
                     </div>
 
-                    {/* Right: Settings (Speed / Quality), Fullscreen */}
+                    {/* Right: Subtitles, Miniplayer, Settings, Fullscreen */}
                     <div className="flex items-center gap-4 relative">
+                        <button
+                            onClick={handleToggleSubtitles}
+                            className={`text-white hover:text-red-500 transition-colors cursor-pointer border-none bg-transparent outline-none ${
+                                subtitlesEnabled ? "text-red-500" : ""
+                            }`}
+                            title="Subtitles/Closed Captions"
+                        >
+                            <Subtitles className="w-5 h-5" />
+                        </button>
+
+                        <button
+                            onClick={handleToggleMini}
+                            className={`text-white hover:text-red-500 transition-colors cursor-pointer border-none bg-transparent outline-none ${
+                                isMini ? "text-red-500 animate-pulse" : ""
+                            }`}
+                            title="Miniplayer"
+                        >
+                            <PictureInPicture2 className="w-5 h-5" />
+                        </button>
+
                         <button
                             onClick={() => setShowSettings(!showSettings)}
                             className={`text-white hover:text-red-500 transition-colors cursor-pointer border-none bg-transparent outline-none ${
