@@ -1,5 +1,7 @@
 const crypto = require('crypto');
 const { PrismaClient } = require('@prisma/client');
+const path = require('path');
+const fs = require('fs');
 
 const prisma = new PrismaClient();
 
@@ -927,5 +929,136 @@ exports.getCreatorAnalytics = async (req, res) => {
     } catch (error) {
         console.error('[Videos] analytics error:', error);
         res.status(500).json({ error: 'Failed to fetch analytics' });
+    }
+};
+
+exports.uploadThumbnail = async (req, res) => {
+    try {
+        const video = await prisma.video.findUnique({
+            where: { id: req.params.id },
+            include: { liveSession: true }
+        });
+        if (!video || video.owner_id !== req.user.id) {
+            if (req.file?.path) try { fs.unlinkSync(req.file.path); } catch (e) {}
+            return res.status(404).json({ error: 'Video not found' });
+        }
+
+        if (!req.file) {
+            return res.status(400).json({ error: 'Thumbnail image file is required' });
+        }
+
+        // Build thumbnail URL
+        const hostUrl = `${req.protocol}://${req.get('host')}`;
+        const thumbnailUrl = `${hostUrl}/uploads/${path.basename(req.file.path)}`;
+
+        // Update Video thumbnail
+        const updated = await prisma.video.update({
+            where: { id: video.id },
+            data: { thumbnail: thumbnailUrl }
+        });
+
+        // Also update linked LiveSession thumbnail_url if exists
+        if (video.live_session_id) {
+            await prisma.liveSession.update({
+                where: { id: video.live_session_id },
+                data: { thumbnail_url: thumbnailUrl }
+            }).catch(() => {});
+        }
+
+        // Create Thumbnail record
+        await prisma.thumbnail.create({
+            data: {
+                video_id: video.id,
+                url: thumbnailUrl,
+                kind: 'thumbnail'
+            }
+        }).catch(() => {});
+
+        res.json({
+            message: 'Thumbnail updated',
+            video: serializeVideo(updated),
+            thumbnailUrl
+        });
+    } catch (error) {
+        if (req.file?.path) try { fs.unlinkSync(req.file.path); } catch (e) {}
+        console.error('[Videos] thumbnail upload error:', error);
+        res.status(500).json({ error: 'Failed to upload thumbnail' });
+    }
+};
+
+exports.listSubtitles = async (req, res) => {
+    try {
+        const video = await prisma.video.findUnique({ where: { id: req.params.id } });
+        if (!video) {
+            return res.status(404).json({ error: 'Video not found' });
+        }
+
+        const subtitles = await prisma.subtitle.findMany({
+            where: { video_id: video.id },
+            orderBy: { created_at: 'asc' }
+        });
+
+        res.json({ subtitles });
+    } catch (error) {
+        console.error('[Videos] list subtitles error:', error);
+        res.status(500).json({ error: 'Failed to fetch subtitles' });
+    }
+};
+
+exports.uploadSubtitle = async (req, res) => {
+    try {
+        const video = await prisma.video.findUnique({ where: { id: req.params.id } });
+        if (!video || video.owner_id !== req.user.id) {
+            if (req.file?.path) try { fs.unlinkSync(req.file.path); } catch (e) {}
+            return res.status(404).json({ error: 'Video not found' });
+        }
+
+        if (!req.file) {
+            return res.status(400).json({ error: 'Subtitle file is required (VTT or SRT)' });
+        }
+
+        const { language, label } = req.body;
+        if (!language || !label) {
+            if (req.file?.path) try { fs.unlinkSync(req.file.path); } catch (e) {}
+            return res.status(400).json({ error: 'language and label are required' });
+        }
+
+        const hostUrl = `${req.protocol}://${req.get('host')}`;
+        const vttUrl = `${hostUrl}/uploads/${path.basename(req.file.path)}`;
+
+        const subtitle = await prisma.subtitle.create({
+            data: {
+                video_id: video.id,
+                language: language.trim(),
+                label: label.trim(),
+                vtt_url: vttUrl
+            }
+        });
+
+        res.status(201).json({ message: 'Subtitle added', subtitle });
+    } catch (error) {
+        if (req.file?.path) try { fs.unlinkSync(req.file.path); } catch (e) {}
+        console.error('[Videos] subtitle upload error:', error);
+        res.status(500).json({ error: 'Failed to upload subtitle' });
+    }
+};
+
+exports.deleteSubtitle = async (req, res) => {
+    try {
+        const video = await prisma.video.findUnique({ where: { id: req.params.id } });
+        if (!video || video.owner_id !== req.user.id) {
+            return res.status(404).json({ error: 'Video not found' });
+        }
+
+        const subtitle = await prisma.subtitle.findUnique({ where: { id: req.params.subtitleId } });
+        if (!subtitle || subtitle.video_id !== video.id) {
+            return res.status(404).json({ error: 'Subtitle not found' });
+        }
+
+        await prisma.subtitle.delete({ where: { id: subtitle.id } });
+        res.json({ message: 'Subtitle deleted' });
+    } catch (error) {
+        console.error('[Videos] delete subtitle error:', error);
+        res.status(500).json({ error: 'Failed to delete subtitle' });
     }
 };

@@ -189,6 +189,7 @@ model Video {
   history        History[]
   reports        Report[]
   analytics      Analytics[]
+  subtitles      Subtitle[]
 
   @@index([owner_id, upload_date])
   @@index([visibility, processing_status])
@@ -429,13 +430,15 @@ model Settings {
 
 model Subtitle {
   id         String   @id @default(uuid())
-  session_id String
+  session_id String?
+  video_id   String?
   language   String
   label      String
   vtt_url    String
   created_at DateTime @default(now())
 
-  session LiveSession @relation(fields: [session_id], references: [id])
+  session LiveSession? @relation(fields: [session_id], references: [id])
+  video   Video?       @relation(fields: [video_id], references: [id], onDelete: Cascade)
 }
 
 model Like {

@@ -113,9 +113,30 @@ exports.getRecordings = async (req, res) => {
                 status: 'ended',
                 recording_url: { not: null }
             },
+            include: {
+                video: {
+                    select: {
+                        id: true,
+                        thumbnail: true,
+                        processing_status: true,
+                        duration_seconds: true,
+                        views: true,
+                        likes: true
+                    }
+                }
+            },
             orderBy: { created_at: 'desc' }
         });
-        res.json(sessions);
+
+        // Serialize BigInt values
+        const serialized = sessions.map(s => ({
+            ...s,
+            video: s.video ? {
+                ...s.video,
+                views: s.video.views?.toString?.() || s.video.views
+            } : null
+        }));
+        res.json(serialized);
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch recordings' });
     }

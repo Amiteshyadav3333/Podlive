@@ -27,13 +27,26 @@ import {
     ThumbsDown,
     Flag,
     Subtitles,
-    PictureInPicture2
+    PictureInPicture2,
+    SkipBack,
+    SkipForward,
+    ChevronFirst,
+    ChevronLast
 } from "lucide-react";
 import Hls from "hls.js";
 import { buildApiUrl } from "@/lib/api";
 
 // Custom HLS Player Component with YouTube-like Video Player Controls
-function HlsPlayer({ url, poster, subtitles }: { url: string, poster: string, subtitles: any[] }) {
+function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, hasPrev }: {
+    url: string,
+    poster: string,
+    subtitles: any[],
+    onNext?: () => void,
+    onPrev?: () => void,
+    onEnded?: () => void,
+    hasNext?: boolean,
+    hasPrev?: boolean
+}) {
     const videoRef = React.useRef<HTMLVideoElement>(null);
     const containerRef = React.useRef<HTMLDivElement>(null);
     const progressBarRef = React.useRef<HTMLDivElement>(null);
@@ -60,6 +73,32 @@ function HlsPlayer({ url, poster, subtitles }: { url: string, poster: string, su
     const isDraggingRef = React.useRef(false);
     const dragStartRef = React.useRef({ x: 0, y: 0 });
     const touchStartRef = React.useRef<{ x: number, y: number } | null>(null);
+
+    // Skip overlay state
+    const [skipOverlay, setSkipOverlay] = useState<string | null>(null);
+    const skipTimerRef = React.useRef<NodeJS.Timeout | null>(null);
+
+    const showSkipOverlay = (text: string) => {
+        setSkipOverlay(text);
+        if (skipTimerRef.current) clearTimeout(skipTimerRef.current);
+        skipTimerRef.current = setTimeout(() => setSkipOverlay(null), 800);
+    };
+
+    const handleSkipBackward = () => {
+        const video = videoRef.current;
+        if (!video) return;
+        video.currentTime = Math.max(0, video.currentTime - 5);
+        setCurrentTime(video.currentTime);
+        showSkipOverlay('↩ -5s');
+    };
+
+    const handleSkipForward = () => {
+        const video = videoRef.current;
+        if (!video) return;
+        video.currentTime = Math.min(duration, video.currentTime + 5);
+        setCurrentTime(video.currentTime);
+        showSkipOverlay('↪ +5s');
+    };
 
     // Toggle Subtitles (CC)
     const handleToggleSubtitles = () => {
@@ -340,6 +379,30 @@ function HlsPlayer({ url, poster, subtitles }: { url: string, poster: string, su
         };
     }, [isPlaying]);
 
+    // Keyboard shortcuts for skip
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+            switch (e.key) {
+                case 'ArrowLeft':
+                    e.preventDefault();
+                    handleSkipBackward();
+                    break;
+                case 'ArrowRight':
+                    e.preventDefault();
+                    handleSkipForward();
+                    break;
+                case ' ':
+                    e.preventDefault();
+                    handleTogglePlay();
+                    break;
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [duration]);
+
     const handleQualityChange = (levelIndex: number) => {
         if (hlsInstance) {
             hlsInstance.currentLevel = levelIndex;
@@ -435,6 +498,9 @@ function HlsPlayer({ url, poster, subtitles }: { url: string, poster: string, su
                         setIsMuted(videoRef.current.muted);
                     }
                 }}
+                onEnded={() => {
+                    if (onEnded) onEnded();
+                }}
             >
                 {subtitles && subtitles.map((sub: any, idx: number) => (
                     <track
@@ -457,6 +523,15 @@ function HlsPlayer({ url, poster, subtitles }: { url: string, poster: string, su
                     {isPlaying ? <Pause className="w-8 h-8 fill-current" /> : <Play className="w-8 h-8 fill-current ml-1" />}
                 </div>
             </div>
+
+            {/* Skip Overlay Feedback */}
+            {skipOverlay && (
+                <div className="absolute inset-0 flex items-center justify-center z-15 pointer-events-none">
+                    <div className="bg-black/70 text-white text-lg font-bold px-6 py-3 rounded-xl backdrop-blur-sm animate-bounce-once">
+                        {skipOverlay}
+                    </div>
+                </div>
+            )}
 
             {/* YouTube-like controls container */}
             <div
@@ -491,6 +566,48 @@ function HlsPlayer({ url, poster, subtitles }: { url: string, poster: string, su
                         >
                             {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
                         </button>
+
+                        {/* Skip Backward 5s */}
+                        <button
+                            onClick={handleSkipBackward}
+                            className="text-white hover:text-red-500 transition-colors cursor-pointer border-none bg-transparent outline-none relative group/skip"
+                            title="Back 5 seconds"
+                        >
+                            <SkipBack className="w-5 h-5" />
+                            <span className="absolute -top-1 -right-1 text-[8px] font-bold bg-white/20 rounded px-0.5">5</span>
+                        </button>
+
+                        {/* Skip Forward 5s */}
+                        <button
+                            onClick={handleSkipForward}
+                            className="text-white hover:text-red-500 transition-colors cursor-pointer border-none bg-transparent outline-none relative group/skip"
+                            title="Forward 5 seconds"
+                        >
+                            <SkipForward className="w-5 h-5" />
+                            <span className="absolute -top-1 -right-1 text-[8px] font-bold bg-white/20 rounded px-0.5">5</span>
+                        </button>
+
+                        {/* Previous Video */}
+                        {hasPrev && onPrev && (
+                            <button
+                                onClick={onPrev}
+                                className="text-white hover:text-red-500 transition-colors cursor-pointer border-none bg-transparent outline-none"
+                                title="Previous video"
+                            >
+                                <ChevronFirst className="w-5 h-5" />
+                            </button>
+                        )}
+
+                        {/* Next Video */}
+                        {hasNext && onNext && (
+                            <button
+                                onClick={onNext}
+                                className="text-white hover:text-red-500 transition-colors cursor-pointer border-none bg-transparent outline-none"
+                                title="Next video"
+                            >
+                                <ChevronLast className="w-5 h-5" />
+                            </button>
+                        )}
 
                         <div className="flex items-center gap-2 group/volume">
                             <button
@@ -648,6 +765,8 @@ export default function WatchPage() {
     const [recommendedVideos, setRecommendedVideos] = useState<any[]>([]);
     const [recommendedLoading, setRecommendedLoading] = useState(true);
     const [recommendedFilter, setRecommendedFilter] = useState<'all' | 'creator' | 'related'>('all');
+    const [autoPlayEnabled, setAutoPlayEnabled] = useState(true);
+    const [videoSubtitles, setVideoSubtitles] = useState<any[]>([]);
 
     useEffect(() => {
         if (typeof window !== "undefined") {
@@ -765,6 +884,53 @@ export default function WatchPage() {
             fetchRecommendations();
         }
     }, [recording, params.id]);
+
+    // Fetch subtitles from video API
+    useEffect(() => {
+        const fetchSubtitles = async () => {
+            if (!recording?.video?.id) return;
+            try {
+                const res = await fetch(buildApiUrl(`/api/videos/${recording.video.id}/subtitles`));
+                const data = await res.json();
+                if (res.ok && data.subtitles) {
+                    setVideoSubtitles(data.subtitles);
+                }
+            } catch (err) {
+                console.error('Failed to fetch subtitles:', err);
+            }
+        };
+        fetchSubtitles();
+    }, [recording]);
+
+    // Next/Previous video navigation
+    const currentVideoIndex = recommendedVideos.findIndex((v: any) => v.id === params.id);
+    const hasNextVideo = recommendedVideos.length > 0;
+    const hasPrevVideo = currentVideoIndex > 0;
+
+    const handleNextVideo = () => {
+        if (recommendedVideos.length === 0) return;
+        // If current video is in list, go to next; otherwise go to first
+        const nextIndex = currentVideoIndex >= 0 ? currentVideoIndex + 1 : 0;
+        const nextVideo = recommendedVideos[nextIndex] || recommendedVideos[0];
+        if (nextVideo) {
+            router.push(`/watch/${nextVideo.id}`);
+        }
+    };
+
+    const handlePrevVideo = () => {
+        if (currentVideoIndex > 0) {
+            const prevVideo = recommendedVideos[currentVideoIndex - 1];
+            if (prevVideo) {
+                router.push(`/watch/${prevVideo.id}`);
+            }
+        }
+    };
+
+    const handleVideoEnded = () => {
+        if (autoPlayEnabled && recommendedVideos.length > 0) {
+            handleNextVideo();
+        }
+    };
 
     const displayedVideos = recommendedVideos.filter((vod) => {
         if (recommendedFilter === 'creator') return vod.host?.id === recording.host?.id;
@@ -1211,9 +1377,29 @@ export default function WatchPage() {
                             <HlsPlayer
                                 url={recording.recording_url}
                                 poster={recording.thumbnail_url || "https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&q=80&w=1200"}
-                                subtitles={recording.subtitles}
+                                subtitles={videoSubtitles.length > 0 ? videoSubtitles : (recording.subtitles || [])}
+                                onNext={handleNextVideo}
+                                onPrev={handlePrevVideo}
+                                onEnded={handleVideoEnded}
+                                hasNext={hasNextVideo}
+                                hasPrev={hasPrevVideo}
                             />
                         )}
+
+                        {/* Auto-play toggle */}
+                        <div className="flex items-center justify-end mt-2 gap-2">
+                            <span className="text-xs text-zinc-400">Auto-play</span>
+                            <button
+                                onClick={() => setAutoPlayEnabled(!autoPlayEnabled)}
+                                className={`relative w-10 h-5 rounded-full transition-colors duration-200 ${
+                                    autoPlayEnabled ? 'bg-red-600' : 'bg-zinc-700'
+                                }`}
+                            >
+                                <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform duration-200 ${
+                                    autoPlayEnabled ? 'translate-x-5' : 'translate-x-0.5'
+                                }`} />
+                            </button>
+                        </div>
 
                         {/* VIDEO INFO */}
                         <div className="mt-6">

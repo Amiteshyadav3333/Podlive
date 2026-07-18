@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { UploadCloud, Video, Loader2, CheckCircle2, AlertCircle, Image as ImageIcon } from "lucide-react";
+import { UploadCloud, Video, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { buildApiUrl } from "@/lib/api";
 import DashboardSidebar from "@/components/DashboardSidebar";
@@ -12,7 +12,6 @@ export default function UploadPage() {
   const router = useRouter();
   const [formData, setFormData] = useState({ title: "", description: "", category: "Technology" });
   const [videoFile, setVideoFile] = useState<File | null>(null);
-  const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
@@ -31,7 +30,6 @@ export default function UploadPage() {
       data.append("description", formData.description);
       data.append("category", formData.category === "Other (Custom)" ? customCategory : formData.category);
       data.append("video", videoFile);
-      if (thumbnailFile) data.append("thumbnail", thumbnailFile);
 
       // Simulate progress (XHR for real progress tracking)
       const xhr = new XMLHttpRequest();
@@ -58,7 +56,7 @@ export default function UploadPage() {
     }
   };
 
-  const thumbnailPreview = thumbnailFile ? URL.createObjectURL(thumbnailFile) : null;
+
 
   return (
     <div className="min-h-screen bg-[#080808] text-white">
@@ -111,39 +109,24 @@ export default function UploadPage() {
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Category</label>
-                    <select
-                      value={formData.category}
-                      onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                      className="w-full bg-zinc-900/60 border border-white/[0.08] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500/70 transition-all text-white"
-                    >
-                      {CATEGORIES.map(c => <option key={c}>{c}</option>)}
-                    </select>
-                    {formData.category === "Other (Custom)" && (
-                      <input
-                        type="text"
-                        placeholder="Type custom category..."
-                        value={customCategory}
-                        onChange={(e) => setCustomCategory(e.target.value)}
-                        className="mt-3 w-full bg-zinc-900/60 border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-indigo-500/70 transition-all text-white placeholder:text-zinc-600"
-                      />
-                    )}
-                  </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Thumbnail</label>
-                    <label className="flex items-center justify-center w-full h-[46px] bg-zinc-900/60 border border-white/[0.08] border-dashed rounded-xl cursor-pointer hover:border-indigo-500/50 transition-all overflow-hidden relative">
-                      {thumbnailPreview ? (
-                        <img src={thumbnailPreview} className="w-full h-full object-cover absolute inset-0 opacity-70" alt="" />
-                      ) : (
-                        <span className="flex items-center gap-2 text-xs text-zinc-500">
-                          <ImageIcon className="w-4 h-4" />Choose Image
-                        </span>
-                      )}
-                      <input type="file" className="hidden" accept="image/*" onChange={(e) => e.target.files?.[0] && setThumbnailFile(e.target.files[0])} />
-                    </label>
-                  </div>
+                <div>
+                  <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Category</label>
+                  <select
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    className="w-full bg-zinc-900/60 border border-white/[0.08] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500/70 transition-all text-white"
+                  >
+                    {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                  </select>
+                  {formData.category === "Other (Custom)" && (
+                    <input
+                      type="text"
+                      placeholder="Type custom category..."
+                      value={customCategory}
+                      onChange={(e) => setCustomCategory(e.target.value)}
+                      className="mt-3 w-full bg-zinc-900/60 border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-indigo-500/70 transition-all text-white placeholder:text-zinc-600"
+                    />
+                  )}
                 </div>
               </div>
             </div>
