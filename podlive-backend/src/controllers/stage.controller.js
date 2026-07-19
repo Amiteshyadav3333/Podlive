@@ -443,23 +443,24 @@ exports.updateGuestPermissions = async (req, res) => {
 exports.getGuests = async (req, res) => {
     try {
         const { sessionId } = req.params;
-        const session = await prisma.liveSession.findUnique({ where: { id: sessionId } });
-        if (!session) {
-            return res.status(404).json({ error: 'Live session not found' });
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.json([]);
         }
-        if (session.host_user_id !== req.user.id) {
-            return res.status(403).json({ error: 'Unauthorized' });
+        const session = await prisma.liveSession.findUnique({ where: { id: sessionId } });
+        if (!session || session.host_user_id !== userId) {
+            return res.json([]);
         }
 
         const guests = await prisma.stageInvite.findMany({
             where: { session_id: sessionId, status: 'accepted' },
             include: { invitee: { select: publicUserSelect } },
-            orderBy: { accepted_at: 'asc' }
+            orderBy: { invited_at: 'asc' }
         });
 
-        res.json(guests);
+        res.json(guests || []);
     } catch (error) {
         console.error('Get Guests Error:', error);
-        res.status(500).json({ error: 'Internal Server Error' });
+        res.json([]);
     }
 };

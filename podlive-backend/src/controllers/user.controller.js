@@ -75,31 +75,49 @@ exports.updateProfile = async (req, res) => {
 // Get Audience Stats
 exports.getAudienceStats = async (req, res) => {
     try {
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
         const user = await prisma.user.findUnique({
-            where: { id: req.user.id },
+            where: { id: userId },
             include: { hosted_sessions: true }
         });
 
+        if (!user) {
+            return res.json({
+                followers: 0,
+                following: 0,
+                subscribers: 0,
+                totalLives: 0,
+                totalVideos: 0,
+                totalViews: "0",
+                totalLikes: 0,
+                totalWatchTime: "0"
+            });
+        }
+
         // Calculate stats
-        const totalLives = user.hosted_sessions.length;
-        const totalViews = user.hosted_sessions.reduce((acc, curr) => acc + curr.viewer_count_peak, 0);
+        const totalLives = user.hosted_sessions?.length || 0;
+        const totalViews = user.hosted_sessions?.reduce((acc, curr) => acc + (curr.viewer_count_peak || 0), 0) || 0;
         const videoStats = await prisma.video.aggregate({
-            where: { owner_id: req.user.id },
+            where: { owner_id: userId },
             _sum: { views: true, likes: true, watch_time: true },
             _count: { id: true }
         });
 
         res.json({
-            followers: user.follower_count,
-            following: user.following_count,
-            subscribers: user.subscriber_count,
+            followers: user.follower_count || 0,
+            following: user.following_count || 0,
+            subscribers: user.subscriber_count || 0,
             totalLives,
-            totalVideos: videoStats._count.id,
+            totalVideos: videoStats._count.id || 0,
             totalViews: (videoStats._sum.views || BigInt(totalViews)).toString(),
             totalLikes: videoStats._sum.likes || 0,
             totalWatchTime: (videoStats._sum.watch_time || BigInt(0)).toString()
         });
     } catch (error) {
+        console.error('Fetch audience stats error:', error);
         res.status(500).json({ error: 'Failed to fetch audience stats' });
     }
 };

@@ -49,15 +49,23 @@ function RoomHeader({
             text: `Join my live podcast on PodLive: ${roomName}!`,
             url: window.location.href,
         };
+        let shared = false;
         try {
             if (navigator.share) {
                 await navigator.share(shareData);
-            } else {
-                await navigator.clipboard.writeText(window.location.href);
-                alert("Link copied to clipboard!");
+                shared = true;
             }
         } catch (err) {
-            console.error("Share failed:", err);
+            // Share permission denied or not supported; fallback to clipboard
+        }
+
+        if (!shared) {
+            try {
+                await navigator.clipboard.writeText(window.location.href);
+                alert("Link copied to clipboard!");
+            } catch (copyErr) {
+                console.error("Copy link failed:", copyErr);
+            }
         }
     };
 
@@ -570,9 +578,11 @@ function GuestManager({ sessionId, isHost, socket }: { sessionId: string; isHost
             const res = await axios.get(buildApiUrl(`/api/stage/${sessionId}/guests`), {
                 headers: { Authorization: `Bearer ${lsToken}` },
             });
-            setGuests(res.data);
-        } catch (err) {
-            console.error(err);
+            if (Array.isArray(res.data)) {
+                setGuests(res.data);
+            }
+        } catch {
+            // Ignore polling errors
         }
     };
 
