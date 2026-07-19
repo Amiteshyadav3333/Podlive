@@ -1,10 +1,7 @@
 const jwt = require('jsonwebtoken');
 
 const verifyToken = (token) => {
-    if (!token) return null;
-    if (token === 'mock-access-token') {
-        return { id: '49f733ff-9adb-4a80-a249-6cc2b181033e' };
-    }
+    if (!token || token === 'mock-access-token') return null;
     try {
         return jwt.verify(token, process.env.JWT_ACCESS_SECRET);
     } catch (error) {

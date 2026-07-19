@@ -469,24 +469,36 @@ function CustomChat({ socket, sessionId }: { socket: any; sessionId: string }) {
                 </div>
             </div>
             <div className="p-4 border-t border-white/10 bg-zinc-950 flex-shrink-0">
-                <div className="relative">
-                    <input
-                        type="text"
-                        placeholder="Say something..."
-                        value={message}
-                        onKeyDown={(e) => { if (e.key === "Enter") handleSend(); }}
-                        onChange={(e) => setMessage(e.target.value)}
-                        className="w-full bg-zinc-900 border border-zinc-800 rounded-full pl-4 pr-12 py-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
-                        disabled={isSending || !socket}
-                    />
-                    <button
-                        onClick={handleSend}
-                        disabled={isSending || !message.trim() || !socket}
-                        className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-indigo-600 rounded-full text-white flex items-center justify-center hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        <MessageSquare className="w-4 h-4" />
-                    </button>
-                </div>
+                {typeof window !== "undefined" && !localStorage.getItem("accessToken") ? (
+                    <div className="text-center p-2">
+                        <p className="text-xs text-zinc-400 mb-2">Log in or sign up to participate in live chat</p>
+                        <a
+                            href="/login"
+                            className="inline-block w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold py-2.5 rounded-full transition-colors cursor-pointer text-center"
+                        >
+                            Log In / Sign Up
+                        </a>
+                    </div>
+                ) : (
+                    <div className="relative">
+                        <input
+                            type="text"
+                            placeholder="Say something..."
+                            value={message}
+                            onKeyDown={(e) => { if (e.key === "Enter") handleSend(); }}
+                            onChange={(e) => setMessage(e.target.value)}
+                            className="w-full bg-zinc-900 border border-zinc-800 rounded-full pl-4 pr-12 py-3 text-sm text-white focus:outline-none focus:border-indigo-500 transition-colors"
+                            disabled={isSending || !socket}
+                        />
+                        <button
+                            onClick={handleSend}
+                            disabled={isSending || !message.trim() || !socket}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-indigo-600 rounded-full text-white flex items-center justify-center hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            <MessageSquare className="w-4 h-4" />
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );
