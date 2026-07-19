@@ -243,7 +243,16 @@ function StageLayout({
 
     const activeTracks = allTracks.filter((t) => {
         const p = t.participant;
-        if (p.permissions?.canPublish) return true;
+        let role = "viewer";
+        try {
+            if (p.metadata) {
+                const meta = typeof p.metadata === "string" ? JSON.parse(p.metadata) : p.metadata;
+                if (meta && meta.role) role = meta.role;
+            }
+        } catch {}
+
+        if (role === "host" || role === "stage") return true;
+        if (t.publication && !t.publication.isMuted) return true;
         if (p.isSpeaking) return true;
         return false;
     });
@@ -764,7 +773,18 @@ function StreamsPanel({
 }) {
     const activeTracks = allTracks.filter((t) => {
         const p = t.participant;
-        return p.permissions?.canPublish || p.isSpeaking;
+        let role = "viewer";
+        try {
+            if (p.metadata) {
+                const meta = typeof p.metadata === "string" ? JSON.parse(p.metadata) : p.metadata;
+                if (meta && meta.role) role = meta.role;
+            }
+        } catch {}
+
+        if (role === "host" || role === "stage") return true;
+        if (t.publication && !t.publication.isMuted) return true;
+        if (p.isSpeaking) return true;
+        return false;
     });
 
     const hiddenList = activeTracks.filter(t => {

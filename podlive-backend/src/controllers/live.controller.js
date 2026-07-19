@@ -510,7 +510,7 @@ exports.getSessionStats = async (req, res) => {
         const session = await prisma.liveSession.findUnique({ where: { id } });
 
         if (!session) {
-            return res.status(404).json({ error: 'Live session not found' });
+            return res.json({ status: 'ended', viewer_count: 0, viewer_count_peak: 0 });
         }
 
         res.json({
