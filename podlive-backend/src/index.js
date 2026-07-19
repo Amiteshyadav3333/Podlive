@@ -34,7 +34,7 @@ const io = new Server(server, {
 });
 
 // Security & perf middleware
-app.use(helmet({ crossOriginEmbedderPolicy: false, contentSecurityPolicy: false }));
+app.use(helmet({ crossOriginEmbedderPolicy: false, crossOriginResourcePolicy: { policy: "cross-origin" }, contentSecurityPolicy: false }));
 app.use(compression());
 app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] }));
 app.use(express.json({ limit: '10mb' }));
@@ -68,8 +68,31 @@ if (!require('fs').existsSync(tempUploadsDir)) {
   require('fs').mkdirSync(tempUploadsDir, { recursive: true });
 }
 
+// Add CORS and Cross-Origin-Resource-Policy headers explicitly for static files in /uploads
+app.use('/uploads', (req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Cross-Origin-Opener-Policy', 'unsafe-none');
+  next();
+});
+
 app.use('/uploads', express.static(tempUploadsDir));
 app.use('/uploads', express.static(uploadsDir));
+
+// Fallback for non-existent upload files (serve custom SVG placeholder instead of raw 404 error)
+app.use('/uploads', (req, res) => {
+  res.setHeader('Content-Type', 'image/svg+xml');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.status(200).send(`
+    <svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400" fill="none">
+      <rect width="600" height="400" fill="#18181b"/>
+      <circle cx="300" cy="170" r="48" fill="#3f3f46"/>
+      <path d="M260 250 L340 250 L300 200 Z" fill="#6366f1"/>
+      <text x="300" y="310" font-family="system-ui, sans-serif" font-size="20" font-weight="600" fill="#a1a1aa" text-anchor="middle">PodLive Media</text>
+    </svg>
+  `);
+});
 
 app.get('/', (req, res) => {
   res.send({ message: 'PodLive Server is running' });

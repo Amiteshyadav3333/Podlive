@@ -48,7 +48,7 @@ export default function DashboardHome() {
     <div className="min-h-screen bg-[#080808] text-white">
       <DashboardSidebar />
 
-      <div className="md:ml-60">
+      <div className="md:ml-60 pb-24 md:pb-6">
         {/* Top bar */}
         <div className="sticky top-0 z-40 border-b border-white/[0.06] bg-[#080808]/90 backdrop-blur-xl px-6 h-14 flex items-center justify-between">
           <form onSubmit={(e) => { e.preventDefault(); if (searchQuery.trim()) router.push(`/search?q=${searchQuery}`); }} className="relative w-full max-w-sm">
@@ -66,7 +66,15 @@ export default function DashboardHome() {
                 <span className="w-1.5 h-1.5 rounded-full bg-white live-dot" />
                 Go Live
               </Link>
-              <img src={avatar} alt={user.display_name} className="w-8 h-8 rounded-full object-cover border border-white/10" />
+              <img
+                src={avatar}
+                alt={user.display_name}
+                onError={(e) => {
+                  e.currentTarget.onerror = null;
+                  e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.display_name || "U")}&background=6366f1&color=fff`;
+                }}
+                className="w-8 h-8 rounded-full object-cover border border-white/10"
+              />
             </div>
           )}
         </div>

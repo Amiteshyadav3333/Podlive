@@ -61,7 +61,7 @@ export default function UploadPage() {
   return (
     <div className="min-h-screen bg-[#080808] text-white">
       <DashboardSidebar />
-      <div className="md:ml-60">
+      <div className="md:ml-60 pb-24 md:pb-6">
         <div className="sticky top-0 z-40 border-b border-white/[0.06] bg-[#080808]/90 backdrop-blur-xl px-6 h-14 flex items-center">
           <h1 className="font-bold text-base">Upload Video</h1>
         </div>

@@ -191,7 +191,7 @@ export default function Recordings() {
   return (
     <div className="min-h-screen bg-[#080808] text-white">
       <DashboardSidebar />
-      <div className="md:ml-60">
+      <div className="md:ml-60 pb-24 md:pb-6">
         <div className="sticky top-0 z-40 border-b border-white/[0.06] bg-[#080808]/90 backdrop-blur-xl px-6 h-14 flex items-center justify-between">
           <h1 className="font-bold text-base">My Videos</h1>
           <span className="text-xs text-zinc-500">{recordings.length} videos</span>
@@ -231,7 +231,15 @@ export default function Recordings() {
                     className="relative aspect-video rounded-xl overflow-hidden bg-zinc-900 border border-white/[0.06] group-hover:border-indigo-500/40 transition-all cursor-pointer"
                   >
                     {rec.thumbnail_url ? (
-                      <img src={rec.thumbnail_url} alt={rec.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                      <img
+                        src={rec.thumbnail_url}
+                        alt={rec.title}
+                        onError={(e) => {
+                          e.currentTarget.onerror = null;
+                          e.currentTarget.src = "https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&q=80&w=1200";
+                        }}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
                         <Video className="w-10 h-10 text-zinc-700" />

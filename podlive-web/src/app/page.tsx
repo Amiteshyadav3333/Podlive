@@ -31,7 +31,15 @@ function VideoCard({ session, isLive = false }: { session: any; isLive?: boolean
       {/* Thumbnail */}
       <div className="relative aspect-video rounded-xl overflow-hidden bg-zinc-900 border border-white/5 group-hover:border-indigo-500/40 transition-all duration-300">
         {session.thumbnail_url ? (
-          <img src={session.thumbnail_url} alt={session.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+          <img
+            src={session.thumbnail_url}
+            alt={session.title}
+            onError={(e) => {
+              e.currentTarget.onerror = null;
+              e.currentTarget.src = "https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&q=80&w=1200";
+            }}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+          />
         ) : (
           <div className="w-full h-full bg-gradient-to-br from-zinc-900 to-zinc-800 flex items-center justify-center">
             {isLive ? (
