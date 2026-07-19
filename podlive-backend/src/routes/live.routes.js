@@ -34,7 +34,7 @@ router.post('/:id/ingress', authMiddleware, liveController.createIngress);
 router.get('/:id/obs-config', authMiddleware, liveController.getObsConfig);
 router.patch('/:id/settings', authMiddleware, liveController.updateLiveSettings);
 router.post('/:id/end', authMiddleware, liveController.endLiveSession);
-router.get('/:id/token', authMiddleware, liveController.getViewerToken);
+router.get('/:id/token', authMiddleware.optionalAuth, liveController.getViewerToken);
 router.get('/:id/upgrade', authMiddleware, liveController.upgradeViewerToken);
 router.get('/:id/guest-token', liveController.getGuestToken);
 router.get('/:id/stats', liveController.getSessionStats);

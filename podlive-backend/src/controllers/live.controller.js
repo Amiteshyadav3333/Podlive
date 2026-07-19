@@ -351,64 +351,39 @@ exports.getViewerToken = async (req, res) => {
         if (!session || session.status !== 'live') {
             return res.status(404).json({ error: 'Active live session not found' });
         }
-        if (session.visibility === 'private' && session.host_user_id !== req.user.id) {
+
+        const userId = req.user?.id || null;
+
+        if (session.visibility === 'private' && session.host_user_id !== userId) {
             return res.status(403).json({ error: 'This live stream is private' });
         }
 
-        const user = await prisma.user.findUnique({ where: { id: req.user.id } });
-        if (!user) {
-            return res.status(404).json({ error: 'User not found' });
-        }
-        const isHost = session.host_user_id === req.user.id;
-        let stageInvite = isHost ? null : await prisma.stageInvite.findFirst({
-            where: {
-                session_id: id,
-                invitee_id: req.user.id,
-                status: { in: ['pending', 'accepted'] }
-            },
-            orderBy: { invited_at: 'desc' }
-        });
-        if (stageInvite?.status === 'pending') {
-            stageInvite = await prisma.stageInvite.update({
-                where: { id: stageInvite.id },
-                data: { status: 'accepted', accepted_at: new Date() }
+        const user = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
+        const identity = user ? user.unique_handle : `viewer-${crypto.randomBytes(4).toString('hex')}`;
+        const isHost = Boolean(userId && session.host_user_id === userId);
+
+        let stageInvite = null;
+        if (userId && !isHost) {
+            stageInvite = await prisma.stageInvite.findFirst({
+                where: {
+                    session_id: id,
+                    invitee_id: userId,
+                    status: 'accepted'
+                },
+                orderBy: { invited_at: 'desc' }
             });
-            if (req.io) {
-                req.io.to(id).emit('stage_guest_joined', {
-                    invite: stageInvite,
-                    user: {
-                        id: user.id,
-                        unique_handle: user.unique_handle,
-                        display_name: user.display_name,
-                        avatar_url: user.avatar_url,
-                        is_verified: user.is_verified
-                    },
-                    permissions: { canPublish: true, canSubscribe: true, canPublishData: true }
-                });
-                req.io.to(session.host_user_id).emit('invite_accepted', {
-                    sessionId: id,
-                    invite: stageInvite,
-                    invitee: {
-                        id: user.id,
-                        unique_handle: user.unique_handle,
-                        display_name: user.display_name,
-                        avatar_url: user.avatar_url,
-                        is_verified: user.is_verified
-                    },
-                    inviteeHandle: user.unique_handle
-                });
-            }
         }
-        const canPublish = isHost || !!stageInvite;
+
+        const canPublish = isHost || Boolean(stageInvite);
         const role = isHost ? 'host' : (stageInvite ? 'stage' : 'viewer');
-        const token = await createToken(session.livekit_room_name, user.unique_handle, canPublish, role);
+        const token = await createToken(session.livekit_room_name, identity, canPublish, role);
 
         res.json({
             token,
             roomName: session.livekit_room_name,
             livekitUrl: process.env.LIVEKIT_URL,
             isHost,
-            isStage: !!stageInvite,
+            isStage: Boolean(stageInvite),
             role,
             permissions: {
                 canPublish,

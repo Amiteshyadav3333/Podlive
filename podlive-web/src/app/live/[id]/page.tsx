@@ -1040,7 +1040,7 @@ function HostPanel({
                                 value={inviteHandle}
                                 onChange={(e) => setInviteHandle(e.target.value)}
                                 onKeyDown={(e) => { if (e.key === "Enter") sendInvite(); }}
-                                placeholder="Enter @username"
+                                placeholder="Enter @username or User ID"
                                 className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-indigo-500 transition-colors"
                             />
                             <button
@@ -1273,14 +1273,18 @@ export default function LiveRoom() {
                         });
                         setToken(tokenAttempt.data.token);
                         setRoomName(tokenAttempt.data.roomName);
-                        setIsHost(!!tokenAttempt.data.isHost);
-                        setPreJoinComplete(!tokenAttempt.data.isHost); // viewers skip prejoin
+                        const isUserHost = !!tokenAttempt.data.isHost;
+                        const isUserStage = !!tokenAttempt.data.isStage;
+                        setIsHost(isUserHost);
+                        setOnStage(isUserStage);
+                        setPreJoinComplete(!isUserHost && !isUserStage); // viewers skip prejoin
                     } else {
                         // Anonymous viewer: use public guest token
                         const guestAttempt = await axios.get(buildApiUrl(`/api/live/${id}/guest-token`));
                         setToken(guestAttempt.data.token);
                         setRoomName(guestAttempt.data.roomName);
                         setIsHost(false);
+                        setOnStage(false);
                         setPreJoinComplete(true); // viewers skip prejoin
                     }
                 } catch (tokenError: any) {

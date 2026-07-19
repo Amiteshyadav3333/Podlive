@@ -20,11 +20,17 @@ const normalizeHandleCandidates = (handle) => {
     return Array.from(new Set([cleaned, withoutAt, `@${withoutAt}`].filter(Boolean)));
 };
 
-const findUserByHandle = async (handle) => {
-    const candidates = normalizeHandleCandidates(handle);
-    if (candidates.length === 0) return null;
+const findUserByHandle = async (handleOrId) => {
+    const raw = String(handleOrId || '').trim();
+    if (!raw) return null;
+    const candidates = normalizeHandleCandidates(raw);
     return prisma.user.findFirst({
-        where: { unique_handle: { in: candidates } },
+        where: {
+            OR: [
+                { id: raw },
+                { unique_handle: { in: candidates } }
+            ]
+        },
         select: publicUserSelect
     });
 };
