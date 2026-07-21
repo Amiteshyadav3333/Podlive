@@ -1290,47 +1290,58 @@ export default function LiveRoom() {
     const [isHost, setIsHost] = useState(false);
     const [onStage, setOnStage] = useState(false);
     const [preJoinComplete, setPreJoinComplete] = useState(false);
+    const [preJoinChoices, setPreJoinChoices] = useState<any>(null);
     const [liveKitServerUrl, setLiveKitServerUrl] = useState("");
-
-
-
+    const [connectError, setConnectError] = useState<string | null>(null);
 
     // Stage invite state
     const [inviteHandle, setInviteHandle] = useState("");
     const [receivedInvite, setReceivedInvite] = useState<any>(null);
 
-    useEffect(() => {
-        const initRoom = async () => {
-            try {
-                const wsUrl = await fetchLiveKitWsUrl();
-                setLiveKitServerUrl(wsUrl);
+    const initRoom = useCallback(async () => {
+        setLoading(true);
+        setConnectError(null);
+        try {
+            let wsUrl = await fetchLiveKitWsUrl();
+            if (!wsUrl) {
+                wsUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL || "wss://podlike-r0rwil4t.livekit.cloud";
+            }
+            setLiveKitServerUrl(wsUrl);
 
+            const lsToken = localStorage.getItem("accessToken");
+            let tokenLoaded = false;
+
+            if (lsToken) {
                 try {
-                    const lsToken = localStorage.getItem("accessToken");
+                    // Logged-in user: get proper token (host or viewer)
+                    const tokenAttempt = await axios.get(buildApiUrl(`/api/live/${id}/token`), {
+                        headers: { Authorization: `Bearer ${lsToken}` },
+                    });
+                    setToken(tokenAttempt.data.token);
+                    setRoomName(tokenAttempt.data.roomName);
+                    const isUserHost = !!tokenAttempt.data.isHost;
+                    const isUserStage = !!tokenAttempt.data.isStage;
+                    setIsHost(isUserHost);
+                    setOnStage(isUserStage);
+                    setPreJoinComplete(!isUserHost && !isUserStage); // viewers skip prejoin
+                    tokenLoaded = true;
+                } catch (userTokenErr: any) {
+                    console.warn("[Live] Authenticated token attempt failed, attempting guest fallback:", userTokenErr?.response?.data || userTokenErr.message);
+                }
+            }
 
-                    if (lsToken) {
-                        // Logged-in user: get proper token (host or viewer)
-                        const tokenAttempt = await axios.get(buildApiUrl(`/api/live/${id}/token`), {
-                            headers: { Authorization: `Bearer ${lsToken}` },
-                        });
-                        setToken(tokenAttempt.data.token);
-                        setRoomName(tokenAttempt.data.roomName);
-                        const isUserHost = !!tokenAttempt.data.isHost;
-                        const isUserStage = !!tokenAttempt.data.isStage;
-                        setIsHost(isUserHost);
-                        setOnStage(isUserStage);
-                        setPreJoinComplete(!isUserHost && !isUserStage); // viewers skip prejoin
-                    } else {
-                        // Anonymous viewer: use public guest token
-                        const guestAttempt = await axios.get(buildApiUrl(`/api/live/${id}/guest-token`));
-                        setToken(guestAttempt.data.token);
-                        setRoomName(guestAttempt.data.roomName);
-                        setIsHost(false);
-                        setOnStage(false);
-                        setPreJoinComplete(true); // viewers skip prejoin
-                    }
-                } catch (tokenError: any) {
-                    if (tokenError.response?.status === 404) {
+            if (!tokenLoaded) {
+                // Anonymous or fallback guest viewer
+                try {
+                    const guestAttempt = await axios.get(buildApiUrl(`/api/live/${id}/guest-token`));
+                    setToken(guestAttempt.data.token);
+                    setRoomName(guestAttempt.data.roomName);
+                    setIsHost(false);
+                    setOnStage(false);
+                    setPreJoinComplete(true); // viewers skip prejoin
+                    tokenLoaded = true;
+                } catch (guestErr: any) {
+                    if (guestErr.response?.status === 404) {
                         try {
                             const stats = await axios.get(buildApiUrl(`/api/live/${id}/stats`));
                             if (stats.data?.status === "ended") {
@@ -1339,30 +1350,37 @@ export default function LiveRoom() {
                             }
                         } catch { }
                     }
-                    router.push("/");
+                    throw new Error(guestErr.response?.data?.error || "Active live podcast not found.");
                 }
-            } catch {
-                router.push("/dashboard");
-            } finally {
-                setLoading(false);
             }
-        };
-        initRoom();
+        } catch (err: any) {
+            console.error("[Live] Room init error:", err);
+            setConnectError(err.message || "Failed to initialize live podcast room.");
+        } finally {
+            setLoading(false);
+        }
     }, [id, router]);
+
+    useEffect(() => {
+        initRoom();
+    }, [initRoom]);
 
     // Socket events
     useEffect(() => {
         if (!socket) return;
         const userData = localStorage.getItem("user");
         if (userData) {
-            const user = JSON.parse(userData);
-            socket.emit("register_user", user.id);
+            try {
+                const user = JSON.parse(userData);
+                socket.emit("register_user", user.id);
+            } catch {}
         }
+        socket.emit("join_chat_room", id);
 
         const handleReceiveInvite = (data: any) => {
             if (data.sessionId === id) setReceivedInvite(data);
         };
-        const handleInviteAccepted = (data: any) => {
+        const handleInviteAccepted = () => {
             if (isHost) setInviteHandle(""); // clear input on accept
         };
         const handleInviteRejected = (data: any) => {
@@ -1392,7 +1410,7 @@ export default function LiveRoom() {
         if (!inviteHandle || !socket) return;
         const userData = localStorage.getItem("user");
         const user = userData ? JSON.parse(userData) : null;
-        socket.emit("send_invite", { sessionId: id, inviteeHandle: inviteHandle, hostId: user.id });
+        socket.emit("send_invite", { sessionId: id, inviteeHandle: inviteHandle, hostId: user?.id });
     };
 
     const handleAcceptInvite = async () => {
@@ -1420,7 +1438,7 @@ export default function LiveRoom() {
         }
     };
 
-    if (loading || !token) {
+    if (loading) {
         return (
             <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center text-white">
                 <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
@@ -1429,26 +1447,66 @@ export default function LiveRoom() {
         );
     }
 
-    if (!liveKitServerUrl) {
+    if (connectError) {
+        return (
+            <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center text-white px-6 text-center">
+                <div className="bg-zinc-900 border border-red-500/30 p-8 rounded-2xl max-w-md w-full shadow-2xl">
+                    <h1 className="text-2xl font-bold mb-3 text-red-400">Connection Error</h1>
+                    <p className="text-zinc-400 text-sm mb-6">
+                        {connectError}
+                    </p>
+                    <div className="flex gap-3 justify-center">
+                        <button
+                            onClick={() => router.push("/dashboard")}
+                            className="px-4 py-2.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-sm font-medium transition"
+                        >
+                            Back to Dashboard
+                        </button>
+                        <button
+                            onClick={initRoom}
+                            className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-sm font-bold text-white transition shadow-lg"
+                        >
+                            Retry Connection
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (!token || !liveKitServerUrl) {
         return (
             <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center text-white px-6 text-center">
                 <h1 className="text-2xl font-bold mb-3">Could not connect to LiveKit</h1>
-                <p className="text-zinc-400 max-w-xl">
-                    The server could not provide a LiveKit configuration. Please ensure{" "}
-                    <code className="text-indigo-400">LIVEKIT_URL</code> is set in the backend environment.
+                <p className="text-zinc-400 max-w-xl mb-6">
+                    The server could not provide a LiveKit configuration or stream token.
                 </p>
+                <button
+                    onClick={initRoom}
+                    className="px-6 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-bold text-white transition"
+                >
+                    Retry Connection
+                </button>
             </div>
         );
     }
 
     const isBroadcaster = isHost || onStage;
+    const videoEnabled = preJoinChoices ? preJoinChoices.videoEnabled : isBroadcaster;
+    const audioEnabled = preJoinChoices ? preJoinChoices.audioEnabled : isBroadcaster;
 
     if (isBroadcaster && !preJoinComplete) {
         return (
             <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center text-white" data-lk-theme="default">
                 <h2 className="text-2xl font-bold mb-6">Camera & Microphone Setup</h2>
-                <div className="bg-zinc-900 border border-white/10 rounded-2xl p-6 w-[500px]">
-                    <PreJoin onSubmit={() => setPreJoinComplete(true)} onValidate={() => true} />
+                <div className="bg-zinc-900 border border-white/10 rounded-2xl p-6 w-[500px] max-w-[92vw]">
+                    <PreJoin
+                        onSubmit={(choices) => {
+                            setPreJoinChoices(choices);
+                            setPreJoinComplete(true);
+                        }}
+                        onValidate={() => true}
+                    />
                 </div>
             </div>
         );
@@ -1497,12 +1555,16 @@ export default function LiveRoom() {
             )}
 
             <LiveKitRoom
-                video={isBroadcaster}
-                audio={isBroadcaster}
+                video={videoEnabled}
+                audio={audioEnabled}
                 token={token}
                 connect={isBroadcaster ? preJoinComplete : true}
                 serverUrl={liveKitServerUrl}
                 data-lk-theme="default"
+                onError={(err) => {
+                    console.error("[LiveKitRoom Error]:", err);
+                    setConnectError(err.message || "LiveKit streaming connection error.");
+                }}
                 style={{ height: "100vh", display: "flex", flexDirection: "column", backgroundColor: "#000" }}
             >
                 <LiveRoomContent

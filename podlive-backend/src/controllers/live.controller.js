@@ -309,13 +309,22 @@ exports.endLiveSession = async (req, res) => {
 exports.getGuestToken = async (req, res) => {
     try {
         const { id } = req.params;
-        const session = await prisma.liveSession.findUnique({ where: { id } });
+        let session = await prisma.liveSession.findUnique({ where: { id } });
 
         if (!session || session.status !== 'live') {
             return res.status(404).json({ error: 'Active live session not found' });
         }
         if (session.visibility === 'private') {
             return res.status(403).json({ error: 'This live stream is private' });
+        }
+
+        // Auto-generate livekit_room_name if missing
+        if (!session.livekit_room_name) {
+            const roomName = `room-${crypto.randomBytes(8).toString('hex')}`;
+            session = await prisma.liveSession.update({
+                where: { id },
+                data: { livekit_room_name: roomName }
+            });
         }
 
         // Generate anonymous viewer identity
@@ -346,21 +355,44 @@ exports.getGuestToken = async (req, res) => {
 exports.getViewerToken = async (req, res) => {
     try {
         const { id } = req.params;
-        const session = await prisma.liveSession.findUnique({ where: { id } });
+        let session = await prisma.liveSession.findUnique({ where: { id } });
 
-        if (!session || session.status !== 'live') {
-            return res.status(404).json({ error: 'Active live session not found' });
+        if (!session) {
+            return res.status(404).json({ error: 'Live session not found' });
         }
 
         const userId = req.user?.id || null;
+        const isHost = Boolean(userId && session.host_user_id === userId);
+
+        // Allow host to join scheduled sessions and auto-start them
+        if (session.status !== 'live') {
+            if (!isHost) {
+                return res.status(404).json({ error: 'Active live session not found' });
+            }
+            session = await prisma.liveSession.update({
+                where: { id },
+                data: {
+                    status: 'live',
+                    started_at: session.started_at || new Date()
+                }
+            });
+        }
 
         if (session.visibility === 'private' && session.host_user_id !== userId) {
             return res.status(403).json({ error: 'This live stream is private' });
         }
 
+        // Auto-generate livekit_room_name if missing
+        if (!session.livekit_room_name) {
+            const roomName = `room-${crypto.randomBytes(8).toString('hex')}`;
+            session = await prisma.liveSession.update({
+                where: { id },
+                data: { livekit_room_name: roomName }
+            });
+        }
+
         const user = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
-        const identity = user ? user.unique_handle : `viewer-${crypto.randomBytes(4).toString('hex')}`;
-        const isHost = Boolean(userId && session.host_user_id === userId);
+        const identity = user ? (user.unique_handle || user.display_name || `user-${user.id.slice(0, 8)}`) : `viewer-${crypto.randomBytes(4).toString('hex')}`;
 
         let stageInvite = null;
         if (userId && !isHost) {
@@ -401,11 +433,21 @@ exports.getViewerToken = async (req, res) => {
 exports.upgradeViewerToken = async (req, res) => {
     try {
         const { id } = req.params;
-        const session = await prisma.liveSession.findUnique({ where: { id } });
+        let session = await prisma.liveSession.findUnique({ where: { id } });
 
         if (!session || session.status !== 'live') {
             return res.status(404).json({ error: 'Active live session not found' });
         }
+
+        // Auto-generate livekit_room_name if missing
+        if (!session.livekit_room_name) {
+            const roomName = `room-${crypto.randomBytes(8).toString('hex')}`;
+            session = await prisma.liveSession.update({
+                where: { id },
+                data: { livekit_room_name: roomName }
+            });
+        }
+
         const user = await prisma.user.findUnique({ where: { id: req.user.id } });
         if (!user) {
             return res.status(404).json({ error: 'User not found' });
@@ -449,7 +491,8 @@ exports.upgradeViewerToken = async (req, res) => {
             }
         }
 
-        const token = await createToken(session.livekit_room_name, user.unique_handle, true, isHost ? 'host' : 'stage');
+        const identity = user.unique_handle || user.display_name || `user-${user.id.slice(0, 8)}`;
+        const token = await createToken(session.livekit_room_name, identity, true, isHost ? 'host' : 'stage');
 
         res.json({
             token,
