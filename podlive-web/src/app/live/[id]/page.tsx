@@ -169,12 +169,14 @@ function StageLayout({
     const screenTracksRef = useRef<LocalTrack[]>([]);
     const [isScreenShareStarting, setIsScreenShareStarting] = useState(false);
     const [screenShareError, setScreenShareError] = useState("");
+    const [isScreenAudioPublished, setIsScreenAudioPublished] = useState(false);
     const isScreenShareEnabled = screenTracks.length > 0;
 
     const stopScreenShare = useCallback(async () => {
         const tracksToStop = [...screenTracksRef.current];
         screenTracksRef.current = [];
         setScreenTracks([]);
+        setIsScreenAudioPublished(false);
         setScreenShareError("");
 
         await Promise.allSettled(
@@ -194,22 +196,43 @@ function StageLayout({
                     noiseSuppression: false,
                     autoGainControl: false,
                 },
-                video: true,
+                // Prefer a browser tab because it is the most reliable way to
+                // receive an audio track across desktop browsers.
+                video: { displaySurface: "browser" },
                 systemAudio: "include",
                 selfBrowserSurface: "include",
                 surfaceSwitching: "include",
+                suppressLocalAudioPlayback: false,
                 contentHint: "motion",
             });
 
+            const screenAudioTrack = tracks.find(
+                (track) => track.source === Track.Source.ScreenShareAudio
+            );
+            if (!screenAudioTrack) {
+                tracks.forEach((track) => track.stop());
+                throw new Error(
+                    'Screen audio nahi mila. Chrome Tab select karke "Share tab audio" ON karein. Window/Entire Screen tabhi use karein jab browser audio option dikhaye.'
+                );
+            }
+
             const streamName = `screen-${localParticipant.identity}`;
-            await Promise.all(
-                tracks.map((track) =>
-                    localParticipant.publishTrack(track, {
+            const publishResults = await Promise.allSettled(
+                tracks.map((track) => localParticipant.publishTrack(track, {
                         source: track.source,
                         stream: streamName,
-                    })
-                )
+                    }))
             );
+            const failedPublish = publishResults.find(
+                (result) => result.status === "rejected"
+            );
+            if (failedPublish) {
+                await Promise.allSettled(
+                    tracks.map((track) => localParticipant.unpublishTrack(track, true))
+                );
+                tracks.forEach((track) => track.stop());
+                throw new Error("Screen video/audio LiveKit par publish nahi ho paya. Dobara try karein.");
+            }
 
             tracks.forEach((track) => {
                 track.mediaStreamTrack.onended = () => {
@@ -219,11 +242,7 @@ function StageLayout({
 
             screenTracksRef.current = tracks;
             setScreenTracks(tracks);
-
-            const hasScreenAudio = tracks.some((track) => track.source === Track.Source.ScreenShareAudio);
-            if (!hasScreenAudio) {
-                setScreenShareError("Screen audio share nahi hua. Chrome Tab/Entire Screen choose karke Share audio tick karein.");
-            }
+            setIsScreenAudioPublished(true);
         } catch (error: any) {
             setScreenShareError(error?.message || "Screen share start nahi ho paya.");
         } finally {
@@ -387,8 +406,13 @@ function StageLayout({
                         <div className="bg-zinc-950/90 text-zinc-300 text-xs px-4 py-2.5 rounded-2xl border border-indigo-500/30 shadow-2xl text-center backdrop-blur-md max-w-[90%] transition-all duration-300 select-none animate-bounce hidden sm:block">
                             <p className="font-semibold text-indigo-400 mb-0.5">Video Sound Tip</p>
                             <p className="text-[11px] leading-relaxed text-zinc-400 mb-0">
-                                Screenshare par video sound sunane ke liye <span className="text-white font-medium">"Chrome Tab"</span> ya <span className="text-white font-medium">"Entire Screen"</span> select karein aur popup me <span className="text-white font-medium">"Share audio"</span> ko tick karein.
+                                Video sound ke liye <span className="text-white font-medium">&quot;Chrome Tab&quot;</span> select karke <span className="text-white font-medium">&quot;Share tab audio&quot;</span> ON karein. Window/Entire Screen sirf tab use karein jab browser audio option dikhaye.
                             </p>
+                        </div>
+                    )}
+                    {isScreenShareEnabled && isScreenAudioPublished && (
+                        <div className="bg-emerald-500/15 text-emerald-200 text-xs px-4 py-2 rounded-2xl border border-emerald-500/30 shadow-2xl text-center backdrop-blur-md">
+                            Screen video + audio live hai
                         </div>
                     )}
                     {screenShareError && (
