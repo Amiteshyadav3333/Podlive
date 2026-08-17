@@ -26,6 +26,7 @@ model User {
   is_verified      Boolean  @default(false)
   created_at       DateTime @default(now())
   last_seen        DateTime @default(now())
+  cheetchat_user_id String? @unique
 
   // Relations
   profile          Profile?

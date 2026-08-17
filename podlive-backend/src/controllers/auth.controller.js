@@ -2,6 +2,8 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const crypto = require('crypto');
+const usedSsoTickets = new Map();
 
 const generateTokens = (userId) => {
     const accessToken = jwt.sign({ id: userId }, process.env.JWT_ACCESS_SECRET, { expiresIn: '7d' });
@@ -119,5 +121,118 @@ exports.checkHandle = async (req, res) => {
         return res.status(200).json({ available: true });
     } catch (error) {
         res.status(500).json({ error: 'Internal Server Error', details: error.message });
+    }
+};
+
+exports.cheetchatSso = async (req, res) => {
+    let claimedTicketId = null;
+    try {
+        const ticket = String(req.body?.ticket || '').trim();
+        if (!ticket || ticket.length > 4096) {
+            return res.status(400).json({ error: 'A valid SSO ticket is required.' });
+        }
+
+        const cheetchatApi = String(
+            process.env.CHEETCHAT_API_URL || 'https://chietchat-backend.onrender.com'
+        ).replace(/\/+$/, '');
+        const cheetchatUrl = new URL(cheetchatApi);
+        if (cheetchatUrl.protocol !== 'https:') {
+            return res.status(503).json({ error: 'Single sign-on is not securely configured.' });
+        }
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+        let verificationResponse;
+        try {
+            verificationResponse = await fetch(`${cheetchatApi}/api/auth/podlive-sso/verify`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ticket }),
+                signal: controller.signal,
+            });
+        } finally {
+            clearTimeout(timeout);
+        }
+
+        const identity = await verificationResponse.json().catch(() => ({}));
+        if (!verificationResponse.ok) {
+            return res.status(verificationResponse.status).json({
+                error: identity.error || 'CHEETCHAT could not verify this sign-in.'
+            });
+        }
+        if (!identity.jti || !identity.sub || !identity.email) {
+            return res.status(401).json({ error: 'Invalid SSO identity.' });
+        }
+
+        const now = Date.now();
+        for (const [jti, expiresAt] of usedSsoTickets) {
+            if (expiresAt <= now) usedSsoTickets.delete(jti);
+        }
+        if (usedSsoTickets.has(identity.jti)) {
+            return res.status(409).json({ error: 'SSO ticket was already used.' });
+        }
+        usedSsoTickets.set(identity.jti, now + 90000);
+        claimedTicketId = identity.jti;
+
+        const cheetchatUserId = String(identity.sub).slice(0, 128);
+        const email = String(identity.email).trim().toLowerCase().slice(0, 320);
+        let user = await prisma.user.findFirst({
+            where: { OR: [{ cheetchat_user_id: cheetchatUserId }, { email }] }
+        });
+
+        if (user?.cheetchat_user_id && user.cheetchat_user_id !== cheetchatUserId) {
+            return res.status(409).json({
+                error: 'This PodLive account is linked to another CHEETCHAT account.'
+            });
+        }
+
+        if (user) {
+            user = await prisma.user.update({
+                where: { id: user.id },
+                data: {
+                    cheetchat_user_id: cheetchatUserId,
+                    display_name: String(identity.name || user.display_name).slice(0, 100),
+                    avatar_url: String(identity.avatar || user.avatar_url || '').slice(0, 500) || null,
+                    last_seen: new Date(),
+                }
+            });
+        } else {
+            const rawHandle = String(identity.handle || `cheetchat_${cheetchatUserId}`)
+                .toLowerCase().replace(/[^a-z0-9_]/g, '');
+            const baseHandle = rawHandle.slice(0, 24) || `cheetchat_${cheetchatUserId}`.slice(0, 24);
+            let uniqueHandle = baseHandle;
+            let suffix = 0;
+            while (await prisma.user.findUnique({ where: { unique_handle: uniqueHandle } })) {
+                suffix += 1;
+                uniqueHandle = `${baseHandle.slice(0, Math.max(1, 23 - String(suffix).length))}_${suffix}`;
+            }
+            user = await prisma.user.create({
+                data: {
+                    cheetchat_user_id: cheetchatUserId,
+                    email,
+                    unique_handle: uniqueHandle,
+                    display_name: String(identity.name || uniqueHandle).slice(0, 100),
+                    avatar_url: String(identity.avatar || '').slice(0, 500) || null,
+                    password_hash: await bcrypt.hash(crypto.randomBytes(48).toString('hex'), 12),
+                    is_verified: true,
+                }
+            });
+        }
+
+        const tokens = generateTokens(user.id);
+        return res.json({
+            user: {
+                id: user.id,
+                unique_handle: user.unique_handle,
+                email: user.email,
+                display_name: user.display_name,
+                avatar_url: user.avatar_url,
+            },
+            ...tokens,
+        });
+    } catch (error) {
+        if (claimedTicketId) usedSsoTickets.delete(claimedTicketId);
+        console.error('CHEETCHAT SSO Error:', error?.name || 'Error');
+        return res.status(502).json({ error: 'Could not complete secure single sign-on.' });
     }
 };
