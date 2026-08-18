@@ -128,26 +128,16 @@ const liveRoutes = require('./routes/live.routes');
 const userRoutes = require('./routes/user.routes');
 const stageRoutes = require('./routes/stage.routes');
 const searchRoutes = require('./routes/search.routes');
-
-app.get('/api/admin/db-sync', async (req, res) => {
-    try {
-        const { exec } = require('child_process');
-        exec('npx prisma db push --accept-data-loss', (error, stdout, stderr) => {
-            if (error) {
-                return res.status(500).json({ error: error.message, stderr });
-            }
-            res.json({ message: 'Database synced successfully', stdout });
-        });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
+const uploadRoutes = require('./routes/upload.routes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/live', liveRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/stage', stageRoutes);
 app.use('/api/search', searchRoutes);
+// User uploads are a separate on-demand media pipeline. Live rooms remain
+// realtime-only and never start an egress/recording job.
+app.use('/api/upload', uploadRoutes);
 
 // Public config endpoint — exposes only what the frontend needs (no secrets)
 // API keys and secrets are NEVER sent here. Only the WebSocket URL.

@@ -27,8 +27,9 @@ test('recording egress is permanently unavailable', async () => {
     assert.match(res.body.error, /real-time only/i);
 });
 
-test('recording and VOD collection routes are not exposed', () => {
+test('live recordings stay disabled while explicit creator uploads are exposed separately', () => {
     assert.equal(routePaths(liveRoutes).includes('/vods'), false);
+    assert.equal(routePaths(liveRoutes).includes('/videos'), true);
     assert.equal(routePaths(userRoutes).includes('/recordings'), false);
     assert.equal(routePaths(liveRoutes).includes('/:id/details'), true);
     const deleteRoutes = liveRoutes.stack.filter((layer) => layer.route?.methods?.delete);

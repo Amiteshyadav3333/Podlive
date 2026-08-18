@@ -145,7 +145,10 @@ exports.uploadVideo = async (req, res) => {
                 started_at: new Date(),
                 ended_at: new Date(),
                 is_processing: false,
-                chat_enabled: false
+                // Comments on uploaded videos use the same moderated message
+                // model, but this never turns the upload into a live recording.
+                chat_enabled: true,
+                dvr_enabled: false
             }
         });
 

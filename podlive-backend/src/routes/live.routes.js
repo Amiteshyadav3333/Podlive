@@ -5,6 +5,7 @@ const authMiddleware = require('../middleware/auth.middleware');
 // Static routes MUST come before /:id to avoid param matching
 router.get('/active', liveController.getActiveLives);
 router.get('/scheduled', liveController.getScheduledLives);
+router.get('/videos', liveController.getPublicVODs);
 router.post('/create', authMiddleware, liveController.createLiveSession);
 
 // Dynamic /:id routes

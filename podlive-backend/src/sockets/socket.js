@@ -1,6 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const livekitEgressService = require('../services/livekit-egress.service');
+const jwt = require('jsonwebtoken');
 
 // In-memory store — works for single-instance.
 // For multi-instance scale, replace with Redis adapter: socket.io/redis-adapter
@@ -68,10 +69,21 @@ const emitViewerCount = async (io, sessionId) => {
 };
 
 module.exports = (io) => {
+    io.use((socket, next) => {
+        try {
+            const token = socket.handshake.auth?.token;
+            if (!token) return next(new Error('Authentication required'));
+            socket.data.user = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
+            return next();
+        } catch (_error) {
+            return next(new Error('Invalid or expired authentication'));
+        }
+    });
     io.on('connection', (socket) => {
 
         // ── Register user ──────────────────────────────────────
-        socket.on('register_user', (userId) => {
+        socket.on('register_user', () => {
+            const userId = socket.data.user?.id;
             if (!userId) return;
             activeUsers.set(userId, socket.id);
             socketUsers.set(socket.id, userId);
@@ -88,7 +100,7 @@ module.exports = (io) => {
         socket.on('send_invite', async ({ sessionId, inviteeHandle, hostId }) => {
             try {
                 const registeredHostId = socketUsers.get(socket.id);
-                const effectiveHostId = registeredHostId || hostId;
+                const effectiveHostId = registeredHostId;
                 if (!sessionId || !inviteeHandle || !effectiveHostId) {
                     return socket.emit('invite_status', { success: false, message: 'Session and invitee are required.' });
                 }

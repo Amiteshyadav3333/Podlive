@@ -480,7 +480,13 @@ exports.getRecordingDetails = async (req, res) => {
         const session = await prisma.liveSession.findUnique({
             where: { id },
             include: {
-                host: true
+                host: true,
+                video: true,
+                chat_messages: {
+                    where: { is_deleted: false },
+                    orderBy: { created_at: 'asc' },
+                    take: 200
+                }
             }
         });
 
@@ -513,7 +519,8 @@ exports.addComment = async (req, res) => {
         const { message, type = 'message', amount } = req.body;
         const normalizedAmount = safeNumber(amount);
         const session = await prisma.liveSession.findUnique({ where: { id } });
-        if (!session || !['live', 'scheduled'].includes(session.status)) {
+        const isUploadedVideo = session?.status === 'ended' && Boolean(session.recording_url);
+        if (!session || (!['live', 'scheduled'].includes(session.status) && !isUploadedVideo)) {
             return res.status(404).json({ error: 'Live session not found' });
         }
         if (!session.chat_enabled) {
