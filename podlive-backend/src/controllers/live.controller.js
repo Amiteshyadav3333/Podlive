@@ -41,8 +41,6 @@ const sanitizeSession = (session, includeSecrets = false) => {
     return safeSession;
 };
 
-const serializeEgressId = (egress) => egress?.egressId || egress?.egress_id || egress?.id || null;
-
 const extractIngressConfig = (ingress) => ({
     id: ingress?.ingressId || ingress?.ingress_id || ingress?.id || null,
     url: ingress?.url || ingress?.ingressUrl || ingress?.rtmpUrl || ingress?.whipUrl || ingress?.state?.url || null,
@@ -72,7 +70,6 @@ exports.createLiveSession = async (req, res) => {
             visibility = 'public',
             scheduled_at,
             goLiveNow = true,
-            dvr_enabled = true,
             low_latency = true,
             chat_enabled = true,
             moderation_enabled = true
@@ -89,7 +86,7 @@ exports.createLiveSession = async (req, res) => {
         const livekit_room_name = `room-${crypto.randomBytes(8).toString('hex')}`;
         const shouldStartNow = goLiveNow !== false && !scheduled_at;
 
-        let newSession = await prisma.liveSession.create({
+        const newSession = await prisma.liveSession.create({
             data: {
                 host_user_id,
                 title,
@@ -100,7 +97,7 @@ exports.createLiveSession = async (req, res) => {
                 scheduled_at: scheduled_at ? new Date(scheduled_at) : null,
                 status: shouldStartNow ? 'live' : 'scheduled',
                 livekit_room_name,
-                dvr_enabled,
+                dvr_enabled: false,
                 low_latency,
                 chat_enabled,
                 moderation_enabled,
@@ -108,29 +105,12 @@ exports.createLiveSession = async (req, res) => {
             }
         });
 
-        if (shouldStartNow && livekitEgressService.isHlsEgressEnabled()) {
-            try {
-                const egress = await livekitEgressService.startRoomHlsEgress(newSession);
-                const hlsUrl = livekitEgressService.getLiveHlsUrl(newSession.id);
-                newSession = await prisma.liveSession.update({
-                    where: { id: newSession.id },
-                    data: {
-                        livekit_egress_id: serializeEgressId(egress),
-                        hls_url: hlsUrl,
-                        recording_url: livekitEgressService.getRecordingHlsUrl(newSession.id),
-                        is_processing: true
-                    }
-                });
-            } catch (egressError) {
-                console.error('[Live] Auto HLS egress failed:', egressError.message);
-            }
-        }
-
         res.status(201).json({
             message: 'Live session created successfully',
             session: sanitizeSession(newSession, true),
             livekitUrl: process.env.LIVEKIT_URL,
-            hlsEnabled: livekitEgressService.isHlsEgressEnabled()
+            hlsEnabled: false,
+            realtimeOnly: true
         });
 
     } catch (error) {
@@ -144,47 +124,7 @@ exports.createLiveSession = async (req, res) => {
 };
 
 exports.startHlsEgress = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const session = await prisma.liveSession.findUnique({ where: { id } });
-
-        if (!session || session.host_user_id !== req.user.id) {
-            return res.status(403).json({ error: 'Unauthorized to start HLS for this session' });
-        }
-        if (session.status !== 'live') {
-            return res.status(409).json({ error: 'Session must be live before HLS can start' });
-        }
-        if (!livekitEgressService.isHlsEgressEnabled()) {
-            return res.status(202).json({
-                enabled: false,
-                message: 'Live HLS egress is disabled. Set ENABLE_LIVEKIT_HLS_EGRESS=true and configure Bunny Storage or S3-compatible storage.'
-            });
-        }
-        if (session.livekit_egress_id && session.hls_url) {
-            return res.json({ enabled: true, hlsUrl: session.hls_url, egressId: session.livekit_egress_id });
-        }
-
-        const egress = await livekitEgressService.startRoomHlsEgress(session);
-        const hlsUrl = livekitEgressService.getLiveHlsUrl(session.id);
-        const updatedSession = await prisma.liveSession.update({
-            where: { id },
-            data: {
-                livekit_egress_id: serializeEgressId(egress),
-                hls_url: hlsUrl,
-                recording_url: livekitEgressService.getRecordingHlsUrl(session.id),
-                is_processing: true
-            }
-        });
-
-        res.json({
-            enabled: true,
-            hlsUrl,
-            session: sanitizeSession(updatedSession)
-        });
-    } catch (error) {
-        console.error('Start HLS Egress Error:', error);
-        res.status(500).json({ error: 'Failed to start HLS egress', details: error.message });
-    }
+    return res.status(410).json({ error: 'Recording is disabled. PodLive is real-time only.' });
 };
 
 exports.startLiveSession = async (req, res) => {
@@ -207,34 +147,16 @@ exports.startLiveSession = async (req, res) => {
 
         const token = await createToken(session.livekit_room_name, session.host.unique_handle, true, 'host');
 
-        let sessionForResponse = updatedSession;
-        if (livekitEgressService.isHlsEgressEnabled() && !updatedSession.livekit_egress_id) {
-            try {
-                const egress = await livekitEgressService.startRoomHlsEgress(updatedSession);
-                const hlsUrl = livekitEgressService.getLiveHlsUrl(updatedSession.id);
-                sessionForResponse = await prisma.liveSession.update({
-                    where: { id },
-                    data: {
-                        livekit_egress_id: serializeEgressId(egress),
-                        hls_url: hlsUrl,
-                        recording_url: livekitEgressService.getRecordingHlsUrl(updatedSession.id),
-                        is_processing: true
-                    }
-                });
-            } catch (egressError) {
-                console.error('[Live] HLS egress on start failed:', egressError.message);
-            }
-        }
-
         if (req.io) {
-            req.io.emit('live_started', sanitizeSession(sessionForResponse));
+            req.io.emit('live_started', sanitizeSession(updatedSession));
         }
 
         res.json({
             token,
             roomName: session.livekit_room_name,
             livekitUrl: process.env.LIVEKIT_URL,
-            session: sanitizeSession(sessionForResponse)
+            session: sanitizeSession(updatedSession),
+            realtimeOnly: true
         });
     } catch (error) {
         console.error('Start Live Session Error:', error);
@@ -251,11 +173,6 @@ exports.endLiveSession = async (req, res) => {
             return res.status(403).json({ error: 'Unauthorized to end this session' });
         }
 
-        if (session.livekit_egress_id) {
-            livekitEgressService.stopEgress(session.livekit_egress_id).catch((error) => {
-                console.error('[Live] stop egress failed:', error.message);
-            });
-        }
         if (session.livekit_ingress_id) {
             livekitEgressService.deleteIngress(session.livekit_ingress_id).catch((error) => {
                 console.error('[Live] delete ingress failed:', error.message);
@@ -270,28 +187,12 @@ exports.endLiveSession = async (req, res) => {
                 livekit_egress_id: null,
                 livekit_ingress_id: null,
                 viewer_count: 0,
-                is_processing: false
+                is_processing: false,
+                dvr_enabled: false,
+                hls_url: null,
+                recording_url: null
             }
         });
-
-        // Create Video record for the ended live session
-        try {
-            await prisma.video.create({
-                data: {
-                    owner_id: updatedSession.host_user_id,
-                    live_session_id: updatedSession.id,
-                    title: updatedSession.title,
-                    description: updatedSession.description || '',
-                    thumbnail: updatedSession.thumbnail_url,
-                    hls_master_url: updatedSession.recording_url || updatedSession.hls_url,
-                    source_url: updatedSession.recording_url || updatedSession.hls_url,
-                    processing_status: 'ready',
-                    visibility: updatedSession.visibility
-                }
-            });
-        } catch (createVideoErr) {
-            console.error('[Live] Failed to create video record on stream end:', createVideoErr.message);
-        }
 
         if (req.io) {
             req.io.to(id).emit('podcast_ended', sanitizeSession(updatedSession));
@@ -579,38 +480,12 @@ exports.getRecordingDetails = async (req, res) => {
         const session = await prisma.liveSession.findUnique({
             where: { id },
             include: {
-                host: true,
-                video: true,
-                subtitles: true,
-                chat_messages: {
-                    orderBy: { created_at: 'asc' }
-                }
+                host: true
             }
         });
 
         if (!session) {
-            return res.status(404).json({ error: 'Recording not found' });
-        }
-
-        let videoRecord = session.video;
-        if (!videoRecord && session.status === 'ended') {
-            try {
-                videoRecord = await prisma.video.create({
-                    data: {
-                        owner_id: session.host_user_id,
-                        live_session_id: session.id,
-                        title: session.title,
-                        description: session.description || '',
-                        thumbnail: session.thumbnail_url,
-                        hls_master_url: session.recording_url || session.hls_url,
-                        source_url: session.recording_url || session.hls_url,
-                        processing_status: 'ready',
-                        visibility: session.visibility
-                    }
-                });
-            } catch (createVideoErr) {
-                console.error('[Recording] Failed to auto-create video record on-the-fly:', createVideoErr.message);
-            }
+            return res.status(404).json({ error: 'Live session not found' });
         }
 
         const { host, ...sessionData } = session;
@@ -618,12 +493,7 @@ exports.getRecordingDetails = async (req, res) => {
 
         res.json({
             ...sessionData,
-            video: videoRecord ? {
-                ...videoRecord,
-                filesize: videoRecord.filesize?.toString?.() || videoRecord.filesize,
-                views: videoRecord.views?.toString?.() || videoRecord.views,
-                watch_time: videoRecord.watch_time?.toString?.() || videoRecord.watch_time
-            } : null,
+            realtimeOnly: true,
             host: {
                 ...publicHost,
                 total_views: total_views?.toString?.() || total_views,
