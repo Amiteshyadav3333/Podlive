@@ -21,8 +21,8 @@ router.get('/:id/token', authMiddleware.optionalAuth, liveController.getViewerTo
 router.get('/:id/upgrade', authMiddleware, liveController.upgradeViewerToken);
 router.get('/:id/guest-token', liveController.getGuestToken);
 router.get('/:id/stats', liveController.getSessionStats);
-router.get('/:id/recording', liveController.getRecordingDetails);
-router.get('/:id/details', liveController.getRecordingDetails);
+router.get('/:id/recording', authMiddleware.optionalAuth, liveController.getRecordingDetails);
+router.get('/:id/details', authMiddleware.optionalAuth, liveController.getRecordingDetails);
 router.get('/:id/participants', authMiddleware, liveController.getLiveParticipants);
 router.post('/:id/comment', authMiddleware, liveController.addComment);
 router.patch('/:id/chat/:messageId/moderate', authMiddleware, liveController.moderateMessage);
@@ -32,5 +32,7 @@ router.post('/:id/like', authMiddleware, liveController.toggleLike);
 router.get('/:id/like-status', authMiddleware, liveController.getLikeStatus);
 router.post('/:id/view', liveController.incrementViewCount);
 router.post('/:id/viewer-heartbeat', liveController.viewerHeartbeat);
+router.get('/:id', authMiddleware.optionalAuth, liveController.getSessionDetails);
+router.delete('/:id', authMiddleware, liveController.deleteRecording);
 
 module.exports = router;

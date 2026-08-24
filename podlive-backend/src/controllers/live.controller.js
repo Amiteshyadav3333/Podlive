@@ -52,6 +52,13 @@ const safeNumber = (value, fallback = 0) => {
     return Number.isFinite(number) ? number : fallback;
 };
 
+const serializeVideo = (video) => video ? {
+    ...video,
+    filesize: video.filesize?.toString?.() || video.filesize,
+    views: video.views?.toString?.() || video.views,
+    watch_time: video.watch_time?.toString?.() || video.watch_time
+} : null;
+
 const getHostOwnedSession = async (sessionId, userId) => {
     const session = await prisma.liveSession.findUnique({ where: { id: sessionId } });
     if (!session || session.host_user_id !== userId) {
@@ -326,7 +333,6 @@ exports.getViewerToken = async (req, res) => {
         if (!session) {
             return res.status(404).json({ error: 'Live session not found' });
         }
-
         const userId = req.user?.id || null;
         const isHost = Boolean(userId && session.host_user_id === userId);
 
@@ -558,12 +564,21 @@ exports.getRecordingDetails = async (req, res) => {
         if (!session) {
             return res.status(404).json({ error: 'Live session not found' });
         }
+        if (session.visibility === 'private' && session.host_user_id !== req.user?.id) {
+            const grant = req.user?.id && session.video ? await prisma.videoAccessGrant.findUnique({
+                where: { video_id_user_id: { video_id: session.video.id, user_id: req.user.id } }
+            }) : null;
+            if (!grant || (grant.expires_at && grant.expires_at <= new Date())) {
+                return res.status(404).json({ error: 'Live session not found' });
+            }
+        }
 
-        const { host, ...sessionData } = session;
+        const { host, video, ...sessionData } = session;
         const { password_hash, total_views, total_likes, ...publicHost } = host;
 
         res.json({
             ...sessionData,
+            video: serializeVideo(video),
             realtimeOnly: true,
             host: {
                 ...publicHost,
@@ -575,6 +590,23 @@ exports.getRecordingDetails = async (req, res) => {
     } catch (error) {
         console.error('Get Recording Details Error:', error);
         res.status(500).json({ error: 'Internal Server Error' });
+    }
+};
+
+exports.getSessionDetails = async (req, res) => {
+    try {
+        const session = await prisma.liveSession.findUnique({
+            where: { id: req.params.id },
+            include: { host: { select: publicUserSelect }, video: true }
+        });
+        if (!session) return res.status(404).json({ error: 'Session not found' });
+        if (session.visibility === 'private' && session.host_user_id !== req.user?.id) {
+            return res.status(404).json({ error: 'Session not found' });
+        }
+        res.json({ ...sanitizeSession(session), video: serializeVideo(session.video) });
+    } catch (error) {
+        console.error('Get Session Details Error:', error);
+        res.status(500).json({ error: 'Failed to fetch session' });
     }
 };
 

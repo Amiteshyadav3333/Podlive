@@ -784,10 +784,15 @@ export default function WatchPage() {
     useEffect(() => {
         const fetchRecording = async () => {
             try {
-                const res = await fetch(buildApiUrl(`/api/live/${params.id}/recording`));
+                const token = localStorage.getItem("accessToken");
+                const res = await fetch(buildApiUrl(`/api/live/${params.id}/recording`), {
+                    headers: token ? { Authorization: `Bearer ${token}` } : undefined
+                });
                 const data = await res.json();
                 if (res.ok) {
                     setRecording(data);
+                } else {
+                    console.error("Failed to fetch video:", data.error || res.status);
                 }
             } catch (err) {
                 console.error("Failed to fetch recording:", err);
