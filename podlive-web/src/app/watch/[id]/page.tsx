@@ -782,6 +782,9 @@ export default function WatchPage() {
     }, []);
 
     useEffect(() => {
+        let cancelled = false;
+        let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+
         const fetchRecording = async () => {
             try {
                 const token = localStorage.getItem("accessToken");
@@ -790,7 +793,15 @@ export default function WatchPage() {
                 });
                 const data = await res.json();
                 if (res.ok) {
-                    setRecording(data);
+                    if (cancelled) return;
+                    const processingStatus = data?.video?.processing_status;
+                    setRecording({
+                        ...data,
+                        is_processing: processingStatus === 'queued' || processingStatus === 'processing'
+                    });
+                    if (processingStatus === 'queued' || processingStatus === 'processing') {
+                        refreshTimer = setTimeout(fetchRecording, 10000);
+                    }
                 } else {
                     console.error("Failed to fetch video:", data.error || res.status);
                 }
@@ -822,6 +833,11 @@ export default function WatchPage() {
             fetchRecording();
             checkLikeStatus();
         }
+
+        return () => {
+            cancelled = true;
+            if (refreshTimer) clearTimeout(refreshTimer);
+        };
     }, [params.id]);
 
     useEffect(() => {
@@ -872,7 +888,7 @@ export default function WatchPage() {
             if (!recording) return;
             setRecommendedLoading(true);
             try {
-                const res = await fetch(buildApiUrl("/api/live/vods?limit=30"));
+                const res = await fetch(buildApiUrl("/api/live/videos?limit=30"));
                 const data = await res.json();
                 if (res.ok) {
                     const filtered = data.filter((vod: any) => vod.id !== params.id);

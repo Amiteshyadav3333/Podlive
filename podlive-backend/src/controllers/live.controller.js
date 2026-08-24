@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const livekitEgressService = require('../services/livekit-egress.service');
 const livekitRoomService = require('../services/livekit-room.service');
+const bunnyService = require('../services/bunny.service');
 
 const allowedVisibility = new Set(['public', 'private', 'unlisted']);
 const allowedIngressTypes = new Set(['rtmp', 'whip']);
@@ -58,6 +59,34 @@ const serializeVideo = (video) => video ? {
     views: video.views?.toString?.() || video.views,
     watch_time: video.watch_time?.toString?.() || video.watch_time
 } : null;
+
+const refreshBunnyVideoStatus = async (session) => {
+    if (!session?.video || !['queued', 'processing'].includes(session.video.processing_status)) return session;
+
+    try {
+        const pathname = new URL(session.recording_url).pathname;
+        const bunnyVideoId = pathname.split('/').filter(Boolean)[0];
+        if (!bunnyVideoId) return session;
+
+        const bunnyVideo = await bunnyService.getVideo(bunnyVideoId);
+        const isReady = bunnyVideo?.encodeProgress >= 100 || bunnyVideo?.status === 4 || Boolean(bunnyVideo?.availableResolutions);
+        const isFailed = [5, 6].includes(bunnyVideo?.status);
+        if (!isReady && !isFailed) return session;
+
+        const video = await prisma.video.update({
+            where: { id: session.video.id },
+            data: isReady ? {
+                processing_status: 'ready',
+                duration_seconds: bunnyVideo.length || undefined,
+                resolution: bunnyVideo.width && bunnyVideo.height ? `${bunnyVideo.width}x${bunnyVideo.height}` : undefined
+            } : { processing_status: 'failed' }
+        });
+        return { ...session, video };
+    } catch (error) {
+        console.warn(`[Live] Bunny status refresh skipped: ${error.message}`);
+        return session;
+    }
+};
 
 const getHostOwnedSession = async (sessionId, userId) => {
     const session = await prisma.liveSession.findUnique({ where: { id: sessionId } });
@@ -548,7 +577,7 @@ exports.getSessionStats = async (req, res) => {
 exports.getRecordingDetails = async (req, res) => {
     try {
         const { id } = req.params;
-        const session = await prisma.liveSession.findUnique({
+        let session = await prisma.liveSession.findUnique({
             where: { id },
             include: {
                 host: true,
@@ -564,6 +593,7 @@ exports.getRecordingDetails = async (req, res) => {
         if (!session) {
             return res.status(404).json({ error: 'Live session not found' });
         }
+        session = await refreshBunnyVideoStatus(session);
         if (session.visibility === 'private' && session.host_user_id !== req.user?.id) {
             const grant = req.user?.id && session.video ? await prisma.videoAccessGrant.findUnique({
                 where: { video_id_user_id: { video_id: session.video.id, user_id: req.user.id } }
@@ -1219,7 +1249,7 @@ exports.getPublicVODs = async (req, res) => {
             status: 'ended',
             visibility: 'public',
             recording_url: { not: null },
-            video: { is: { visibility: 'public' } }
+            video: { is: { visibility: 'public', processing_status: 'ready' } }
         };
         if (category && category !== 'All') where.category = category;
 
