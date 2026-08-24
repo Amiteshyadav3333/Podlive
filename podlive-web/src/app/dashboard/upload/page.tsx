@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import * as tus from "tus-js-client";
 import { UploadCloud, Video, Loader2, CheckCircle2, AlertCircle, Globe2, Lock } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { buildApiUrl } from "@/lib/api";
@@ -25,28 +26,53 @@ export default function UploadPage() {
       const token = localStorage.getItem("accessToken");
       if (!token) throw new Error("Please log in again.");
 
-      const data = new FormData();
-      data.append("title", formData.title);
-      data.append("description", formData.description);
-      data.append("category", formData.category === "Other (Custom)" ? customCategory : formData.category);
-      data.append("visibility", formData.visibility);
-      data.append("video", videoFile);
-
-      // Simulate progress (XHR for real progress tracking)
-      const xhr = new XMLHttpRequest();
-      xhr.upload.addEventListener("progress", (e) => {
-        if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
+      const initRes = await fetch(buildApiUrl("/api/upload/direct/init"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          ...formData,
+          category: formData.category === "Other (Custom)" ? customCategory : formData.category,
+          fileName: videoFile.name,
+          fileSize: videoFile.size,
+          contentType: videoFile.type || "application/octet-stream"
+        })
       });
+      const init = await initRes.json();
+      if (!initRes.ok) throw new Error(init.error || init.details || "Could not prepare upload");
 
-      await new Promise<void>((resolve, reject) => {
-        xhr.onload = () => {
-          if (xhr.status >= 200 && xhr.status < 300) resolve();
-          else { try { reject(new Error(JSON.parse(xhr.responseText).error || "Upload failed")); } catch { reject(new Error("Upload failed")); } }
-        };
-        xhr.onerror = () => reject(new Error("Network error"));
-        xhr.open("POST", buildApiUrl("/api/upload"));
-        xhr.setRequestHeader("Authorization", `Bearer ${token}`);
-        xhr.send(data);
+      await new Promise<void>(async (resolve, reject) => {
+        const upload = new tus.Upload(videoFile, {
+          endpoint: init.bunny.endpoint,
+          retryDelays: [0, 3000, 5000, 10000, 20000, 60000],
+          chunkSize: 16 * 1024 * 1024,
+          removeFingerprintOnSuccess: true,
+          headers: {
+            AuthorizationSignature: init.bunny.signature,
+            AuthorizationExpire: String(init.bunny.expirationTime),
+            VideoId: init.bunny.videoId,
+            LibraryId: String(init.bunny.libraryId)
+          },
+          metadata: {
+            filetype: videoFile.type || "application/octet-stream",
+            title: formData.title
+          },
+          onProgress: (uploaded, total) => setUploadProgress(Math.round((uploaded / total) * 100)),
+          onError: (uploadError) => reject(new Error(uploadError.message || "Resumable upload failed")),
+          onSuccess: async () => {
+            try {
+              const completeRes = await fetch(buildApiUrl(`/api/upload/direct/${init.uploadId}/complete`), {
+                method: "POST",
+                headers: { Authorization: `Bearer ${token}` }
+              });
+              const complete = await completeRes.json();
+              if (!completeRes.ok) throw new Error(complete.error || "Could not finalize upload");
+              resolve();
+            } catch (completeError) { reject(completeError); }
+          }
+        });
+        const previous = await upload.findPreviousUploads();
+        if (previous.length) upload.resumeFromPreviousUpload(previous[0]);
+        upload.start();
       });
 
       setSuccess(true);
@@ -147,7 +173,7 @@ export default function UploadPage() {
                   ) : (
                     <span className="text-xs text-zinc-400 text-center">Click to select MP4 / WebM</span>
                   )}
-                  <input type="file" className="hidden" accept="video/mp4,video/webm" onChange={(e) => e.target.files?.[0] && setVideoFile(e.target.files[0])} />
+                  <input type="file" className="hidden" accept="video/mp4,video/webm,video/x-matroska,video/quicktime,.mp4,.webm,.mkv,.mov,.avi" onChange={(e) => e.target.files?.[0] && setVideoFile(e.target.files[0])} />
                 </label>
 
                 {/* Upload progress */}
@@ -176,6 +202,7 @@ export default function UploadPage() {
               <div className="glass p-4 rounded-2xl text-xs text-zinc-500 space-y-1.5">
                 <p className="font-semibold text-zinc-400 mb-2">After upload:</p>
                 <p>✓ AI subtitles generated (EN, HI, ES)</p>
+                <p>✓ Direct resumable upload to Bunny (large files supported)</p>
                 <p>✓ HLS adaptive transcoding (1080p → 360p)</p>
                 <p>✓ Published to your profile</p>
               </div>

@@ -3,6 +3,7 @@ const prisma = new PrismaClient();
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const bunnyService = require('../services/bunny.service');
 
 const safeUnlink = (filePath) => {
@@ -88,6 +89,123 @@ const syncBunnyProcessingStatus = async (videoId, bunnyVideoId, attempt = 1) => 
     setTimeout(() => {
         syncBunnyProcessingStatus(videoId, bunnyVideoId, attempt + 1).catch(() => {});
     }, intervalMs);
+};
+
+exports.initDirectUpload = async (req, res) => {
+    try {
+        const { title, description, category, visibility = 'public', language, location, tags, fileName, fileSize, contentType } = req.body;
+        const size = Number(fileSize);
+        if (!title || !String(title).trim()) return res.status(400).json({ error: 'Title is required' });
+        if (!Number.isFinite(size) || size <= 0) return res.status(400).json({ error: 'Valid fileSize is required' });
+        if (!['public', 'private', 'unlisted'].includes(visibility)) return res.status(400).json({ error: 'Invalid visibility' });
+
+        const config = bunnyService.assertConfigured();
+        const bunnyVideo = await bunnyService.createVideo({ title: String(title).trim() });
+        const bunnyVideoId = bunnyVideo.guid;
+        if (!bunnyVideoId) throw new Error('Bunny Stream did not return a video ID');
+        const playback = bunnyService.getPlaybackUrls(bunnyVideoId);
+
+        let categoryId = null;
+        if (category) {
+            const slug = String(category).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'general';
+            const cat = await prisma.category.upsert({ where: { slug }, update: {}, create: { name: category, slug } });
+            categoryId = cat.id;
+        }
+
+        const result = await prisma.$transaction(async (tx) => {
+            const session = await tx.liveSession.create({
+                data: {
+                    host_user_id: req.user.id,
+                    title: String(title).trim(),
+                    description: description?.trim() || null,
+                    category: category || 'General',
+                    visibility,
+                    status: 'ended',
+                    recording_url: playback.hlsUrl,
+                    thumbnail_url: playback.thumbnailUrl,
+                    started_at: new Date(),
+                    ended_at: new Date(),
+                    chat_enabled: true,
+                    dvr_enabled: false,
+                    replay_enabled: false
+                }
+            });
+            const video = await tx.video.create({
+                data: {
+                    owner_id: req.user.id,
+                    live_session_id: session.id,
+                    title: String(title).trim(),
+                    description: description?.trim() || null,
+                    tags: parseTags(tags),
+                    thumbnail: playback.thumbnailUrl,
+                    filesize: BigInt(Math.round(size)),
+                    visibility,
+                    language: language || null,
+                    location: location || null,
+                    category_id: categoryId,
+                    hls_master_url: playback.hlsUrl,
+                    source_url: playback.hlsUrl,
+                    processing_status: 'queued'
+                }
+            });
+            const uploadSession = await tx.uploadSession.create({
+                data: {
+                    owner_id: req.user.id,
+                    original_name: fileName || `${title}.video`,
+                    content_type: contentType || 'application/octet-stream',
+                    total_size: BigInt(Math.round(size)),
+                    chunk_size: 0,
+                    total_chunks: 0,
+                    status: 'active',
+                    metadata: { videoId: video.id, sessionId: session.id },
+                    r2_key: `bunny:${bunnyVideoId}`
+                }
+            });
+            await tx.videoFile.create({ data: { video_id: video.id, quality: 'auto', url: playback.hlsUrl, playlist_url: playback.hlsUrl, container: 'hls' } });
+            return { session, video, uploadSession };
+        });
+
+        const expirationTime = Math.floor(Date.now() / 1000) + Number(process.env.BUNNY_TUS_AUTH_SECONDS || 86400);
+        const signature = crypto.createHash('sha256')
+            .update(`${config.libraryId}${config.accessKey}${expirationTime}${bunnyVideoId}`)
+            .digest('hex');
+
+        res.status(201).json({
+            uploadId: result.uploadSession.id,
+            sessionId: result.session.id,
+            video: serializeVideo(result.video),
+            bunny: {
+                endpoint: 'https://video.bunnycdn.com/tusupload',
+                videoId: bunnyVideoId,
+                libraryId: String(config.libraryId),
+                expirationTime,
+                signature
+            }
+        });
+    } catch (error) {
+        console.error('[DirectUpload] init error:', error);
+        res.status(500).json({ error: 'Failed to prepare direct upload', details: error.message });
+    }
+};
+
+exports.completeDirectUpload = async (req, res) => {
+    try {
+        const upload = await prisma.uploadSession.findUnique({ where: { id: req.params.uploadId } });
+        if (!upload || upload.owner_id !== req.user.id) return res.status(404).json({ error: 'Upload not found' });
+        const bunnyVideoId = upload.r2_key?.startsWith('bunny:') ? upload.r2_key.slice(6) : null;
+        const videoId = upload.metadata?.videoId;
+        if (!bunnyVideoId || !videoId) return res.status(409).json({ error: 'Upload metadata is incomplete' });
+
+        await prisma.$transaction([
+            prisma.uploadSession.update({ where: { id: upload.id }, data: { status: 'completed', completed_at: new Date() } }),
+            prisma.video.update({ where: { id: videoId }, data: { processing_status: 'processing' } })
+        ]);
+        syncBunnyProcessingStatus(videoId, bunnyVideoId).catch(() => {});
+        res.json({ message: 'Upload received by Bunny Stream and processing has started', videoId });
+    } catch (error) {
+        console.error('[DirectUpload] complete error:', error);
+        res.status(500).json({ error: 'Failed to finalize direct upload' });
+    }
 };
 
 exports.uploadVideo = async (req, res) => {

@@ -70,6 +70,9 @@ const handleMulterError = (err, req, res, next) => {
     next();
 };
 
+router.post('/direct/init', authMiddleware, uploadController.initDirectUpload);
+router.post('/direct/:uploadId/complete', authMiddleware, uploadController.completeDirectUpload);
+
 router.post('/chunk/init', authMiddleware, uploadController.initChunkUpload);
 router.get('/chunk/:uploadId', authMiddleware, uploadController.getChunkUploadStatus);
 router.post('/chunk/:uploadId',
