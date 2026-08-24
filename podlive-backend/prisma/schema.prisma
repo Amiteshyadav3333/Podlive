@@ -9,24 +9,24 @@ datasource db {
 }
 
 model User {
-  id               String   @id @default(uuid())
-  unique_handle    String   @unique
-  email            String   @unique
-  password_hash    String
-  display_name     String
-  avatar_url       String?
-  cover_image_url  String?
-  bio              String?
-  links            Json?
-  follower_count   Int      @default(0)
-  following_count  Int      @default(0)
-  subscriber_count Int      @default(0)
-  total_views      BigInt   @default(0)
-  total_likes      BigInt   @default(0)
-  is_verified      Boolean  @default(false)
-  created_at       DateTime @default(now())
-  last_seen        DateTime @default(now())
-  cheetchat_user_id String? @unique
+  id                String   @id @default(uuid())
+  unique_handle     String   @unique
+  email             String   @unique
+  password_hash     String
+  display_name      String
+  avatar_url        String?
+  cover_image_url   String?
+  bio               String?
+  links             Json?
+  follower_count    Int      @default(0)
+  following_count   Int      @default(0)
+  subscriber_count  Int      @default(0)
+  total_views       BigInt   @default(0)
+  total_likes       BigInt   @default(0)
+  is_verified       Boolean  @default(false)
+  created_at        DateTime @default(now())
+  last_seen         DateTime @default(now())
+  cheetchat_user_id String?  @unique
 
   // Relations
   profile               Profile?
@@ -123,7 +123,7 @@ model LiveSession {
   studio_config      Json?
   brand_color        String    @default("#7C3AED")
   audience_mode      String    @default("everyone")
-  replay_enabled     Boolean   @default(true)
+  replay_enabled     Boolean   @default(false)
 
   // Relations
   host           User               @relation("HostSessions", fields: [host_user_id], references: [id])

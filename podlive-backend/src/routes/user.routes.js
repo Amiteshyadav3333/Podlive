@@ -6,6 +6,7 @@ const authMiddleware = require('../middleware/auth.middleware');
 router.get('/profile', authMiddleware, userController.getProfile);
 router.put('/profile', authMiddleware, userController.updateProfile);
 router.get('/audience', authMiddleware, userController.getAudienceStats);
+router.get('/recordings', authMiddleware, userController.getRecordings);
 
 // Public route to view creator profile
 router.get('/creator/:id', userController.getCreatorProfile);

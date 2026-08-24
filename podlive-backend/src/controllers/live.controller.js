@@ -137,7 +137,6 @@ exports.createLiveSession = async (req, res) => {
             moderation_enabled = true
             , brand_color = '#7C3AED'
             , audience_mode = 'everyone'
-            , replay_enabled = true
             , studio_config = null
         } = req.body;
         const host_user_id = req.user.id;
@@ -169,7 +168,7 @@ exports.createLiveSession = async (req, res) => {
                 moderation_enabled,
                 brand_color,
                 audience_mode,
-                replay_enabled,
+                replay_enabled: false,
                 studio_config,
                 started_at: shouldStartNow ? new Date() : null,
             }
@@ -191,10 +190,6 @@ exports.createLiveSession = async (req, res) => {
             code: error.code || error.errorCode
         });
     }
-};
-
-exports.startHlsEgress = async (req, res) => {
-    return res.status(410).json({ error: 'Recording is disabled. PodLive is real-time only.' });
 };
 
 exports.startLiveSession = async (req, res) => {
@@ -822,7 +817,7 @@ exports.getObsConfig = async (req, res) => {
 exports.updateLiveSettings = async (req, res) => {
     try {
         const { id } = req.params;
-        const { title, description, category, visibility, scheduled_at, chat_enabled, moderation_enabled, dvr_enabled, low_latency, brand_color, audience_mode, replay_enabled, studio_config } = req.body;
+        const { title, description, category, visibility, scheduled_at, chat_enabled, moderation_enabled, low_latency, brand_color, audience_mode, studio_config } = req.body;
 
         if (visibility && !allowedVisibility.has(visibility)) {
             return res.status(400).json({ error: 'visibility must be public, private or unlisted' });
@@ -843,11 +838,11 @@ exports.updateLiveSettings = async (req, res) => {
                 ...(scheduled_at !== undefined ? { scheduled_at: scheduled_at ? new Date(scheduled_at) : null } : {}),
                 ...(chat_enabled !== undefined ? { chat_enabled } : {}),
                 ...(moderation_enabled !== undefined ? { moderation_enabled } : {}),
-                ...(dvr_enabled !== undefined ? { dvr_enabled } : {}),
+                dvr_enabled: false,
                 ...(low_latency !== undefined ? { low_latency } : {})
                 , ...(brand_color !== undefined ? { brand_color } : {})
                 , ...(audience_mode !== undefined ? { audience_mode } : {})
-                , ...(replay_enabled !== undefined ? { replay_enabled } : {})
+                , replay_enabled: false
                 , ...(studio_config !== undefined ? { studio_config } : {})
             }
         });
@@ -1188,7 +1183,12 @@ exports.deleteRecording = async (req, res) => {
 exports.getPublicVODs = async (req, res) => {
     try {
         const { category, sort = 'latest', limit = 24 } = req.query;
-        const where = { status: 'ended', recording_url: { not: null } };
+        const where = {
+            status: 'ended',
+            visibility: 'public',
+            recording_url: { not: null },
+            video: { is: { visibility: 'public' } }
+        };
         if (category && category !== 'All') where.category = category;
 
         const orderBy = sort === 'popular'

@@ -360,11 +360,6 @@ module.exports = (io) => {
                     const timeoutId = setTimeout(async () => {
                         for (const session of activeSessions) {
                             try {
-                                if (session.livekit_egress_id) {
-                                    livekitEgressService.stopEgress(session.livekit_egress_id).catch((err) => {
-                                        console.error(`[Socket] Stop egress failed for ${session.id}:`, err.message);
-                                    });
-                                }
                                 if (session.livekit_ingress_id) {
                                     livekitEgressService.deleteIngress(session.livekit_ingress_id).catch((err) => {
                                         console.error(`[Socket] Delete ingress failed for ${session.id}:`, err.message);
@@ -379,7 +374,11 @@ module.exports = (io) => {
                                         livekit_egress_id: null,
                                         livekit_ingress_id: null,
                                         viewer_count: 0,
-                                        is_processing: false
+                                        is_processing: false,
+                                        dvr_enabled: false,
+                                        replay_enabled: false,
+                                        hls_url: null,
+                                        recording_url: null
                                     }
                                 });
                                 io.to(session.id).emit('podcast_ended');

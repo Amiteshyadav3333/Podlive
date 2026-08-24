@@ -164,7 +164,7 @@ export default function Home() {
 
     const fetchVods = async () => {
       try {
-        const res = await axios.get(buildApiUrl("/api/live/vods"));
+        const res = await axios.get(buildApiUrl("/api/live/videos"));
         setVods(res.data);
         setFilteredVods(res.data);
       } catch (err) {
@@ -176,8 +176,9 @@ export default function Home() {
 
     fetchLives();
     fetchVods();
-    const interval = setInterval(fetchLives, 10000);
-    return () => clearInterval(interval);
+    const liveInterval = setInterval(fetchLives, 10000);
+    const videoInterval = setInterval(fetchVods, 30000);
+    return () => { clearInterval(liveInterval); clearInterval(videoInterval); };
   }, []);
 
   useEffect(() => {

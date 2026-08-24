@@ -10,7 +10,6 @@ router.post('/create', authMiddleware, liveController.createLiveSession);
 
 // Dynamic /:id routes
 router.post('/:id/start', authMiddleware, liveController.startLiveSession);
-router.post('/:id/hls/start', authMiddleware, liveController.startHlsEgress);
 router.post('/:id/ingress', authMiddleware, liveController.createIngress);
 router.get('/:id/obs-config', authMiddleware, liveController.getObsConfig);
 router.patch('/:id/settings', authMiddleware, liveController.updateLiveSettings);

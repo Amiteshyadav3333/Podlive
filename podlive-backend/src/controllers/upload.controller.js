@@ -138,6 +138,7 @@ exports.uploadVideo = async (req, res) => {
                 title: title.trim(),
                 description: description?.trim() || null,
                 category: category || 'General',
+                visibility: visibility || 'public',
                 status: 'ended',
                 viewer_count_peak: 0,
                 recording_url: bunnyUpload.hlsUrl,
