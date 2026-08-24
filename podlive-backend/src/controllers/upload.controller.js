@@ -48,8 +48,7 @@ const createBunnyVideoFile = async (videoId, hlsUrl) => {
 
 const isBunnyVideoReady = (bunnyVideo) => (
     bunnyVideo?.encodeProgress >= 100 ||
-    bunnyVideo?.status === 4 ||
-    Boolean(bunnyVideo?.availableResolutions)
+    bunnyVideo?.status === 4
 );
 
 const isBunnyVideoFailed = (bunnyVideo) => [5, 6].includes(bunnyVideo?.status);

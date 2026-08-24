@@ -69,7 +69,7 @@ const refreshBunnyVideoStatus = async (session) => {
         if (!bunnyVideoId) return session;
 
         const bunnyVideo = await bunnyService.getVideo(bunnyVideoId);
-        const isReady = bunnyVideo?.encodeProgress >= 100 || bunnyVideo?.status === 4 || Boolean(bunnyVideo?.availableResolutions);
+        const isReady = bunnyVideo?.encodeProgress >= 100 || bunnyVideo?.status === 4;
         const isFailed = [5, 6].includes(bunnyVideo?.status);
         if (!isReady && !isFailed) return session;
 

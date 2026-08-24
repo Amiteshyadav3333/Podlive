@@ -227,11 +227,19 @@ function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, h
         if (!video || !url) return;
 
         let hls: Hls;
+        let retryTimer: ReturnType<typeof setTimeout> | undefined;
+        let disposed = false;
 
         if (Hls.isSupported() && url.includes('.m3u8')) {
             hls = new Hls({
                 maxBufferLength: 30,
                 maxMaxBufferLength: 60,
+                manifestLoadingMaxRetry: 12,
+                levelLoadingMaxRetry: 12,
+                fragLoadingMaxRetry: 12,
+                manifestLoadingRetryDelay: 3000,
+                levelLoadingRetryDelay: 3000,
+                fragLoadingRetryDelay: 3000,
             });
             hls.loadSource(url);
             hls.attachMedia(video);
@@ -244,6 +252,18 @@ function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, h
                 setCurrentQuality(hls.currentLevel);
             });
 
+            hls.on(Hls.Events.ERROR, function (_event, data) {
+                if (!data.fatal || disposed) return;
+                if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+                    if (retryTimer) clearTimeout(retryTimer);
+                    retryTimer = setTimeout(() => {
+                        if (!disposed) hls.loadSource(url);
+                    }, 5000);
+                } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+                    hls.recoverMediaError();
+                }
+            });
+
             setHlsInstance(hls);
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
             video.src = url;
@@ -253,6 +273,8 @@ function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, h
         }
 
         return () => {
+            disposed = true;
+            if (retryTimer) clearTimeout(retryTimer);
             if (hls) {
                 hls.destroy();
             }
@@ -263,7 +285,9 @@ function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, h
         const video = videoRef.current;
         if (!video) return;
         if (video.paused) {
-            video.play();
+            video.play().catch((error) => {
+                if (error?.name !== 'AbortError') console.error('Video playback failed:', error);
+            });
         } else {
             video.pause();
         }
@@ -482,7 +506,6 @@ function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, h
 
             <video
                 ref={videoRef}
-                autoPlay
                 crossOrigin="anonymous"
                 className="w-full h-full object-contain cursor-pointer"
                 poster={poster}

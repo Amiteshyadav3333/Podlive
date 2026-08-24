@@ -81,7 +81,14 @@ export default function SocketProvider({ children }: { children: React.ReactNode
         const token = localStorage.getItem('accessToken');
         const userData = localStorage.getItem('user');
 
-        const newSocket = io(getSocketUrl());
+        const newSocket = io(getSocketUrl(), {
+            transports: ['polling'],
+            upgrade: false,
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000,
+            timeout: 20000
+        });
 
         newSocket.on('connect', () => {
             const currentUserData = localStorage.getItem('user');
