@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Radio, AlertCircle, Loader2, CheckCircle2, Mic, Camera, Wifi } from "lucide-react";
+import { Radio, AlertCircle, Loader2, CheckCircle2, Mic, Camera, Wifi, Globe2, Lock, Link2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { buildApiUrl } from "@/lib/api";
 import DashboardSidebar from "@/components/DashboardSidebar";
@@ -10,7 +10,8 @@ const CATEGORIES = ["Technology", "Music", "Comedy", "Education", "Finance", "Ga
 
 export default function SetupPage() {
   const router = useRouter();
-  const [formData, setFormData] = useState({ title: "", description: "", category: "Technology" });
+  const [formData, setFormData] = useState({ title: "", description: "", category: "Technology", visibility: "public", brand_color: "#7C3AED", audience_mode: "everyone", replay_enabled: true, chat_enabled: true, moderation_enabled: true, dvr_enabled: true, low_latency: true, studio_config: { layout: "speaker", reactions: true, questions: true, polls: true, guestRequests: true } });
+  const [allowedHandle, setAllowedHandle] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -27,6 +28,18 @@ export default function SetupPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to start session.");
+      if (formData.visibility === "private") {
+        const inviteRes = await fetch(buildApiUrl(`/api/live/${data.session.id}/access-invites`), {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify(allowedHandle.trim() ? { handle: allowedHandle.replace(/^@/, "") } : {})
+        });
+        const invite = await inviteRes.json();
+        if (!inviteRes.ok) throw new Error(invite.error || "Private invite could not be created.");
+        const joinUrl = `${window.location.origin}/live/${data.session.id}?invite=${invite.token}`;
+        await navigator.clipboard.writeText(joinUrl);
+        sessionStorage.setItem(`privateInvite:${data.session.id}`, joinUrl);
+      }
       router.push(`/live/${data.session.id}`);
     } catch (err: any) {
       setError(err.message);
@@ -76,6 +89,22 @@ export default function SetupPage() {
                       placeholder="E.g., Tech Talk Episode 12"
                       className="w-full bg-zinc-900/60 border border-white/[0.08] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500/70 focus:bg-zinc-900 transition-all text-white placeholder:text-zinc-600"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Who can join?</label>
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      <button onClick={() => setFormData({ ...formData, visibility: "public" })} className={`p-4 rounded-xl border text-left flex gap-3 ${formData.visibility === "public" ? "border-indigo-400 bg-indigo-500/10" : "border-white/[.08] bg-zinc-900/50"}`}><Globe2 className="w-5 h-5 text-indigo-400"/><span><b className="block text-sm">Public podcast</b><small className="text-zinc-500">Everyone can watch</small></span></button>
+                      <button onClick={() => setFormData({ ...formData, visibility: "private" })} className={`p-4 rounded-xl border text-left flex gap-3 ${formData.visibility === "private" ? "border-violet-400 bg-violet-500/10" : "border-white/[.08] bg-zinc-900/50"}`}><Lock className="w-5 h-5 text-violet-400"/><span><b className="block text-sm">Private podcast</b><small className="text-zinc-500">Approved link only</small></span></button>
+                    </div>
+                  </div>
+                  {formData.visibility === "private" && <div className="rounded-2xl p-4 border border-violet-400/20 bg-violet-500/[.06]"><label className="block text-xs font-semibold text-violet-300 uppercase tracking-wider mb-2">Lock invite to account (optional)</label><div className="relative"><Link2 className="absolute left-3 top-3.5 w-4 h-4 text-zinc-500"/><input value={allowedHandle} onChange={e => setAllowedHandle(e.target.value)} placeholder="@username — leave empty to approve first user" className="w-full bg-zinc-900/70 border border-white/[.08] rounded-xl pl-10 pr-4 py-3 text-sm outline-none focus:border-violet-400"/></div><p className="text-[11px] text-zinc-500 mt-2">A secure one-person invite link will be copied when the podcast starts.</p></div>}
+
+                  <div className="rounded-2xl border border-white/[.08] p-5 space-y-5">
+                    <div><h3 className="font-bold">Live experience</h3><p className="text-xs text-zinc-500">Customize how your studio looks and how viewers participate.</p></div>
+                    <div className="grid sm:grid-cols-2 gap-4"><label><span className="block text-xs font-semibold text-zinc-400 mb-2">Brand color</span><div className="flex gap-2"><input type="color" value={formData.brand_color} onChange={e=>setFormData({...formData,brand_color:e.target.value})} className="w-12 h-11"/><input value={formData.brand_color} onChange={e=>setFormData({...formData,brand_color:e.target.value})} className="flex-1 bg-zinc-900 border border-white/[.08] rounded-xl px-3 text-sm"/></div></label><label><span className="block text-xs font-semibold text-zinc-400 mb-2">Stage layout</span><select value={formData.studio_config.layout} onChange={e=>setFormData({...formData,studio_config:{...formData.studio_config,layout:e.target.value}})} className="w-full h-11 bg-zinc-900 border border-white/[.08] rounded-xl px-3 text-sm"><option value="speaker">Focus speaker</option><option value="grid">Guest grid</option><option value="interview">Interview</option><option value="classroom">Classroom</option></select></label></div>
+                    <div className="grid sm:grid-cols-2 gap-3">{[["chat_enabled","Live chat"],["moderation_enabled","Auto moderation"],["replay_enabled","Save replay"],["low_latency","Low latency"]].map(([key,label])=><button key={key} onClick={()=>setFormData({...formData,[key]:!(formData as any)[key]})} className="flex justify-between items-center p-3 rounded-xl bg-zinc-900/70 border border-white/[.06] text-sm"><span>{label}</span><span className={`w-9 h-5 rounded-full p-0.5 ${(formData as any)[key]?'bg-indigo-500':'bg-zinc-700'}`}><span className={`block w-4 h-4 rounded-full bg-white transition ${(formData as any)[key]?'translate-x-4':''}`}/></span></button>)}</div>
+                    <div><p className="text-xs font-semibold text-zinc-400 mb-2">Audience tools</p><div className="flex flex-wrap gap-2">{[["reactions","Reactions"],["questions","Q&A"],["polls","Polls"],["guestRequests","Guest requests"]].map(([key,label])=><button key={key} onClick={()=>setFormData({...formData,studio_config:{...formData.studio_config,[key]:!(formData.studio_config as any)[key]}})} className={`px-3 py-2 rounded-full text-xs border ${(formData.studio_config as any)[key]?'border-indigo-400 bg-indigo-500/10 text-indigo-300':'border-white/10 text-zinc-500'}`}>{label}</button>)}</div></div>
                   </div>
 
                   <div>

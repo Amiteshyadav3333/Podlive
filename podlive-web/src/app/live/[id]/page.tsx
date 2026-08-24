@@ -1338,7 +1338,8 @@ export default function LiveRoom() {
             if (lsToken) {
                 try {
                     // Logged-in user: get proper token (host or viewer)
-                    const tokenAttempt = await axios.get(buildApiUrl(`/api/live/${id}/token`), {
+                    const privateInvite = new URLSearchParams(window.location.search).get("invite");
+                    const tokenAttempt = await axios.get(buildApiUrl(`/api/live/${id}/token${privateInvite ? `?invite=${encodeURIComponent(privateInvite)}` : ""}`), {
                         headers: { Authorization: `Bearer ${lsToken}` },
                     });
                     setToken(tokenAttempt.data.token);

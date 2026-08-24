@@ -60,6 +60,68 @@ const getHostOwnedSession = async (sessionId, userId) => {
     return session;
 };
 
+const hashInviteToken = (token) => crypto.createHash('sha256').update(String(token)).digest('hex');
+
+const redeemPrivateInvite = async (session, userId, rawToken) => {
+    if (session.host_user_id === userId) return true;
+    if (!userId || !rawToken) return false;
+    const invite = await prisma.liveAccessInvite.findUnique({ where: { token_hash: hashInviteToken(rawToken) } });
+    if (!invite || invite.session_id !== session.id || invite.revoked_at || (invite.expires_at && invite.expires_at <= new Date())) return false;
+    if (invite.allowed_user_id && invite.allowed_user_id !== userId) return false;
+    if (invite.redeemed_by && invite.redeemed_by !== userId) return false;
+    if (!invite.redeemed_by && invite.use_count >= invite.max_uses) return false;
+    if (!invite.redeemed_by) {
+        await prisma.liveAccessInvite.update({ where: { id: invite.id }, data: { redeemed_by: userId, use_count: { increment: 1 } } });
+    }
+    return true;
+};
+
+exports.createAccessInvite = async (req, res) => {
+    try {
+        const session = await getHostOwnedSession(req.params.id, req.user.id);
+        if (!session) return res.status(404).json({ error: 'Live session not found' });
+        if (session.visibility !== 'private') return res.status(409).json({ error: 'Invite links are only needed for private podcasts' });
+        const rawToken = crypto.randomBytes(32).toString('base64url');
+        const expiresAt = req.body.expiresAt ? new Date(req.body.expiresAt) : null;
+        if (expiresAt && Number.isNaN(expiresAt.getTime())) return res.status(400).json({ error: 'Invalid expiresAt' });
+        let allowedUserId = req.body.userId || null;
+        if (!allowedUserId && req.body.handle) {
+            const user = await prisma.user.findUnique({ where: { unique_handle: String(req.body.handle).replace(/^@/, '') } });
+            if (!user) return res.status(404).json({ error: 'Allowed user not found' });
+            allowedUserId = user.id;
+        }
+        const invite = await prisma.liveAccessInvite.create({
+            data: { session_id: session.id, token_hash: hashInviteToken(rawToken), created_by: req.user.id, allowed_user_id: allowedUserId, max_uses: 1, expires_at: expiresAt }
+        });
+        res.status(201).json({ invite: { ...invite, token_hash: undefined }, token: rawToken, joinPath: `/live/${session.id}?invite=${rawToken}` });
+    } catch (error) {
+        console.error('[Live] create access invite error:', error);
+        res.status(500).json({ error: 'Failed to create private live invite' });
+    }
+};
+
+exports.listAccessInvites = async (req, res) => {
+    try {
+        const session = await getHostOwnedSession(req.params.id, req.user.id);
+        if (!session) return res.status(404).json({ error: 'Live session not found' });
+        const invites = await prisma.liveAccessInvite.findMany({ where: { session_id: session.id }, select: { id: true, allowed_user_id: true, redeemed_by: true, use_count: true, max_uses: true, expires_at: true, revoked_at: true, created_at: true }, orderBy: { created_at: 'desc' } });
+        res.json({ invites });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch private live invites' });
+    }
+};
+
+exports.revokeAccessInvite = async (req, res) => {
+    try {
+        const session = await getHostOwnedSession(req.params.id, req.user.id);
+        if (!session) return res.status(404).json({ error: 'Live session not found' });
+        await prisma.liveAccessInvite.updateMany({ where: { id: req.params.inviteId, session_id: session.id }, data: { revoked_at: new Date() } });
+        res.json({ message: 'Private live invite revoked' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to revoke private live invite' });
+    }
+};
+
 exports.createLiveSession = async (req, res) => {
     try {
         const {
@@ -73,6 +135,10 @@ exports.createLiveSession = async (req, res) => {
             low_latency = true,
             chat_enabled = true,
             moderation_enabled = true
+            , brand_color = '#7C3AED'
+            , audience_mode = 'everyone'
+            , replay_enabled = true
+            , studio_config = null
         } = req.body;
         const host_user_id = req.user.id;
 
@@ -101,6 +167,10 @@ exports.createLiveSession = async (req, res) => {
                 low_latency,
                 chat_enabled,
                 moderation_enabled,
+                brand_color,
+                audience_mode,
+                replay_enabled,
+                studio_config,
                 started_at: shouldStartNow ? new Date() : null,
             }
         });
@@ -279,7 +349,7 @@ exports.getViewerToken = async (req, res) => {
             });
         }
 
-        if (session.visibility === 'private' && session.host_user_id !== userId) {
+        if (session.visibility === 'private' && !await redeemPrivateInvite(session, userId, req.query.invite)) {
             return res.status(403).json({ error: 'This live stream is private' });
         }
 
@@ -752,7 +822,7 @@ exports.getObsConfig = async (req, res) => {
 exports.updateLiveSettings = async (req, res) => {
     try {
         const { id } = req.params;
-        const { title, description, category, visibility, scheduled_at, chat_enabled, moderation_enabled, dvr_enabled, low_latency } = req.body;
+        const { title, description, category, visibility, scheduled_at, chat_enabled, moderation_enabled, dvr_enabled, low_latency, brand_color, audience_mode, replay_enabled, studio_config } = req.body;
 
         if (visibility && !allowedVisibility.has(visibility)) {
             return res.status(400).json({ error: 'visibility must be public, private or unlisted' });
@@ -775,6 +845,10 @@ exports.updateLiveSettings = async (req, res) => {
                 ...(moderation_enabled !== undefined ? { moderation_enabled } : {}),
                 ...(dvr_enabled !== undefined ? { dvr_enabled } : {}),
                 ...(low_latency !== undefined ? { low_latency } : {})
+                , ...(brand_color !== undefined ? { brand_color } : {})
+                , ...(audience_mode !== undefined ? { audience_mode } : {})
+                , ...(replay_enabled !== undefined ? { replay_enabled } : {})
+                , ...(studio_config !== undefined ? { studio_config } : {})
             }
         });
 

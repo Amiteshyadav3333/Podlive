@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { UploadCloud, Video, Loader2, CheckCircle2, AlertCircle } from "lucide-react";
+import { UploadCloud, Video, Loader2, CheckCircle2, AlertCircle, Globe2, Lock } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { buildApiUrl } from "@/lib/api";
 import DashboardSidebar from "@/components/DashboardSidebar";
@@ -10,7 +10,7 @@ const CATEGORIES = ["Technology", "Music", "Comedy", "Education", "Finance", "Ga
 
 export default function UploadPage() {
   const router = useRouter();
-  const [formData, setFormData] = useState({ title: "", description: "", category: "Technology" });
+  const [formData, setFormData] = useState({ title: "", description: "", category: "Technology", visibility: "public" });
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -29,6 +29,7 @@ export default function UploadPage() {
       data.append("title", formData.title);
       data.append("description", formData.description);
       data.append("category", formData.category === "Other (Custom)" ? customCategory : formData.category);
+      data.append("visibility", formData.visibility);
       data.append("video", videoFile);
 
       // Simulate progress (XHR for real progress tracking)
@@ -97,6 +98,7 @@ export default function UploadPage() {
                     className="w-full bg-zinc-900/60 border border-white/[0.08] rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500/70 transition-all text-white placeholder:text-zinc-600"
                   />
                 </div>
+                <div><label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Visibility</label><div className="grid sm:grid-cols-2 gap-3"><button onClick={()=>setFormData({...formData,visibility:'public'})} className={`p-4 rounded-xl border text-left flex gap-3 ${formData.visibility==='public'?'border-indigo-400 bg-indigo-500/10':'border-white/[.08]'}`}><Globe2 className="w-5 h-5 text-indigo-400"/><span><b className="text-sm block">Public</b><small className="text-zinc-500">YouTube-style discovery for comedy, music and more</small></span></button><button onClick={()=>setFormData({...formData,visibility:'private'})} className={`p-4 rounded-xl border text-left flex gap-3 ${formData.visibility==='private'?'border-violet-400 bg-violet-500/10':'border-white/[.08]'}`}><Lock className="w-5 h-5 text-violet-400"/><span><b className="text-sm block">Private</b><small className="text-zinc-500">Only approved accounts can watch</small></span></button></div></div>
 
                 <div>
                   <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Description</label>

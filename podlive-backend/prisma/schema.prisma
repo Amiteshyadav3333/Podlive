@@ -29,12 +29,20 @@ model User {
   cheetchat_user_id String? @unique
 
   // Relations
-  profile          Profile?
-  videos           Video[]
-  upload_sessions  UploadSession[]
-  hosted_sessions  LiveSession[]   @relation("HostSessions")
-  sent_invites     StageInvite[]   @relation("HostInvites")
-  received_invites StageInvite[]   @relation("InviteeInvites")
+  profile               Profile?
+  videos                Video[]
+  upload_sessions       UploadSession[]
+  hosted_sessions       LiveSession[]       @relation("HostSessions")
+  sent_invites          StageInvite[]       @relation("HostInvites")
+  received_invites      StageInvite[]       @relation("InviteeInvites")
+  channel               Channel?
+  video_access          VideoAccessGrant[]
+  created_live_invites  LiveAccessInvite[]  @relation("LiveInviteCreator")
+  redeemed_live_invites LiveAccessInvite[]  @relation("LiveInviteRedeemer")
+  channel_memberships   ChannelMembership[] @relation("MembershipMember")
+  courses               Course[]
+  course_enrollments    CourseEnrollment[]
+  course_orders         CourseOrder[]
 
   followers      Follows[]       @relation("UserFollowers")
   following      Follows[]       @relation("UserFollowing")
@@ -112,14 +120,19 @@ model LiveSession {
   is_processing      Boolean   @default(false)
   created_at         DateTime  @default(now())
   updated_at         DateTime  @updatedAt
+  studio_config      Json?
+  brand_color        String    @default("#7C3AED")
+  audience_mode      String    @default("everyone")
+  replay_enabled     Boolean   @default(true)
 
   // Relations
-  host          User          @relation("HostSessions", fields: [host_user_id], references: [id])
-  invites       StageInvite[]
-  chat_messages ChatMessage[]
-  likes         Like[]
-  subtitles     Subtitle[]
-  video         Video?
+  host           User               @relation("HostSessions", fields: [host_user_id], references: [id])
+  invites        StageInvite[]
+  chat_messages  ChatMessage[]
+  likes          Like[]
+  subtitles      Subtitle[]
+  video          Video?
+  access_invites LiveAccessInvite[]
 
   @@index([status, visibility, started_at])
   @@index([host_user_id, status])
@@ -178,9 +191,9 @@ model Video {
   created_at        DateTime  @default(now())
   updated_at        DateTime  @updatedAt
 
-  owner          User            @relation(fields: [owner_id], references: [id], onDelete: Cascade)
-  liveSession    LiveSession?    @relation(fields: [live_session_id], references: [id])
-  category       Category?       @relation(fields: [category_id], references: [id])
+  owner          User               @relation(fields: [owner_id], references: [id], onDelete: Cascade)
+  liveSession    LiveSession?       @relation(fields: [live_session_id], references: [id])
+  category       Category?          @relation(fields: [category_id], references: [id])
   files          VideoFile[]
   thumbnails     Thumbnail[]
   comments       Comment[]
@@ -191,9 +204,215 @@ model Video {
   reports        Report[]
   analytics      Analytics[]
   subtitles      Subtitle[]
+  access_grants  VideoAccessGrant[]
 
   @@index([owner_id, upload_date])
   @@index([visibility, processing_status])
+}
+
+model Channel {
+  id                 String   @id @default(uuid())
+  owner_id           String   @unique
+  name               String
+  handle             String   @unique
+  description        String?
+  avatar_url         String?
+  banner_url         String?
+  trailer_video_id   String?
+  primary_color      String   @default("#7C3AED")
+  accent_color       String   @default("#EC4899")
+  layout             Json?
+  social_links       Json?
+  membership_enabled Boolean  @default(false)
+  created_at         DateTime @default(now())
+  updated_at         DateTime @updatedAt
+
+  owner            User                @relation(fields: [owner_id], references: [id], onDelete: Cascade)
+  membership_tiers MembershipTier[]
+  memberships      ChannelMembership[]
+}
+
+model VideoAccessGrant {
+  id         String    @id @default(uuid())
+  video_id   String
+  user_id    String
+  granted_by String
+  created_at DateTime  @default(now())
+  expires_at DateTime?
+
+  video Video @relation(fields: [video_id], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([video_id, user_id])
+  @@index([user_id, expires_at])
+}
+
+model LiveAccessInvite {
+  id              String    @id @default(uuid())
+  session_id      String
+  token_hash      String    @unique
+  created_by      String
+  allowed_user_id String?
+  redeemed_by     String?
+  max_uses        Int       @default(1)
+  use_count       Int       @default(0)
+  expires_at      DateTime?
+  revoked_at      DateTime?
+  created_at      DateTime  @default(now())
+
+  session  LiveSession @relation(fields: [session_id], references: [id], onDelete: Cascade)
+  creator  User        @relation("LiveInviteCreator", fields: [created_by], references: [id], onDelete: Cascade)
+  redeemer User?       @relation("LiveInviteRedeemer", fields: [redeemed_by], references: [id], onDelete: SetNull)
+
+  @@index([session_id, revoked_at])
+}
+
+model MembershipTier {
+  id             String   @id @default(uuid())
+  channel_id     String
+  name           String
+  description    String?
+  price_amount   Int
+  currency       String   @default("INR")
+  billing_period String   @default("monthly")
+  benefits       Json?
+  badge_url      String?
+  is_active      Boolean  @default(true)
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+
+  channel     Channel             @relation(fields: [channel_id], references: [id], onDelete: Cascade)
+  memberships ChannelMembership[]
+
+  @@index([channel_id, is_active])
+}
+
+model ChannelMembership {
+  id                 String    @id @default(uuid())
+  channel_id         String
+  tier_id            String
+  member_id          String
+  status             String    @default("active")
+  provider           String?
+  provider_reference String?
+  started_at         DateTime  @default(now())
+  renews_at          DateTime?
+  ended_at           DateTime?
+
+  channel Channel        @relation(fields: [channel_id], references: [id], onDelete: Cascade)
+  tier    MembershipTier @relation(fields: [tier_id], references: [id], onDelete: Restrict)
+  member  User           @relation("MembershipMember", fields: [member_id], references: [id], onDelete: Cascade)
+
+  @@unique([channel_id, member_id])
+  @@index([member_id, status])
+}
+
+model Course {
+  id                   String   @id @default(uuid())
+  instructor_id        String
+  title                String
+  slug                 String   @unique
+  subtitle             String?
+  description          String?
+  thumbnail_url        String?
+  trailer_url          String?
+  category             String?
+  level                String   @default("all_levels")
+  language             String   @default("Hindi")
+  price_amount         Int      @default(0)
+  compare_price_amount Int?
+  currency             String   @default("INR")
+  status               String   @default("draft")
+  visibility           String   @default("public")
+  outcomes             Json?
+  requirements         Json?
+  theme                Json?
+  certificate_enabled  Boolean  @default(true)
+  discussion_enabled   Boolean  @default(true)
+  enrollment_count     Int      @default(0)
+  rating_average       Float    @default(0)
+  rating_count         Int      @default(0)
+  created_at           DateTime @default(now())
+  updated_at           DateTime @updatedAt
+
+  instructor  User               @relation(fields: [instructor_id], references: [id], onDelete: Cascade)
+  sections    CourseSection[]
+  enrollments CourseEnrollment[]
+  orders      CourseOrder[]
+
+  @@index([instructor_id, status])
+  @@index([status, visibility, category])
+}
+
+model CourseSection {
+  id          String         @id @default(uuid())
+  course_id   String
+  title       String
+  description String?
+  position    Int            @default(0)
+  created_at  DateTime       @default(now())
+  updated_at  DateTime       @updatedAt
+  course      Course         @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  lessons     CourseLesson[]
+
+  @@index([course_id, position])
+}
+
+model CourseLesson {
+  id               String        @id @default(uuid())
+  section_id       String
+  title            String
+  description      String?
+  kind             String        @default("video")
+  video_url        String?
+  live_session_id  String?
+  resource_url     String?
+  duration_seconds Int?
+  position         Int           @default(0)
+  is_preview       Boolean       @default(false)
+  is_published     Boolean       @default(false)
+  content          Json?
+  created_at       DateTime      @default(now())
+  updated_at       DateTime      @updatedAt
+  section          CourseSection @relation(fields: [section_id], references: [id], onDelete: Cascade)
+
+  @@index([section_id, position])
+}
+
+model CourseEnrollment {
+  id                String    @id @default(uuid())
+  course_id         String
+  user_id           String
+  status            String    @default("active")
+  progress_percent  Float     @default(0)
+  completed_lessons String[]  @default([])
+  enrolled_at       DateTime  @default(now())
+  completed_at      DateTime?
+  expires_at        DateTime?
+  course            Course    @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  user              User      @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([course_id, user_id])
+  @@index([user_id, status])
+}
+
+model CourseOrder {
+  id                  String    @id @default(uuid())
+  course_id           String
+  buyer_id            String
+  amount              Int
+  currency            String    @default("INR")
+  status              String    @default("pending")
+  payment_provider    String?
+  provider_order_id   String?
+  provider_payment_id String?
+  created_at          DateTime  @default(now())
+  paid_at             DateTime?
+  course              Course    @relation(fields: [course_id], references: [id], onDelete: Restrict)
+  buyer               User      @relation(fields: [buyer_id], references: [id], onDelete: Restrict)
+
+  @@index([buyer_id, status])
+  @@index([course_id, status])
 }
 
 model VideoFile {

@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import {
   Video, Play, Loader2, Trash2, Eye, Clock, TrendingUp,
-  MoreVertical, Image as ImageIcon, Upload, X, Subtitles, CheckCircle2, AlertCircle
+  MoreVertical, Image as ImageIcon, Upload, X, Subtitles, CheckCircle2, AlertCircle, UserRoundCheck, Lock
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { buildApiUrl } from "@/lib/api";
@@ -257,6 +257,9 @@ export default function Recordings() {
                     {rec.is_processing && (
                       <div className="absolute bottom-2 left-2 bg-amber-500 text-black text-[10px] font-bold px-2 py-0.5 rounded">Processing</div>
                     )}
+                    <div className={`absolute top-2 right-2 text-[10px] font-bold px-2 py-1 rounded-full backdrop-blur ${rec.visibility === "private" ? "bg-violet-500/90" : "bg-black/70"}`}>
+                      {rec.visibility === "private" ? <span className="flex items-center gap-1"><Lock className="w-3 h-3"/> Private</span> : "Public"}
+                    </div>
 
                     {/* Category badge */}
                     {rec.category && (
@@ -300,6 +303,13 @@ export default function Recordings() {
                       {/* Dropdown menu */}
                       {menuOpenId === rec.id && (
                         <div className="absolute right-0 top-8 z-50 w-48 bg-zinc-900/95 border border-white/10 rounded-xl shadow-2xl backdrop-blur-md overflow-hidden animate-fade-in">
+                          <button
+                            onClick={() => { if(rec.video?.id) router.push(`/dashboard/videos/${rec.video.id}/access`); setMenuOpenId(null); }}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-zinc-200 hover:bg-white/5 transition-colors text-left"
+                          >
+                            <UserRoundCheck className="w-4 h-4 text-violet-400" />
+                            Privacy & access
+                          </button>
                           <button
                             onClick={() => { router.push(`/watch/${rec.id}`); setMenuOpenId(null); }}
                             className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-zinc-200 hover:bg-white/5 transition-colors text-left"

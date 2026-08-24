@@ -59,9 +59,12 @@ router.delete('/playlists/:playlistId/videos/:videoId', authMiddleware, videoCon
 router.post('/subscriptions/:creatorId', authMiddleware, videoController.toggleSubscription);
 router.get('/subscriptions/:creatorId/status', authMiddleware, videoController.getSubscriptionStatus);
 
-router.get('/:id', authMiddleware, videoController.getVideo);
+router.get('/:id', authMiddleware.optionalAuth, videoController.getVideo);
 router.patch('/:id', authMiddleware, videoController.updateVideo);
 router.delete('/:id', authMiddleware, videoController.deleteVideo);
+router.get('/:id/access', authMiddleware, videoController.listAccessGrants);
+router.post('/:id/access', authMiddleware, videoController.grantAccess);
+router.delete('/:id/access/:userId', authMiddleware, videoController.revokeAccess);
 router.post('/:id/view', authMiddleware, videoController.recordView);
 router.post('/:id/reaction', authMiddleware, videoController.reactToVideo);
 router.post('/:id/history', authMiddleware, videoController.updateHistory);

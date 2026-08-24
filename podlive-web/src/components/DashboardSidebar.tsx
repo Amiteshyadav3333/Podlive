@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Mic, Home, Radio, UploadCloud, Video, Users, Settings, LogOut, ChevronRight } from "lucide-react";
+import { Mic, Home, Radio, UploadCloud, Video, Users, Settings, LogOut, ChevronRight, Palette, Crown, BookOpen } from "lucide-react";
 
 const NAV = [
   { href: "/dashboard", icon: Home, label: "Home" },
@@ -11,6 +11,9 @@ const NAV = [
   { href: "/dashboard/upload", icon: UploadCloud, label: "Upload" },
   { href: "/dashboard/recordings", icon: Video, label: "Videos" },
   { href: "/dashboard/audience", icon: Users, label: "Audience" },
+  { href: "/dashboard/channel", icon: Palette, label: "Channel" },
+  { href: "/dashboard/memberships", icon: Crown, label: "Memberships" },
+  { href: "/dashboard/courses", icon: BookOpen, label: "Courses" },
 ];
 
 const MOBILE_NAV = [
@@ -19,6 +22,7 @@ const MOBILE_NAV = [
   { href: "/dashboard/upload", icon: UploadCloud, label: "Upload" },
   { href: "/dashboard/recordings", icon: Video, label: "Video" },
   { href: "/dashboard/audience", icon: Users, label: "Audience" },
+  { href: "/dashboard/channel", icon: Palette, label: "Channel" },
   { href: "/dashboard/settings", icon: Settings, label: "Settings" },
 ];
 

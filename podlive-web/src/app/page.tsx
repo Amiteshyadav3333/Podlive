@@ -218,6 +218,10 @@ export default function Home() {
             </div>
           </form>
 
+          <Link href="/courses" className="hidden md:flex items-center gap-2 text-sm font-semibold text-zinc-300 hover:text-cyan-300 transition-colors px-3">
+            Courses
+          </Link>
+
           {/* Auth */}
           <div className="flex items-center gap-2 shrink-0">
             {user ? (

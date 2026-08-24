@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 
 const prisma = new PrismaClient();
+const publicUserSelect = { id: true, unique_handle: true, display_name: true, avatar_url: true, is_verified: true };
 
 const toInt = (value, fallback) => {
     const parsed = Number(value);
@@ -42,9 +43,14 @@ const publicVideoWhere = {
     processing_status: { in: ['ready', 'processing'] }
 };
 
-const canAccessVideo = (video, userId) => {
+const canAccessVideo = async (video, userId) => {
     if (!video) return false;
-    return video.visibility === 'public' || video.visibility === 'unlisted' || video.owner_id === userId;
+    if (video.visibility === 'public' || video.visibility === 'unlisted' || video.owner_id === userId) return true;
+    if (!userId || video.visibility !== 'private') return false;
+    const grant = await prisma.videoAccessGrant.findUnique({
+        where: { video_id_user_id: { video_id: video.id, user_id: userId } }
+    });
+    return Boolean(grant && (!grant.expires_at || grant.expires_at > new Date()));
 };
 
 const getClientHash = (req) => {
@@ -125,7 +131,7 @@ exports.getVideo = async (req, res) => {
             }
         });
 
-        if (!canAccessVideo(video, req.user?.id)) {
+        if (!await canAccessVideo(video, req.user?.id)) {
             return res.status(404).json({ error: 'Video not found' });
         }
 
@@ -164,6 +170,9 @@ exports.updateVideo = async (req, res) => {
         }
 
         const { title, description, tags, thumbnail, visibility, language, location, category } = req.body;
+        if (visibility !== undefined && !['public', 'private', 'unlisted', 'scheduled'].includes(visibility)) {
+            return res.status(400).json({ error: 'visibility must be public, private, unlisted or scheduled' });
+        }
         const data = {
             ...(title !== undefined ? { title: String(title).trim() } : {}),
             ...(description !== undefined ? { description: description ? String(description).trim() : null } : {}),
@@ -228,7 +237,7 @@ exports.deleteVideo = async (req, res) => {
 exports.recordView = async (req, res) => {
     try {
         const video = await prisma.video.findUnique({ where: { id: req.params.id } });
-        if (!canAccessVideo(video, req.user?.id)) {
+        if (!await canAccessVideo(video, req.user?.id)) {
             return res.status(404).json({ error: 'Video not found' });
         }
 
@@ -287,7 +296,7 @@ exports.reactToVideo = async (req, res) => {
         }
 
         const video = await prisma.video.findUnique({ where: { id: req.params.id } });
-        if (!canAccessVideo(video, req.user.id)) {
+        if (!await canAccessVideo(video, req.user.id)) {
             return res.status(404).json({ error: 'Video not found' });
         }
 
@@ -348,7 +357,7 @@ exports.reactToVideo = async (req, res) => {
 exports.listComments = async (req, res) => {
     try {
         const video = await prisma.video.findUnique({ where: { id: req.params.id } });
-        if (!canAccessVideo(video, req.user?.id)) {
+        if (!await canAccessVideo(video, req.user?.id)) {
             return res.status(404).json({ error: 'Video not found' });
         }
 
@@ -420,7 +429,7 @@ exports.createComment = async (req, res) => {
         }
 
         const video = await prisma.video.findUnique({ where: { id: req.params.id } });
-        if (!canAccessVideo(video, req.user.id)) {
+        if (!await canAccessVideo(video, req.user.id)) {
             return res.status(404).json({ error: 'Video not found' });
         }
 
@@ -749,7 +758,7 @@ exports.addVideoToPlaylist = async (req, res) => {
         }
 
         const video = await prisma.video.findUnique({ where: { id: req.body.videoId } });
-        if (!canAccessVideo(video, req.user.id)) {
+        if (!await canAccessVideo(video, req.user.id)) {
             return res.status(404).json({ error: 'Video not found' });
         }
 
@@ -805,7 +814,7 @@ exports.removeVideoFromPlaylist = async (req, res) => {
 exports.updateHistory = async (req, res) => {
     try {
         const video = await prisma.video.findUnique({ where: { id: req.params.id } });
-        if (!canAccessVideo(video, req.user.id)) {
+        if (!await canAccessVideo(video, req.user.id)) {
             return res.status(404).json({ error: 'Video not found' });
         }
 
@@ -876,7 +885,7 @@ exports.reportVideo = async (req, res) => {
         }
 
         const video = await prisma.video.findUnique({ where: { id: req.params.id } });
-        if (!canAccessVideo(video, req.user.id)) {
+        if (!await canAccessVideo(video, req.user.id)) {
             return res.status(404).json({ error: 'Video not found' });
         }
 
@@ -929,6 +938,58 @@ exports.getCreatorAnalytics = async (req, res) => {
     } catch (error) {
         console.error('[Videos] analytics error:', error);
         res.status(500).json({ error: 'Failed to fetch analytics' });
+    }
+};
+
+exports.listAccessGrants = async (req, res) => {
+    try {
+        const video = await prisma.video.findUnique({ where: { id: req.params.id } });
+        if (!video || video.owner_id !== req.user.id) return res.status(404).json({ error: 'Video not found' });
+        const grants = await prisma.videoAccessGrant.findMany({
+            where: { video_id: video.id },
+            include: { user: { select: publicUserSelect } },
+            orderBy: { created_at: 'desc' }
+        });
+        res.json({ grants });
+    } catch (error) {
+        console.error('[Videos] list grants error:', error);
+        res.status(500).json({ error: 'Failed to fetch video permissions' });
+    }
+};
+
+exports.grantAccess = async (req, res) => {
+    try {
+        const video = await prisma.video.findUnique({ where: { id: req.params.id } });
+        if (!video || video.owner_id !== req.user.id) return res.status(404).json({ error: 'Video not found' });
+        if (video.visibility !== 'private') return res.status(409).json({ error: 'User permissions are only required for private videos' });
+        const user = await prisma.user.findFirst({
+            where: req.body.userId ? { id: req.body.userId } : { unique_handle: req.body.handle }
+        });
+        if (!user) return res.status(404).json({ error: 'User not found' });
+        if (user.id === video.owner_id) return res.status(400).json({ error: 'Owner already has access' });
+        const expiresAt = req.body.expiresAt ? new Date(req.body.expiresAt) : null;
+        if (expiresAt && Number.isNaN(expiresAt.getTime())) return res.status(400).json({ error: 'Invalid expiresAt' });
+        const grant = await prisma.videoAccessGrant.upsert({
+            where: { video_id_user_id: { video_id: video.id, user_id: user.id } },
+            create: { video_id: video.id, user_id: user.id, granted_by: req.user.id, expires_at: expiresAt },
+            update: { granted_by: req.user.id, expires_at: expiresAt }
+        });
+        res.status(201).json({ message: 'Private video access granted', grant });
+    } catch (error) {
+        console.error('[Videos] grant access error:', error);
+        res.status(500).json({ error: 'Failed to grant video access' });
+    }
+};
+
+exports.revokeAccess = async (req, res) => {
+    try {
+        const video = await prisma.video.findUnique({ where: { id: req.params.id } });
+        if (!video || video.owner_id !== req.user.id) return res.status(404).json({ error: 'Video not found' });
+        await prisma.videoAccessGrant.deleteMany({ where: { video_id: video.id, user_id: req.params.userId } });
+        res.json({ message: 'Private video access revoked' });
+    } catch (error) {
+        console.error('[Videos] revoke access error:', error);
+        res.status(500).json({ error: 'Failed to revoke video access' });
     }
 };
 
