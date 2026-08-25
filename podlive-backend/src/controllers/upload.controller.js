@@ -17,6 +17,16 @@ const ensureDir = (dir) => {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 };
 
+const getReceivedChunkIndexes = (dir, totalChunks) => {
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir)
+        .map((name) => /^(\d+)\.part$/.exec(name))
+        .filter(Boolean)
+        .map((match) => Number(match[1]))
+        .filter((index) => index >= 0 && index < totalChunks)
+        .sort((a, b) => a - b);
+};
+
 const parseTags = (tags) => {
     if (!tags) return [];
     if (Array.isArray(tags)) return tags.map((tag) => String(tag).trim()).filter(Boolean);
@@ -54,8 +64,8 @@ const isBunnyVideoReady = (bunnyVideo) => (
 const isBunnyVideoFailed = (bunnyVideo) => [5, 6].includes(bunnyVideo?.status);
 
 const syncBunnyProcessingStatus = async (videoId, bunnyVideoId, attempt = 1) => {
-    const maxAttempts = Number(process.env.BUNNY_STREAM_STATUS_SYNC_ATTEMPTS || 60);
-    const intervalMs = Number(process.env.BUNNY_STREAM_STATUS_SYNC_INTERVAL_MS || 30000);
+    const maxAttempts = Number(process.env.BUNNY_STREAM_STATUS_SYNC_ATTEMPTS || 360);
+    const intervalMs = Number(process.env.BUNNY_STREAM_STATUS_SYNC_INTERVAL_MS || 5000);
 
     if (!videoId || !bunnyVideoId || attempt > maxAttempts) return;
 
@@ -96,6 +106,9 @@ exports.initDirectUpload = async (req, res) => {
         const size = Number(fileSize);
         if (!title || !String(title).trim()) return res.status(400).json({ error: 'Title is required' });
         if (!Number.isFinite(size) || size <= 0) return res.status(400).json({ error: 'Valid fileSize is required' });
+        if (size > maxUploadSizeBytes) {
+            return res.status(413).json({ error: 'File too large', maxUploadSizeBytes });
+        }
         if (!['public', 'private', 'unlisted'].includes(visibility)) return res.status(400).json({ error: 'Invalid visibility' });
 
         const config = bunnyService.assertConfigured();
@@ -178,12 +191,82 @@ exports.initDirectUpload = async (req, res) => {
                 videoId: bunnyVideoId,
                 libraryId: String(config.libraryId),
                 expirationTime,
-                signature
-            }
+                signature,
+                // Ready-to-use TUS headers keep credentials out of the browser.
+                headers: {
+                    AuthorizationSignature: signature,
+                    AuthorizationExpire: String(expirationTime),
+                    VideoId: bunnyVideoId,
+                    LibraryId: String(config.libraryId)
+                },
+                metadata: {
+                    filetype: contentType || 'application/octet-stream',
+                    title: String(title).trim()
+                },
+                chunkSize: Number(process.env.BUNNY_TUS_CHUNK_SIZE_BYTES || 32 * 1024 * 1024),
+                retryDelays: [0, 3000, 5000, 10000, 20000, 60000]
+            },
+            uploadMode: 'direct-tus',
+            statusUrl: `/api/upload/direct/${result.uploadSession.id}/status`
         });
     } catch (error) {
         console.error('[DirectUpload] init error:', error);
         res.status(500).json({ error: 'Failed to prepare direct upload', details: error.message });
+    }
+};
+
+exports.getDirectUploadStatus = async (req, res) => {
+    try {
+        const upload = await prisma.uploadSession.findUnique({ where: { id: req.params.uploadId } });
+        if (!upload || upload.owner_id !== req.user.id) {
+            return res.status(404).json({ error: 'Upload not found' });
+        }
+
+        const bunnyVideoId = upload.r2_key?.startsWith('bunny:') ? upload.r2_key.slice(6) : null;
+        const videoId = upload.metadata?.videoId;
+        if (!bunnyVideoId || !videoId) {
+            return res.status(409).json({ error: 'Upload metadata is incomplete' });
+        }
+
+        const [bunnyVideo, playData] = await Promise.all([
+            bunnyService.getVideo(bunnyVideoId),
+            bunnyService.getVideoPlayData(bunnyVideoId).catch(() => null)
+        ]);
+        const ready = isBunnyVideoReady(bunnyVideo);
+        const failed = isBunnyVideoFailed(bunnyVideo);
+        const processingStatus = ready ? 'ready' : failed ? 'failed' : 'processing';
+
+        await prisma.video.update({
+            where: { id: videoId },
+            data: {
+                processing_status: processingStatus,
+                ...(ready && bunnyVideo.length ? { duration_seconds: bunnyVideo.length } : {}),
+                ...(ready && bunnyVideo.width && bunnyVideo.height
+                    ? { resolution: `${bunnyVideo.width}x${bunnyVideo.height}` }
+                    : {})
+            }
+        });
+
+        res.setHeader('Cache-Control', 'no-store');
+        res.json({
+            uploadId: upload.id,
+            videoId,
+            uploadStatus: upload.status,
+            processingStatus,
+            encodeProgress: Math.max(0, Math.min(100, Number(bunnyVideo.encodeProgress || 0))),
+            // Early-Play can make the original playable before every adaptive
+            // rendition finishes; use Bunny's play-data as the source of truth.
+            playable: Boolean(playData?.isPlayable || ready),
+            playlistPlayable: Boolean(playData?.isPlaylistPlayable || ready),
+            preferredPlaybackSource: playData?.preferredPlaybackSource || (ready ? 'Playlist' : 'None'),
+            playback: {
+                ...bunnyService.getPlaybackUrls(bunnyVideoId),
+                preferredUrl: playData?.videoPlaylistUrl || playData?.originalUrl || null
+            }
+        });
+    } catch (error) {
+        console.error('[DirectUpload] status error:', error);
+        res.status(502).json({ error: 'Failed to fetch video processing status' });
     }
 };
 
@@ -339,7 +422,8 @@ exports.initChunkUpload = async (req, res) => {
     try {
         const { originalName, contentType, totalSize, chunkSize, title, description, tags, category, visibility, language, location } = req.body;
         const size = Number(totalSize);
-        const chunk = Number(chunkSize || 8 * 1024 * 1024);
+        const configuredChunkSize = Number(process.env.UPLOAD_CHUNK_MAX_BYTES || 32 * 1024 * 1024);
+        const chunk = Number(chunkSize || configuredChunkSize);
 
         if (!originalName || !contentType || !size) {
             return res.status(400).json({ error: 'originalName, contentType and totalSize are required' });
@@ -349,6 +433,9 @@ exports.initChunkUpload = async (req, res) => {
                 error: 'File too large',
                 maxUploadSizeBytes
             });
+        }
+        if (!Number.isInteger(chunk) || chunk <= 0 || chunk > configuredChunkSize) {
+            return res.status(400).json({ error: `chunkSize must be between 1 and ${configuredChunkSize} bytes` });
         }
 
         const totalChunks = Math.ceil(size / chunk);
@@ -381,6 +468,7 @@ exports.initChunkUpload = async (req, res) => {
             chunkSize: chunk,
             totalChunks,
             receivedChunks: [],
+            recommendedParallelUploads: Number(process.env.UPLOAD_PARALLEL_CHUNKS || 4),
             maxUploadSizeBytes
         });
     } catch (error) {
@@ -421,7 +509,9 @@ exports.uploadChunk = async (req, res) => {
         const destination = path.join(dir, `${chunkIndex}.part`);
         fs.renameSync(req.file.path, destination);
 
-        const received = Array.from(new Set([...(session.received_chunks || []), chunkIndex])).sort((a, b) => a - b);
+        // The directory is the source of truth, so simultaneous chunk requests
+        // cannot overwrite each other's progress in a read-modify-write race.
+        const received = getReceivedChunkIndexes(dir, session.total_chunks);
         await prisma.uploadSession.update({
             where: { id: uploadId },
             data: {
@@ -450,12 +540,14 @@ exports.getChunkUploadStatus = async (req, res) => {
             return res.status(404).json({ error: 'Upload session not found' });
         }
 
+        const dir = path.join(chunkRoot, session.id);
+        const received = getReceivedChunkIndexes(dir, session.total_chunks);
         res.json({
             uploadId: session.id,
             status: session.status,
             totalChunks: session.total_chunks,
-            receivedChunks: session.received_chunks,
-            progress: Math.round(((session.received_chunks || []).length / session.total_chunks) * 100),
+            receivedChunks: received,
+            progress: Math.round((received.length / session.total_chunks) * 100),
             totalSize: session.total_size.toString(),
             updatedAt: session.updated_at
         });
@@ -504,7 +596,6 @@ exports.cancelChunkUpload = async (req, res) => {
 };
 
 exports.completeChunkUpload = async (req, res) => {
-    let assembledPath = null;
     try {
         const session = await prisma.uploadSession.findUnique({ where: { id: req.params.uploadId } });
         if (!session || session.owner_id !== req.user.id) {
@@ -514,7 +605,8 @@ exports.completeChunkUpload = async (req, res) => {
             return res.status(409).json({ error: `Upload session is ${session.status}` });
         }
 
-        const received = session.received_chunks || [];
+        const dir = path.join(chunkRoot, session.id);
+        const received = getReceivedChunkIndexes(dir, session.total_chunks);
         if (received.length !== session.total_chunks) {
             return res.status(409).json({
                 error: 'Upload is incomplete',
@@ -522,29 +614,24 @@ exports.completeChunkUpload = async (req, res) => {
             });
         }
 
-        const dir = path.join(chunkRoot, session.id);
-        assembledPath = path.join(dir, session.original_name.replace(/[^a-zA-Z0-9._-]/g, '_'));
-        const writeStream = fs.createWriteStream(assembledPath);
-
+        const chunkPaths = [];
+        let actualSize = 0;
         for (let index = 0; index < session.total_chunks; index++) {
             const chunkPath = path.join(dir, `${index}.part`);
             if (!fs.existsSync(chunkPath)) {
-                writeStream.destroy();
                 return res.status(409).json({ error: `Missing chunk ${index}` });
             }
-            await new Promise((resolve, reject) => {
-                const readStream = fs.createReadStream(chunkPath);
-                readStream.on('error', reject);
-                readStream.on('end', resolve);
-                readStream.pipe(writeStream, { end: false });
-            });
+            chunkPaths.push(chunkPath);
+            actualSize += fs.statSync(chunkPath).size;
+        }
+        if (actualSize !== Number(session.total_size)) {
+            return res.status(409).json({ error: 'Uploaded data size does not match the original file' });
         }
 
-        await new Promise((resolve) => writeStream.end(resolve));
-
         const metadata = session.metadata || {};
-        const bunnyUpload = await bunnyService.uploadVideoFile({
-            filePath: assembledPath,
+        const bunnyUpload = await bunnyService.uploadVideoChunks({
+            chunkPaths,
+            totalSize: actualSize,
             title: metadata.title || path.parse(session.original_name).name,
             contentType: session.content_type
         });
@@ -592,8 +679,6 @@ exports.completeChunkUpload = async (req, res) => {
         });
 
         fs.rmSync(dir, { recursive: true, force: true });
-        assembledPath = null;
-
         res.status(201).json({
             message: 'Upload completed on Bunny Stream. Bunny processing has started.',
             video: serializeVideo(video),
@@ -606,7 +691,6 @@ exports.completeChunkUpload = async (req, res) => {
 
         syncBunnyProcessingStatus(video.id, bunnyUpload.guid).catch(() => {});
     } catch (error) {
-        safeUnlink(assembledPath);
         console.error('[ChunkUpload] complete error:', error);
         res.status(500).json({ error: 'Failed to complete upload', details: error.message });
     }

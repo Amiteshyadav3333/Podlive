@@ -4,6 +4,7 @@ const authController = require('../src/controllers/auth.controller');
 const liveController = require('../src/controllers/live.controller');
 const liveRoutes = require('../src/routes/live.routes');
 const userRoutes = require('../src/routes/user.routes');
+const uploadRoutes = require('../src/routes/upload.routes');
 
 const response = () => ({
     statusCode: 200,
@@ -20,18 +21,17 @@ test('SSO rejects requests without a bounded one-time ticket', async () => {
     assert.equal(res.statusCode, 400);
 });
 
-test('recording egress is permanently unavailable', async () => {
-    const res = response();
-    await liveController.startHlsEgress({}, res);
-    assert.equal(res.statusCode, 410);
-    assert.match(res.body.error, /real-time only/i);
+test('recording egress cannot be started from the live API', () => {
+    assert.equal(liveController.startHlsEgress, undefined);
+    assert.equal(routePaths(liveRoutes).some((path) => /egress/i.test(path)), false);
 });
 
 test('live recordings stay disabled while explicit creator uploads are exposed separately', () => {
     assert.equal(routePaths(liveRoutes).includes('/vods'), false);
     assert.equal(routePaths(liveRoutes).includes('/videos'), true);
-    assert.equal(routePaths(userRoutes).includes('/recordings'), false);
+    assert.equal(routePaths(userRoutes).includes('/recordings'), true);
     assert.equal(routePaths(liveRoutes).includes('/:id/details'), true);
-    const deleteRoutes = liveRoutes.stack.filter((layer) => layer.route?.methods?.delete);
-    assert.equal(deleteRoutes.length, 0);
+    assert.equal(routePaths(uploadRoutes).includes('/direct/init'), true);
+    assert.equal(routePaths(uploadRoutes).includes('/direct/:uploadId/status'), true);
+    assert.equal(routePaths(uploadRoutes).includes('/direct/:uploadId/complete'), true);
 });

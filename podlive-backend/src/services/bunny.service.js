@@ -1,5 +1,6 @@
 const fs = require('fs');
 const https = require('https');
+const { Readable } = require('stream');
 
 const apiHost = 'video.bunnycdn.com';
 
@@ -102,6 +103,51 @@ const streamFileRequest = ({ method, path, filePath, contentType }) => {
     });
 };
 
+// Send already-uploaded chunks straight to Bunny without first copying the whole
+// movie into another temporary file. This saves one full disk write/read cycle.
+const streamChunkFilesRequest = ({ method, path, chunkPaths, contentType, contentLength }) => {
+    const config = assertConfigured();
+
+    return new Promise((resolve, reject) => {
+        const req = https.request({
+            method,
+            host: apiHost,
+            path,
+            headers: {
+                AccessKey: config.accessKey,
+                'Content-Type': contentType || 'application/octet-stream',
+                'Content-Length': contentLength
+            }
+        }, (res) => {
+            let body = '';
+            res.setEncoding('utf8');
+            res.on('data', (chunk) => { body += chunk; });
+            res.on('end', () => {
+                let parsed = body;
+                try { parsed = body ? JSON.parse(body) : null; } catch (error) {}
+
+                if (res.statusCode < 200 || res.statusCode >= 300) {
+                    const message = typeof parsed === 'string'
+                        ? parsed
+                        : parsed?.message || body || res.statusMessage;
+                    reject(new Error(`Bunny Stream upload failed (${res.statusCode}): ${message}`));
+                    return;
+                }
+                resolve(parsed);
+            });
+        });
+
+        req.on('error', reject);
+        const bodyStream = Readable.from((async function* () {
+            for (const chunkPath of chunkPaths) {
+                yield* fs.createReadStream(chunkPath);
+            }
+        })());
+        bodyStream.on('error', (error) => req.destroy(error));
+        bodyStream.pipe(req);
+    });
+};
+
 const getPlaybackUrls = (videoId) => {
     const { libraryId, cdnHostname } = assertConfigured();
 
@@ -145,6 +191,35 @@ const uploadVideoBinary = async ({ videoId, filePath, contentType }) => {
     });
 };
 
+const uploadVideoChunks = async ({ chunkPaths, totalSize, title, contentType, collectionId }) => {
+    const created = await createVideo({
+        title,
+        collectionId: collectionId || process.env.BUNNY_STREAM_COLLECTION_ID || null
+    });
+    const videoId = created.guid;
+    if (!videoId) throw new Error('Bunny Stream did not return a video guid');
+
+    const { libraryId } = assertConfigured();
+    const params = new URLSearchParams();
+    if (process.env.BUNNY_STREAM_ENABLED_RESOLUTIONS) {
+        params.set('enabledResolutions', process.env.BUNNY_STREAM_ENABLED_RESOLUTIONS);
+    }
+    if (process.env.BUNNY_STREAM_OUTPUT_CODECS) {
+        params.set('enabledOutputCodecs', process.env.BUNNY_STREAM_OUTPUT_CODECS);
+    }
+    const query = params.toString() ? `?${params.toString()}` : '';
+
+    await streamChunkFilesRequest({
+        method: 'PUT',
+        path: `/library/${libraryId}/videos/${videoId}${query}`,
+        chunkPaths,
+        contentType,
+        contentLength: totalSize
+    });
+
+    return { bunnyVideo: created, guid: videoId, ...getPlaybackUrls(videoId) };
+};
+
 const setThumbnail = async ({ videoId, filePath, contentType }) => {
     const { libraryId } = assertConfigured();
     return streamFileRequest({
@@ -158,6 +233,13 @@ const setThumbnail = async ({ videoId, filePath, contentType }) => {
 const getVideo = async (videoId) => {
     const { libraryId } = assertConfigured();
     return bunnyFetch(`/library/${libraryId}/videos/${videoId}`, {
+        method: 'GET'
+    });
+};
+
+const getVideoPlayData = async (videoId) => {
+    const { libraryId } = assertConfigured();
+    return bunnyFetch(`/library/${libraryId}/videos/${videoId}/play`, {
         method: 'GET'
     });
 };
@@ -196,8 +278,10 @@ module.exports = {
     assertConfigured,
     createVideo,
     getVideo,
+    getVideoPlayData,
     getPlaybackUrls,
     setThumbnail,
     uploadVideoBinary,
+    uploadVideoChunks,
     uploadVideoFile
 };
