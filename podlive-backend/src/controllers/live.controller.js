@@ -100,7 +100,17 @@ const hashInviteToken = (token) => crypto.createHash('sha256').update(String(tok
 
 const redeemPrivateInvite = async (session, userId, rawToken) => {
     if (session.host_user_id === userId) return true;
-    if (!userId || !rawToken) return false;
+    if (!userId) return false;
+
+    // An accepted stage invitation is also an explicit host authorization.
+    // This keeps private stage guests working after refresh/reconnect without
+    // requiring a second, separate audience invite link.
+    const acceptedStageInvite = await prisma.stageInvite.findFirst({
+        where: { session_id: session.id, invitee_id: userId, status: 'accepted' }
+    });
+    if (acceptedStageInvite) return true;
+
+    if (!rawToken) return false;
     const invite = await prisma.liveAccessInvite.findUnique({ where: { token_hash: hashInviteToken(rawToken) } });
     if (!invite || invite.session_id !== session.id || invite.revoked_at || (invite.expires_at && invite.expires_at <= new Date())) return false;
     if (invite.allowed_user_id && invite.allowed_user_id !== userId) return false;
@@ -630,7 +640,7 @@ exports.getSessionDetails = async (req, res) => {
             include: { host: { select: publicUserSelect }, video: true }
         });
         if (!session) return res.status(404).json({ error: 'Session not found' });
-        if (session.visibility === 'private' && session.host_user_id !== req.user?.id) {
+        if (session.visibility === 'private' && !await redeemPrivateInvite(session, req.user?.id, req.query.invite)) {
             return res.status(404).json({ error: 'Session not found' });
         }
         res.json({ ...sanitizeSession(session), video: serializeVideo(session.video) });
