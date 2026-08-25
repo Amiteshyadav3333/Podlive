@@ -36,7 +36,7 @@ import {
 import Hls from "hls.js";
 import { buildApiUrl } from "@/lib/api";
 
-// Custom HLS Player Component with YouTube-like Video Player Controls
+// Custom HLS player component with familiar video controls
 function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, hasPrev }: {
     url: string,
     poster: string,
@@ -556,7 +556,7 @@ function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, h
                 </div>
             )}
 
-            {/* YouTube-like controls container */}
+            {/* Video controls container */}
             <div
                 className={`absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-black/95 via-black/50 to-transparent p-4 flex flex-col gap-3 transition-opacity duration-300 ${
                     showControls ? "opacity-100" : "opacity-0 pointer-events-none"
@@ -569,7 +569,7 @@ function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, h
                     onMouseMove={handleProgressDrag}
                     className="w-full h-1.5 hover:h-2 bg-white/20 rounded-full cursor-pointer relative group/scrubber transition-all"
                 >
-                    {/* Played progress fill (YouTube Red) */}
+                    {/* Played progress fill */}
                     <div
                         className="absolute top-0 left-0 h-full bg-red-600 rounded-full flex items-center justify-end"
                         style={{ width: `${progressPercent}%` }}
@@ -1587,7 +1587,7 @@ export default function WatchPage() {
                                 </p>
                             </div>
 
-                            {/* COMMENTS SECTION (YouTube-style wider section) */}
+                            {/* Wider comments section */}
                             <div className="mt-8 bg-zinc-900/30 border border-white/5 rounded-2xl flex flex-col overflow-hidden">
                                 <div className="p-4 border-b border-white/5 flex items-center justify-between bg-zinc-950/20">
                                     <h3 className="font-bold flex items-center gap-2">

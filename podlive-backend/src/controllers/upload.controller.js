@@ -10,7 +10,15 @@ const safeUnlink = (filePath) => {
     try { if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) { }
 };
 
-const maxUploadSizeBytes = Number(process.env.MAX_UPLOAD_SIZE_BYTES || 2 * 1024 * 1024 * 1024);
+const DEFAULT_MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024 * 1024;
+const configuredMaxUploadSizeBytes = Number(process.env.MAX_UPLOAD_SIZE_BYTES);
+const maxUploadSizeBytes = Number.isFinite(configuredMaxUploadSizeBytes) && configuredMaxUploadSizeBytes > 0
+    ? configuredMaxUploadSizeBytes
+    : DEFAULT_MAX_UPLOAD_SIZE_BYTES;
+const configuredDirectUploadMaxSizeBytes = Number(process.env.DIRECT_UPLOAD_MAX_SIZE_BYTES);
+const directUploadMaxSizeBytes = Number.isFinite(configuredDirectUploadMaxSizeBytes) && configuredDirectUploadMaxSizeBytes > 0
+    ? configuredDirectUploadMaxSizeBytes
+    : DEFAULT_MAX_UPLOAD_SIZE_BYTES;
 const chunkRoot = path.join(os.tmpdir(), 'podlive-chunk-uploads');
 
 const ensureDir = (dir) => {
@@ -106,8 +114,8 @@ exports.initDirectUpload = async (req, res) => {
         const size = Number(fileSize);
         if (!title || !String(title).trim()) return res.status(400).json({ error: 'Title is required' });
         if (!Number.isFinite(size) || size <= 0) return res.status(400).json({ error: 'Valid fileSize is required' });
-        if (size > maxUploadSizeBytes) {
-            return res.status(413).json({ error: 'File too large', maxUploadSizeBytes });
+        if (size > directUploadMaxSizeBytes) {
+            return res.status(413).json({ error: 'File too large', maxUploadSizeBytes: directUploadMaxSizeBytes });
         }
         if (!['public', 'private', 'unlisted'].includes(visibility)) return res.status(400).json({ error: 'Invalid visibility' });
 

@@ -8,6 +8,12 @@ const crypto = require('crypto');
 const os = require('os');
 const fs = require('fs');
 
+const DEFAULT_MAX_UPLOAD_SIZE_BYTES = 5 * 1024 * 1024 * 1024;
+const configuredMaxUploadSizeBytes = Number(process.env.MAX_UPLOAD_SIZE_BYTES);
+const maxUploadSizeBytes = Number.isFinite(configuredMaxUploadSizeBytes) && configuredMaxUploadSizeBytes > 0
+    ? configuredMaxUploadSizeBytes
+    : DEFAULT_MAX_UPLOAD_SIZE_BYTES;
+
 // Always use /tmp on cloud (Render doesn't have persistent disk)
 const uploadDir = path.join(os.tmpdir(), 'podlive-uploads');
 if (!fs.existsSync(uploadDir)) {
@@ -25,7 +31,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
     storage,
-    limits: { fileSize: Number(process.env.MAX_UPLOAD_SIZE_BYTES || 2 * 1024 * 1024 * 1024) },
+    limits: { fileSize: maxUploadSizeBytes },
     fileFilter: (req, file, cb) => {
         if (file.fieldname === 'video') {
             const allowed = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'application/octet-stream'];
@@ -61,7 +67,8 @@ const chunkUpload = multer({
 const handleMulterError = (err, req, res, next) => {
     if (err && err.code === 'LIMIT_FILE_SIZE') {
         return res.status(413).json({
-            error: `File too large. Max ${formatBytes(Number(process.env.MAX_UPLOAD_SIZE_BYTES || 2 * 1024 * 1024 * 1024))} allowed.`
+            error: `File too large. Max ${formatBytes(maxUploadSizeBytes)} allowed.`,
+            maxUploadSizeBytes
         });
     }
     if (err) {

@@ -167,7 +167,11 @@ app.use((err, req, res, next) => {
   
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
-      return res.status(413).json({ error: 'File size too large. Professional plans allow up to 1GB.' });
+      const configuredLimit = Number(process.env.MAX_UPLOAD_SIZE_BYTES);
+      const maxUploadSizeBytes = Number.isFinite(configuredLimit) && configuredLimit > 0
+        ? configuredLimit
+        : 5 * 1024 * 1024 * 1024;
+      return res.status(413).json({ error: 'File size exceeds the configured upload limit.', maxUploadSizeBytes });
     }
     return res.status(400).json({ error: `Upload error: ${err.message}` });
   }
