@@ -79,10 +79,17 @@ export default function SocketProvider({ children }: { children: React.ReactNode
         };
 
         const token = localStorage.getItem('accessToken');
-        const userData = localStorage.getItem('user');
+        if (!token) {
+            return () => {
+                window.fetch = originalFetch;
+                axios.interceptors.response.eject(axiosInterceptor);
+                XMLHttpRequest.prototype.send = originalSend;
+            };
+        }
 
         const newSocket = io(getSocketUrl(), {
-            transports: ['polling'],
+            auth: { token },
+            transports: ['websocket'],
             upgrade: false,
             reconnection: true,
             reconnectionAttempts: Infinity,
