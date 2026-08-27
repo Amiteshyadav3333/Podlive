@@ -121,6 +121,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
 
     const [qualities, setQualities] = useState<PlayerQuality[]>([]);
     const [currentQuality, setCurrentQuality] = useState<number>(-1); // -1 is Auto
+    const [maxVideoHeight, setMaxVideoHeight] = useState<number | null>(720);
     const hlsInstanceRef = React.useRef<Hls | null>(null);
     const viewHeartbeatInFlightRef = React.useRef(false);
 
@@ -516,6 +517,10 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
 
             hls.on(Hls.Events.MANIFEST_PARSED, function (_event, data) {
                 setQualities(data.levels);
+                if (maxVideoHeight) {
+                    const allowed = data.levels.reduce((highest: number, level: PlayerQuality, index: number) => Number(level.height) <= maxVideoHeight ? index : highest, -1);
+                    hls.autoLevelCapping = Math.max(allowed, 0);
+                }
             });
 
             hls.on(Hls.Events.LEVEL_SWITCHED, function () {
@@ -552,7 +557,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
             }
             hlsInstanceRef.current = null;
         };
-    }, [url]);
+    }, [url, maxVideoHeight]);
 
     useEffect(() => {
         if (!videoId) return;
@@ -561,6 +566,8 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
             headers: token ? { Authorization: `Bearer ${token}` } : undefined
         }).then(async (res) => res.ok ? res.json() : null).then((data) => {
             const position = data?.player?.resume?.positionSeconds;
+            const heightLimit = data?.player?.subscription?.maxVideoHeight;
+            setMaxVideoHeight(typeof heightLimit === "number" ? heightLimit : null);
             if (videoRef.current && position > 0 && !resumeAppliedRef.current) {
                 videoRef.current.currentTime = position;
                 resumeAppliedRef.current = true;
@@ -816,6 +823,11 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
 
     const handleQualityChange = (levelIndex: number) => {
         const hls = hlsInstanceRef.current;
+        const requestedHeight = levelIndex >= 0 ? Number(qualities[levelIndex]?.height) : 0;
+        if (maxVideoHeight && requestedHeight > maxVideoHeight) {
+            showSkipOverlay(`Upgrade plan for ${requestedHeight}p`);
+            return;
+        }
         if (hls) {
             hls.currentLevel = levelIndex;
             setCurrentQuality(levelIndex);
@@ -1200,15 +1212,16 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
                                         [...qualities].reverse().map((level, i) => {
                                             const actualIndex = qualities.length - 1 - i;
                                             const isActive = currentQuality === actualIndex;
+                                            const locked = Boolean(maxVideoHeight && Number(level.height) > maxVideoHeight);
                                             return (
                                                 <button
                                                     key={actualIndex}
                                                     onClick={() => handleQualityChange(actualIndex)}
-                                                    className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-white/5 transition-colors border-t border-white/5 cursor-pointer border-none bg-transparent outline-none ${
+                                                    className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-white/5 transition-colors border-t border-white/5 cursor-pointer border-none bg-transparent outline-none ${locked ? "text-zinc-600" :
                                                         isActive ? "text-red-500 font-bold bg-red-500/10" : "text-zinc-200"
                                                     }`}
                                                 >
-                                                    {level.height}p
+                                                    {level.height}p {locked && "· Premium"}
                                                     {isActive && <CheckCircle2 className="w-3.5 h-3.5 text-red-500" />}
                                                 </button>
                                             );

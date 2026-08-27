@@ -30,8 +30,8 @@ export default function Register() {
       localStorage.setItem("refreshToken", data.refreshToken);
       localStorage.setItem("user", JSON.stringify(data.user));
       router.push("/dashboard");
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Registration failed");
     } finally {
       setLoading(false);
     }
@@ -52,7 +52,7 @@ export default function Register() {
           </Link>
           <div>
             <h2 className="text-3xl font-extrabold text-white mb-3 leading-tight">
-              Join thousands<br />of creators.
+              हजारों creators<br />के साथ जुड़ें।
             </h2>
             <p className="text-zinc-400 text-sm leading-relaxed max-w-xs">
               Start your first live stream in minutes. No equipment needed — just your voice and your story.
@@ -71,10 +71,10 @@ export default function Register() {
             <span className="font-bold text-lg text-white">PodLive</span>
           </Link>
 
-          <h1 className="text-2xl font-bold text-white mb-1">Create account</h1>
+          <h1 className="text-2xl font-bold text-white mb-1">अकाउंट बनाएँ / Create account</h1>
           <p className="text-sm text-zinc-400 mb-8">
-            Already have one?{" "}
-            <Link href="/login" className="text-indigo-400 hover:text-indigo-300 font-medium">Log in</Link>
+            पहले से account है?{" "}
+            <Link href="/login" className="text-indigo-400 hover:text-indigo-300 font-medium">Log in / लॉग इन</Link>
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -99,7 +99,7 @@ export default function Register() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Display Name</label>
+              <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">नाम / Display Name</label>
               <input
                 type="text" required
                 value={formData.display_name}
@@ -121,7 +121,7 @@ export default function Register() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Password</label>
+              <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">पासवर्ड / Password</label>
               <div className="relative">
                 <input
                   type={showPassword ? "text" : "password"} required

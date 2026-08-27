@@ -37,9 +37,10 @@ export default function Login() {
       localStorage.setItem("accessToken", data.accessToken);
       localStorage.setItem("refreshToken", data.refreshToken);
       localStorage.setItem("user", JSON.stringify(data.user));
-      router.push("/dashboard");
-    } catch (err: any) {
-      setError(err.message);
+      const next = new URLSearchParams(window.location.search).get("next");
+      router.push(next?.startsWith("/") && !next.startsWith("//") ? next : "/dashboard");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Login failed");
     } finally {
       setLoading(false);
     }
@@ -60,7 +61,7 @@ export default function Login() {
           </Link>
           <div>
             <h2 className="text-3xl font-extrabold text-white mb-3 leading-tight">
-              Your stage,<br />your audience.
+              आपका stage,<br />आपकी audience.
             </h2>
             <p className="text-zinc-400 text-sm leading-relaxed max-w-xs">
               Ultra-low latency live streams with AI-generated subtitles and automatic HLS transcoding.
@@ -79,10 +80,10 @@ export default function Login() {
             <span className="font-bold text-lg text-white">PodLive</span>
           </Link>
 
-          <h1 className="text-2xl font-bold text-white mb-1">Welcome back</h1>
+          <h1 className="text-2xl font-bold text-white mb-1">वापसी पर स्वागत है / Welcome back</h1>
           <p className="text-sm text-zinc-400 mb-8">
-            No account?{" "}
-            <Link href="/register" className="text-indigo-400 hover:text-indigo-300 font-medium">Sign up</Link>
+            Account नहीं है?{" "}
+            <Link href="/register" className="text-indigo-400 hover:text-indigo-300 font-medium">Sign up / साइन अप</Link>
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -110,7 +111,7 @@ export default function Login() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Password</label>
+              <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">पासवर्ड / Password</label>
               <div className="relative">
                 <input
                   type={showPassword ? "text" : "password"} required
@@ -129,7 +130,7 @@ export default function Login() {
               type="submit" disabled={loading}
               className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 mt-2"
             >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sign in"}
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sign in / लॉग इन"}
             </button>
           </form>
         </div>

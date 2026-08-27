@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import SocketProvider from "@/providers/SocketProvider";
+import LanguageInitializer from "@/components/LanguageInitializer";
 
 export const metadata: Metadata = {
-  title: "PodLive — Live Podcast Platform",
-  description: "Host ultra-low latency live streams, invite viewers to stage, auto-record and publish your podcasts.",
+  title: "PodLive — भारत का Video और Live Podcast Platform",
+  description: "Videos देखें, creators को follow करें और live podcasts के साथ अपनी आवाज़ को stage दें।",
   keywords: ["podcast", "live streaming", "livekit", "hls", "broadcast"],
   openGraph: {
     title: "PodLive",
@@ -15,9 +16,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="hi" className="dark">
       <body className="font-sans antialiased bg-[#080808] text-white">
         <SocketProvider>
+          <LanguageInitializer />
           {children}
         </SocketProvider>
       </body>

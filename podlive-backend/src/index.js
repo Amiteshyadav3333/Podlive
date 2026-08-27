@@ -132,6 +132,7 @@ const uploadRoutes = require('./routes/upload.routes');
 const videoRoutes = require('./routes/video.routes');
 const channelRoutes = require('./routes/channel.routes');
 const courseRoutes = require('./routes/course.routes');
+const planRoutes = require('./routes/plan.routes');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/live', liveRoutes);
@@ -144,6 +145,7 @@ app.use('/api/upload', uploadRoutes);
 app.use('/api/videos', videoRoutes);
 app.use('/api/channels', channelRoutes);
 app.use('/api/courses', courseRoutes);
+app.use('/api/plans', planRoutes);
 
 // Public config endpoint — exposes only what the frontend needs (no secrets)
 // API keys and secrets are NEVER sent here. Only the WebSocket URL.

@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Mic, Radio, Users, Play, Video, Search, TrendingUp, Clock, Eye, ChevronRight } from "lucide-react";
+import { Mic, Radio, Users, Play, Video, Search, TrendingUp, Eye, ChevronRight } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import axios from "axios";
 import { buildApiUrl } from "@/lib/api";
 import { formatDistanceToNow } from "date-fns";
+import MarketingLanding from "@/components/MarketingLanding";
 
 const formatTime = (secs: number) => {
   if (isNaN(secs)) return "0:00";
@@ -21,7 +23,23 @@ const formatTime = (secs: number) => {
   return `${m}:${formattedS}`;
 };
 
-function VideoCard({ session, isLive = false }: { session: any; isLive?: boolean }) {
+interface HomeSession {
+  id: string;
+  title: string;
+  thumbnail_url?: string | null;
+  category?: string | null;
+  viewer_count_peak?: number;
+  views?: number | string;
+  ended_at?: string | null;
+  created_at: string;
+  is_processing?: boolean;
+  video?: { duration_seconds?: number | null } | null;
+  host?: { id?: string; avatar_url?: string | null; display_name?: string; unique_handle?: string; username?: string };
+}
+
+interface StoredHomeUser { id?: string; display_name?: string }
+
+function VideoCard({ session, isLive = false }: { session: HomeSession; isLive?: boolean }) {
   const router = useRouter();
   const href = isLive ? `/live/${session.id}` : `/watch/${session.id}`;
   const avatar = session.host?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(session.host?.display_name || "H")}&background=6366f1&color=fff`;
@@ -31,7 +49,10 @@ function VideoCard({ session, isLive = false }: { session: any; isLive?: boolean
       {/* Thumbnail */}
       <div className="relative aspect-video rounded-xl overflow-hidden bg-zinc-900 border border-white/5 group-hover:border-indigo-500/40 transition-all duration-300">
         {session.thumbnail_url ? (
-          <img
+          <Image
+            unoptimized
+            fill
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
             src={session.thumbnail_url}
             alt={session.title}
             onError={(e) => {
@@ -112,7 +133,7 @@ function VideoCard({ session, isLive = false }: { session: any; isLive?: boolean
       {/* Info */}
       <div className="mt-3 flex gap-3">
         <div onClick={(e) => { e.stopPropagation(); router.push(`/creator/${session.host?.id}`); }} className="shrink-0 mt-0.5">
-          <img src={avatar} alt={session.host?.display_name} className="w-9 h-9 rounded-full object-cover border border-white/10 hover:border-indigo-500 transition-colors" />
+          <Image unoptimized width={36} height={36} src={avatar} alt={session.host?.display_name || "Creator"} className="w-9 h-9 rounded-full object-cover border border-white/10 hover:border-indigo-500 transition-colors" />
         </div>
         <div className="flex-1 min-w-0">
           <h3 className="font-semibold text-sm text-white line-clamp-2 leading-snug group-hover:text-indigo-400 transition-colors">{session.title}</h3>
@@ -135,20 +156,22 @@ function VideoCard({ session, isLive = false }: { session: any; isLive?: boolean
 const CATEGORIES = ["All", "Technology", "Music", "Comedy", "Education", "Finance", "Gaming", "General"];
 
 export default function Home() {
-  const [lives, setLives] = useState<any[]>([]);
-  const [vods, setVods] = useState<any[]>([]);
-  const [filteredVods, setFilteredVods] = useState<any[]>([]);
+  const [lives, setLives] = useState<HomeSession[]>([]);
+  const [vods, setVods] = useState<HomeSession[]>([]);
+  const [filteredVods, setFilteredVods] = useState<HomeSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [vodsLoading, setVodsLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<StoredHomeUser | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
     if (typeof window !== "undefined") {
       const u = localStorage.getItem("user");
       if (u) setUser(JSON.parse(u));
+      setAuthChecked(true);
     }
 
     const fetchLives = async () => {
@@ -188,6 +211,8 @@ export default function Home() {
       setFilteredVods(vods.filter(v => v.category === activeCategory));
     }
   }, [activeCategory, vods]);
+
+  if (authChecked && !user) return <MarketingLanding />;
 
   return (
     <div className="min-h-screen bg-[#080808] text-white">

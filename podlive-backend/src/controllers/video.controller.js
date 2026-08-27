@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { getAgeGroup } = require('../services/audience.service');
+const { resolveEntitlements } = require('../services/platform-subscription.service');
 const { PrismaClient } = require('@prisma/client');
 const path = require('path');
 const fs = require('fs');
@@ -180,12 +181,18 @@ exports.getPlayerConfig = async (req, res) => {
             return res.status(404).json({ error: 'Video not found' });
         }
 
-        const history = req.user?.id ? await prisma.history.findUnique({
-            where: { user_id_video_id: { user_id: req.user.id, video_id: video.id } }
-        }) : null;
+        const [history, platformSubscription] = await Promise.all([
+            req.user?.id ? prisma.history.findUnique({
+                where: { user_id_video_id: { user_id: req.user.id, video_id: video.id } }
+            }) : null,
+            req.user?.id ? prisma.platformSubscription.findFirst({
+                where: { user_id: req.user.id }, orderBy: { created_at: 'desc' }
+            }) : null
+        ]);
+        const entitlements = resolveEntitlements(platformSubscription);
 
         res.setHeader('Cache-Control', req.user?.id ? 'private, no-store' : 'public, max-age=60');
-        res.json({ player: buildPlayerConfig({ video, history }) });
+        res.json({ player: buildPlayerConfig({ video, history, entitlements }) });
     } catch (error) {
         console.error('[Videos] player config error:', error);
         res.status(500).json({ error: 'Failed to fetch player configuration' });

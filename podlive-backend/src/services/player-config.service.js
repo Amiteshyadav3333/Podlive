@@ -28,7 +28,8 @@ const SHORTCUTS = Object.freeze([
     { keys: ['Escape'], action: 'close_overlay_or_fullscreen' }
 ]);
 
-const buildPlayerConfig = ({ video, history = null }) => {
+const buildPlayerConfig = ({ video, history = null, entitlements = null }) => {
+    const access = entitlements || { planCode: 'free', active: false, adFree: false, maxVideoHeight: 720, personalizedFeed: false, podcastLimit: 2 };
     const files = [...(video.files || [])].sort((a, b) => (a.height || 0) - (b.height || 0));
     const adaptiveSource = video.hls_master_url ? {
         type: 'application/vnd.apple.mpegurl',
@@ -76,7 +77,7 @@ const buildPlayerConfig = ({ video, history = null }) => {
         controls: {
             playbackRates: PLAYBACK_RATES,
             seekSeconds: { short: 5, standard: 10, long: 30 },
-            quality: { automatic: Boolean(adaptiveSource), manual: files.length > 0 },
+            quality: { automatic: Boolean(adaptiveSource), manual: files.length > 0, maxHeight: access.maxVideoHeight },
             captions: (video.subtitles || []).length > 0,
             fullscreen: true,
             theaterMode: true,
@@ -102,7 +103,8 @@ const buildPlayerConfig = ({ video, history = null }) => {
             pinch: 'zoom',
             longPress: { action: 'temporary_speed', rate: 2 }
         },
-        shortcuts: SHORTCUTS
+        shortcuts: SHORTCUTS,
+        subscription: access
     };
 };
 

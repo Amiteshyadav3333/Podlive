@@ -44,20 +44,21 @@ model User {
   course_enrollments    CourseEnrollment[]
   course_orders         CourseOrder[]
 
-  followers      Follows[]            @relation("UserFollowers")
-  following      Follows[]            @relation("UserFollowing")
-  likes          Like[]
-  video_likes    VideoLike[]
-  comments       Comment[]
-  subscriptions  Subscription[]       @relation("Subscriber")
-  subscribers    Subscription[]       @relation("SubscribedTo")
-  playlists      Playlist[]
-  notifications  Notification[]
-  watch_history  History[]
-  reports        Report[]
-  search_history SearchHistory[]
-  sessions       Session[]
-  monetization   MonetizationAccount?
+  followers              Follows[]              @relation("UserFollowers")
+  following              Follows[]              @relation("UserFollowing")
+  likes                  Like[]
+  video_likes            VideoLike[]
+  comments               Comment[]
+  subscriptions          Subscription[]         @relation("Subscriber")
+  subscribers            Subscription[]         @relation("SubscribedTo")
+  playlists              Playlist[]
+  notifications          Notification[]
+  watch_history          History[]
+  reports                Report[]
+  search_history         SearchHistory[]
+  sessions               Session[]
+  monetization           MonetizationAccount?
+  platform_subscriptions PlatformSubscription[]
 }
 
 model Profile {
@@ -535,6 +536,26 @@ model Subscription {
   subscribedTo User @relation("SubscribedTo", fields: [subscribed_to_id], references: [id], onDelete: Cascade)
 
   @@unique([subscriber_id, subscribed_to_id])
+}
+
+model PlatformSubscription {
+  id                  String    @id @default(uuid())
+  user_id             String
+  plan_code           String
+  amount_paise        Int
+  currency            String    @default("INR")
+  status              String    @default("pending")
+  upi_reference       String?
+  provider_payment_id String?
+  starts_at           DateTime?
+  expires_at          DateTime?
+  created_at          DateTime  @default(now())
+  updated_at          DateTime  @updatedAt
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, status, expires_at])
+  @@index([upi_reference])
 }
 
 model Playlist {

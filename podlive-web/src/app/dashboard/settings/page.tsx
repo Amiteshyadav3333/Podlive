@@ -12,7 +12,7 @@ interface CreatorProfile {
   display_name: string;
   unique_handle: string;
   bio?: string | null;
-  profile?: { birth_date?: string | null } | null;
+  profile?: { birth_date?: string | null; language?: string | null } | null;
 }
 
 interface MonetizationDetails {
@@ -54,10 +54,12 @@ export default function Settings() {
       const res = await fetch(buildApiUrl("/api/user/profile"), {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ display_name: profile.display_name, bio: profile.bio, birth_date: profile.profile?.birth_date || null })
+        body: JSON.stringify({ display_name: profile.display_name, bio: profile.bio, birth_date: profile.profile?.birth_date || null, language: profile.profile?.language || "hi" })
       });
       if (res.ok) {
         setMessage({ type: "success", text: "Profile updated successfully!" });
+        localStorage.setItem("podliveLanguage", profile.profile?.language || "hi");
+        document.documentElement.lang = profile.profile?.language || "hi";
         const u = localStorage.getItem("user");
         if (u) localStorage.setItem("user", JSON.stringify({ ...JSON.parse(u), display_name: profile.display_name }));
       } else {
@@ -77,7 +79,7 @@ export default function Settings() {
       <DashboardSidebar />
       <div className="md:ml-60 pb-24 md:pb-6">
         <div className="sticky top-0 z-40 border-b border-white/[0.06] bg-[#080808]/90 backdrop-blur-xl px-6 h-14 flex items-center">
-          <h1 className="font-bold text-base">Settings</h1>
+          <h1 className="font-bold text-base">सेटिंग्स / Settings</h1>
         </div>
 
         <div className="max-w-4xl p-4 sm:p-6">
@@ -88,7 +90,14 @@ export default function Settings() {
           ) : (
             <div className="space-y-5">
               <div className="glass p-6 rounded-2xl space-y-5">
-                <h2 className="font-semibold">Profile Details</h2>
+                <h2 className="font-semibold">प्रोफ़ाइल जानकारी / Profile Details</h2>
+
+                <div>
+                  <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">ऐप की भाषा / App language</label>
+                  <select value={profile?.profile?.language || "hi"} onChange={(event) => setProfile(previous => previous ? { ...previous, profile: { ...previous.profile, language: event.target.value } } : previous)} className="w-full rounded-xl border border-white/[0.08] bg-zinc-900 px-4 py-3 text-sm text-white outline-none focus:border-indigo-500/70">
+                    <option value="hi">हिन्दी (Default)</option><option value="en">English</option><option value="bn">বাংলা</option><option value="te">తెలుగు</option><option value="mr">मराठी</option><option value="ta">தமிழ்</option><option value="ur">اردو</option><option value="gu">ગુજરાતી</option><option value="kn">ಕನ್ನಡ</option><option value="ml">മലയാളം</option><option value="pa">ਪੰਜਾਬੀ</option><option value="or">ଓଡ଼ିଆ</option><option value="as">অসমীয়া</option><option value="mai">मैथिली</option><option value="sa">संस्कृतम्</option><option value="ks">کٲشُر</option><option value="ne">नेपाली</option><option value="sd">سنڌي</option><option value="kok">कोंकणी</option><option value="doi">डोगरी</option><option value="mni">মৈতৈলোন্</option><option value="brx">बड़ो</option><option value="sat">ᱥᱟᱱᱛᱟᱲᱤ</option></select>
+                  <p className="mt-1.5 text-xs text-zinc-600">Hindi is the default. The selected language is saved to your profile and device.</p>
+                </div>
 
                 {message && (
                   <div className={`flex items-center gap-2 text-sm p-3 rounded-xl ${

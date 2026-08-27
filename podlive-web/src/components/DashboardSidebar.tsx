@@ -7,23 +7,23 @@ import { usePathname, useRouter } from "next/navigation";
 import { Mic, Home, Radio, UploadCloud, Video, Users, Settings, LogOut, ChevronRight, Palette, Crown, BookOpen, BarChart3 } from "lucide-react";
 
 const NAV = [
-  { href: "/dashboard", icon: Home, label: "Home" },
-  { href: "/dashboard/setup", icon: Radio, label: "Go Live" },
-  { href: "/dashboard/upload", icon: UploadCloud, label: "Upload" },
-  { href: "/dashboard/recordings", icon: Video, label: "Videos" },
-  { href: "/dashboard/creator", icon: BarChart3, label: "Creator" },
-  { href: "/dashboard/audience", icon: Users, label: "Audience" },
-  { href: "/dashboard/channel", icon: Palette, label: "Channel" },
-  { href: "/dashboard/memberships", icon: Crown, label: "Memberships" },
-  { href: "/dashboard/courses", icon: BookOpen, label: "Courses" },
+  { href: "/dashboard", icon: Home, label: "होम / Home" },
+  { href: "/dashboard/setup", icon: Radio, label: "लाइव जाएँ / Go Live" },
+  { href: "/dashboard/upload", icon: UploadCloud, label: "अपलोड / Upload" },
+  { href: "/dashboard/recordings", icon: Video, label: "वीडियो / Videos" },
+  { href: "/dashboard/creator", icon: BarChart3, label: "क्रिएटर / Creator" },
+  { href: "/dashboard/audience", icon: Users, label: "ऑडियंस / Audience" },
+  { href: "/dashboard/channel", icon: Palette, label: "चैनल / Channel" },
+  { href: "/dashboard/memberships", icon: Crown, label: "मेंबरशिप" },
+  { href: "/dashboard/courses", icon: BookOpen, label: "कोर्स / Courses" },
 ];
 
 const MOBILE_NAV = [
-  { href: "/dashboard", icon: Home, label: "Home" },
-  { href: "/dashboard/upload", icon: UploadCloud, label: "Upload" },
-  { href: "/dashboard/creator", icon: BarChart3, label: "Creator" },
-  { href: "/dashboard/recordings", icon: Video, label: "Video" },
-  { href: "/dashboard/settings", icon: Settings, label: "Settings" },
+  { href: "/dashboard", icon: Home, label: "होम" },
+  { href: "/dashboard/upload", icon: UploadCloud, label: "अपलोड" },
+  { href: "/dashboard/creator", icon: BarChart3, label: "क्रिएटर" },
+  { href: "/dashboard/recordings", icon: Video, label: "वीडियो" },
+  { href: "/dashboard/settings", icon: Settings, label: "सेटिंग" },
 ];
 
 interface StoredUser {
@@ -129,14 +129,14 @@ export default function DashboardSidebar() {
             }`}
           >
             <Settings className="w-4 h-4 shrink-0" />
-            Settings
+            सेटिंग्स / Settings
           </Link>
           <button
             onClick={handleLogout}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-zinc-400 hover:text-red-400 hover:bg-red-500/[0.07] transition-all"
           >
             <LogOut className="w-4 h-4 shrink-0" />
-            Log out
+            लॉग आउट / Log out
           </button>
         </div>
       </aside>
