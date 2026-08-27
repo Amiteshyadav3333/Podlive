@@ -1,192 +1,89 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Radio, Users, Play, Search, TrendingUp, Video, Clock, Eye } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import axios from "axios";
+import { Clock3, Eye, Loader2, Play, Radio, Search, TrendingUp, Upload, Users, Video } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { buildApiUrl } from "@/lib/api";
 import DashboardSidebar from "@/components/DashboardSidebar";
-import { formatDistanceToNow } from "date-fns";
+
+interface Creator { id: string; display_name?: string; unique_handle?: string; avatar_url?: string | null }
+interface LivePodcast { id: string; title: string; thumbnail_url?: string | null; viewer_count?: number; viewer_count_peak?: number; host?: Creator }
+interface FeedVideo { id: string; title: string; thumbnail?: string | null; duration_seconds?: number | null; views: string | number; upload_date: string; owner?: Creator; category?: { name?: string; slug?: string } | null }
+interface AudienceStats { followers?: number; totalViews?: string | number; totalLives?: number }
+interface StoredUser { display_name?: string; avatar_url?: string | null }
+
+const avatarFor = (creator?: Creator | StoredUser | null) => creator?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(creator?.display_name || "U")}&background=6366f1&color=fff`;
+const duration = (seconds?: number | null) => !seconds ? "" : `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+
+function VideoCard({ video, prominent = false }: { video: FeedVideo; prominent?: boolean }) {
+  return <Link href={`/watch/${video.id}`} className="group min-w-0"><div className={`relative overflow-hidden rounded-2xl border border-white/[.07] bg-zinc-900 ${prominent ? "aspect-[16/10]" : "aspect-video"}`}>{video.thumbnail ? <Image unoptimized fill sizes={prominent ? "(max-width: 768px) 100vw, 50vw" : "(max-width: 640px) 100vw, 33vw"} src={video.thumbnail} alt={video.title} className="object-cover transition duration-500 group-hover:scale-105"/> : <div className="absolute inset-0 grid place-items-center bg-gradient-to-br from-indigo-500/10 to-fuchsia-500/10"><Video className="size-10 text-white/20"/></div>}<div className="absolute inset-0 grid place-items-center bg-black/0 transition group-hover:bg-black/35"><span className="grid size-12 scale-75 place-items-center rounded-full bg-white text-black opacity-0 transition group-hover:scale-100 group-hover:opacity-100"><Play className="size-5 fill-current"/></span></div>{video.duration_seconds ? <span className="absolute bottom-2 right-2 rounded bg-black/80 px-1.5 py-0.5 text-[10px] font-bold">{duration(video.duration_seconds)}</span> : null}</div><div className="mt-3 flex gap-3"><Image unoptimized width={36} height={36} src={avatarFor(video.owner)} alt="" className="size-9 shrink-0 rounded-full border border-white/10 object-cover"/><div className="min-w-0"><h3 className="line-clamp-2 text-sm font-bold leading-5 group-hover:text-indigo-300">{video.title}</h3><p className="mt-1 truncate text-xs text-zinc-500">@{video.owner?.unique_handle || "creator"}</p><p className="mt-0.5 flex items-center gap-1 text-[11px] text-zinc-600"><Eye className="size-3"/>{Number(video.views || 0).toLocaleString()} views · {new Date(video.upload_date).toLocaleDateString()}</p></div></div></Link>;
+}
 
 export default function DashboardHome() {
   const router = useRouter();
-  const [lives, setLives] = useState<any[]>([]);
-  const [stats, setStats] = useState<any>(null);
+  const sentinel = useRef<HTMLDivElement>(null);
+  const loadingPage = useRef(false);
+  const [user, setUser] = useState<StoredUser | null>(null);
+  const [lives, setLives] = useState<LivePodcast[]>([]);
+  const [videos, setVideos] = useState<FeedVideo[]>([]);
+  const [stats, setStats] = useState<AudienceStats | null>(null);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [user, setUser] = useState<any>(null);
+  const [search, setSearch] = useState("");
+
+  const loadVideos = useCallback(async (nextPage: number, replace = false) => {
+    if (loadingPage.current) return;
+    loadingPage.current = true;
+    try {
+      const response = await fetch(buildApiUrl(`/api/videos?page=${nextPage}&limit=16&sort=latest`));
+      if (!response.ok) throw new Error("Feed unavailable");
+      const data = await response.json() as { videos: FeedVideo[]; page: number; limit: number; total: number };
+      setVideos(previous => replace ? data.videos : [...previous, ...data.videos.filter(item => !previous.some(existing => existing.id === item.id))]);
+      setPage(data.page);
+      setHasMore(data.page * data.limit < data.total);
+    } finally { loadingPage.current = false; setLoading(false); }
+  }, []);
 
   useEffect(() => {
-    const u = localStorage.getItem("user");
-    if (!u) { router.push("/login"); return; }
-    setUser(JSON.parse(u));
-
-    const fetchData = async () => {
-      const token = localStorage.getItem("accessToken");
-      try {
-        const [livesRes, statsRes] = await Promise.all([
-          axios.get(buildApiUrl("/api/live/active")),
-          fetch(buildApiUrl("/api/user/audience"), { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json())
-        ]);
-        setLives(livesRes.data);
-        setStats(statsRes);
-      } catch (err) { console.error(err); }
-      finally { setLoading(false); }
+    const token = localStorage.getItem("accessToken");
+    const stored = localStorage.getItem("user");
+    if (!token || !stored) { router.replace("/login"); return; }
+    try { setUser(JSON.parse(stored) as StoredUser); } catch { router.replace("/login"); return; }
+    void loadVideos(1, true);
+    const loadHeader = async () => {
+      const [liveResponse, statsResponse] = await Promise.all([fetch(buildApiUrl("/api/live/active")), fetch(buildApiUrl("/api/user/audience"), { headers: { Authorization: `Bearer ${token}` } })]);
+      if (liveResponse.ok) setLives(await liveResponse.json());
+      if (statsResponse.ok) setStats(await statsResponse.json());
     };
+    void loadHeader();
+    const timer = window.setInterval(loadHeader, 15000);
+    return () => window.clearInterval(timer);
+  }, [loadVideos, router]);
 
-    fetchData();
-    const interval = setInterval(() => {
-      axios.get(buildApiUrl("/api/live/active")).then(r => setLives(r.data)).catch(() => {});
-    }, 10000);
-    return () => clearInterval(interval);
-  }, [router]);
+  useEffect(() => {
+    const target = sentinel.current;
+    if (!target) return;
+    const observer = new IntersectionObserver(entries => { if (entries[0]?.isIntersecting && hasMore && !loadingPage.current) void loadVideos(page + 1); }, { rootMargin: "600px" });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [hasMore, loadVideos, page]);
 
-  const avatar = user?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.display_name || "U")}&background=6366f1&color=fff`;
-
-  return (
-    <div className="min-h-screen bg-[#080808] text-white">
-      <DashboardSidebar />
-
-      <div className="md:ml-60 pb-24 md:pb-6">
-        {/* Top bar */}
-        <div className="sticky top-0 z-40 border-b border-white/[0.06] bg-[#080808]/90 backdrop-blur-xl px-6 h-14 flex items-center justify-between">
-          <form onSubmit={(e) => { e.preventDefault(); if (searchQuery.trim()) router.push(`/search?q=${searchQuery}`); }} className="relative w-full max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-            <input
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search platform..."
-              className="w-full bg-zinc-900/80 border border-white/[0.07] rounded-full pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-indigo-500/60 transition-all text-white placeholder:text-zinc-500"
-            />
-          </form>
-          {user && (
-            <div className="flex items-center gap-3 ml-4">
-              <Link href="/dashboard/setup" className="flex items-center gap-2 bg-red-600 hover:bg-red-500 text-white text-sm font-bold px-4 py-1.5 rounded-full transition-colors">
-                <span className="w-1.5 h-1.5 rounded-full bg-white live-dot" />
-                Go Live
-              </Link>
-              <img
-                src={avatar}
-                alt={user.display_name}
-                onError={(e) => {
-                  e.currentTarget.onerror = null;
-                  e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.display_name || "U")}&background=6366f1&color=fff`;
-                }}
-                className="w-8 h-8 rounded-full object-cover border border-white/10"
-              />
-            </div>
-          )}
-        </div>
-
-        <div className="p-6 space-y-8 max-w-6xl">
-          {/* Stats Cards */}
-          {stats && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {[
-                { label: "Followers", value: stats.followers || 0, icon: Users, color: "purple" },
-                { label: "Total Views", value: stats.totalViews || 0, icon: Eye, color: "blue" },
-                { label: "Live Sessions", value: stats.totalLives || 0, icon: Radio, color: "red" },
-                { label: "Active Streams", value: lives.length, icon: TrendingUp, color: "green" },
-              ].map(({ label, value, icon: Icon, color }) => (
-                <div key={label} className="glass p-4 rounded-2xl">
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-xs font-medium text-zinc-400 uppercase tracking-wider">{label}</p>
-                    <div className={`w-7 h-7 rounded-lg bg-${color}-500/15 flex items-center justify-center`}>
-                      <Icon className={`w-3.5 h-3.5 text-${color}-400`} />
-                    </div>
-                  </div>
-                  <p className="text-2xl font-bold">{value.toLocaleString()}</p>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Quick Actions */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Link href="/dashboard/setup" className="glass p-4 rounded-2xl hover:border-red-500/30 transition-all group">
-              <div className="w-10 h-10 rounded-xl bg-red-500/15 flex items-center justify-center mb-3">
-                <Radio className="w-5 h-5 text-red-400 group-hover:scale-110 transition-transform" />
-              </div>
-              <h3 className="font-semibold text-sm mb-0.5">Start Live Stream</h3>
-              <p className="text-xs text-zinc-500">Go live with your audience</p>
-            </Link>
-            <Link href="/dashboard/upload" className="glass p-4 rounded-2xl hover:border-indigo-500/30 transition-all group">
-              <div className="w-10 h-10 rounded-xl bg-indigo-500/15 flex items-center justify-center mb-3">
-                <Video className="w-5 h-5 text-indigo-400 group-hover:scale-110 transition-transform" />
-              </div>
-              <h3 className="font-semibold text-sm mb-0.5">Upload Video</h3>
-              <p className="text-xs text-zinc-500">Publish pre-recorded content</p>
-            </Link>
-            <Link href="/dashboard/recordings" className="glass p-4 rounded-2xl hover:border-purple-500/30 transition-all group">
-              <div className="w-10 h-10 rounded-xl bg-purple-500/15 flex items-center justify-center mb-3">
-                <Clock className="w-5 h-5 text-purple-400 group-hover:scale-110 transition-transform" />
-              </div>
-              <h3 className="font-semibold text-sm mb-0.5">My Videos</h3>
-              <p className="text-xs text-zinc-500">Manage your videos</p>
-            </Link>
-          </div>
-
-          {/* Live Feed */}
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="font-bold flex items-center gap-2 text-base">
-                <span className="w-2 h-2 rounded-full bg-red-500 live-dot" />
-                Live Now
-              </h2>
-              <Link href="/discover" className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">View all →</Link>
-            </div>
-
-            {loading ? (
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {[...Array(3)].map((_, i) => <div key={i} className="aspect-video skeleton rounded-xl" />)}
-              </div>
-            ) : lives.length === 0 ? (
-              <div className="glass p-8 rounded-2xl text-center">
-                <Radio className="w-10 h-10 mx-auto mb-3 text-zinc-600" />
-                <p className="font-semibold text-zinc-300 mb-1">No active streams</p>
-                <p className="text-sm text-zinc-500 mb-4">Be the first one to go live!</p>
-                <Link href="/dashboard/setup" className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-5 py-2 rounded-full transition-colors">
-                  <Radio className="w-4 h-4" /> Start Broadcasting
-                </Link>
-              </div>
-            ) : (
-              <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {lives.map((session) => {
-                  const avatar2 = session.host?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(session.host?.display_name || "H")}&background=6366f1&color=fff`;
-                  return (
-                    <div key={session.id} onClick={() => router.push(`/live/${session.id}`)} className="group cursor-pointer">
-                      <div className="relative aspect-video rounded-xl overflow-hidden bg-zinc-900 border border-white/[0.06] group-hover:border-red-500/40 transition-all">
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <Radio className="w-8 h-8 text-zinc-700" />
-                        </div>
-                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                          <div className="w-12 h-12 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center">
-                            <Play className="w-5 h-5 text-white ml-1" fill="white" />
-                          </div>
-                        </div>
-                        <div className="absolute top-2 left-2 bg-red-600 text-white text-[11px] font-bold px-2 py-0.5 rounded flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 bg-white rounded-full live-dot" /> LIVE
-                        </div>
-                        <div className="absolute top-2 right-2 bg-black/70 text-white text-xs px-2 py-0.5 rounded flex items-center gap-1">
-                          <Users className="w-3 h-3" />{session.viewer_count_peak || 0}
-                        </div>
-                      </div>
-                      <div className="mt-2.5 flex gap-2.5">
-                        <img src={avatar2} className="w-8 h-8 rounded-full object-cover border border-white/10 shrink-0" alt="" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-white truncate group-hover:text-red-400 transition-colors">{session.title}</p>
-                          <p className="text-xs text-zinc-400 truncate mt-0.5">@{session.host?.unique_handle}</p>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+  const newUploads = videos.slice(0, 4);
+  const endlessFeed = videos.slice(4);
+  const statCards: Array<{ label: string; value: string | number; icon: LucideIcon }> = [
+    { label: "Followers", value: stats?.followers || 0, icon: Users },
+    { label: "Total views", value: stats?.totalViews || 0, icon: Eye },
+    { label: "Your lives", value: stats?.totalLives || 0, icon: Radio },
+    { label: "Live now", value: lives.length, icon: TrendingUp }
+  ];
+  return <div className="min-h-screen bg-[#080808] text-white"><DashboardSidebar/><main className="pb-28 md:ml-60 md:pb-10"><header className="sticky top-0 z-40 border-b border-white/[.06] bg-[#080808]/90 px-4 py-3 backdrop-blur-xl sm:px-6"><div className="mx-auto flex max-w-7xl items-center gap-3"><form onSubmit={event=>{event.preventDefault();if(search.trim())router.push(`/search?q=${encodeURIComponent(search.trim())}`)}} className="relative min-w-0 flex-1 sm:max-w-md"><Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-500"/><input value={search} onChange={event=>setSearch(event.target.value)} placeholder="Search videos, podcasts, creators" className="h-10 w-full rounded-full border border-white/[.08] bg-zinc-900 pl-9 pr-4 text-sm outline-none focus:border-indigo-500"/></form><Link href="/dashboard/upload" className="hidden min-h-10 items-center gap-2 rounded-full bg-white px-4 text-sm font-black text-black sm:flex"><Upload className="size-4"/>Upload</Link><Link href="/dashboard/setup" className="flex min-h-10 items-center gap-2 rounded-full bg-red-600 px-4 text-sm font-black"><Radio className="size-4"/><span className="hidden sm:inline">Go Live</span></Link>{user&&<Image unoptimized width={36} height={36} src={avatarFor(user)} alt={user.display_name||"User"} className="size-9 rounded-full object-cover"/>}</div></header>
+    <div className="mx-auto max-w-7xl space-y-10 p-4 sm:p-6 lg:p-8"><section><p className="text-xs font-bold uppercase tracking-[.2em] text-indigo-400">Studio Home</p><h1 className="mt-2 text-2xl font-black sm:text-3xl">Welcome back, {user?.display_name || "Creator"}</h1><div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">{statCards.map(({label,value,icon:Icon})=><div key={label} className="rounded-2xl border border-white/[.07] bg-white/[.025] p-4"><Icon className="size-5 text-indigo-400"/><p className="mt-4 text-2xl font-black tabular-nums">{Number(value).toLocaleString()}</p><p className="mt-1 text-xs text-zinc-500">{label}</p></div>)}</div></section>
+      <section><div className="mb-4 flex items-end justify-between"><div><p className="text-xs font-bold uppercase tracking-wider text-red-400">Happening now</p><h2 className="mt-1 text-xl font-black">Live podcasts</h2></div><Link href="/discover" className="text-xs text-indigo-400">View all →</Link></div>{lives.length?<div className="flex snap-x gap-4 overflow-x-auto pb-3 scrollbar-hide">{lives.map(live=><Link href={`/live/${live.id}`} key={live.id} className="w-[82vw] max-w-sm shrink-0 snap-start"><div className="relative aspect-video overflow-hidden rounded-2xl border border-red-500/20 bg-zinc-900">{live.thumbnail_url&&<Image unoptimized fill sizes="384px" src={live.thumbnail_url} alt={live.title} className="object-cover"/>}<div className="absolute inset-0 bg-gradient-to-t from-black via-black/10 to-transparent"/><span className="absolute left-3 top-3 rounded bg-red-600 px-2 py-1 text-[10px] font-black">● LIVE</span><span className="absolute bottom-3 left-3 right-3"><b className="line-clamp-2">{live.title}</b><small className="mt-1 flex items-center gap-1 text-zinc-300"><Users className="size-3"/>{live.viewer_count||live.viewer_count_peak||0} watching · @{live.host?.unique_handle}</small></span></div></Link>)}</div>:<div className="rounded-2xl border border-dashed border-white/10 p-8 text-center"><Radio className="mx-auto size-8 text-zinc-700"/><p className="mt-3 text-sm text-zinc-500">No live podcast right now.</p></div>}</section>
+      <section><div className="mb-4"><p className="text-xs font-bold uppercase tracking-wider text-emerald-400">Just published</p><h2 className="mt-1 text-xl font-black">New uploaded videos</h2></div>{loading&&!videos.length?<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{Array.from({length:4},(_,index)=><div key={index} className="aspect-video animate-pulse rounded-2xl bg-zinc-900"/>)}</div>:<div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">{newUploads.map(video=><VideoCard key={video.id} video={video} prominent/>)}</div>}</section>
+      <section><div className="mb-5 flex items-center gap-3"><span className="grid size-10 place-items-center rounded-xl bg-indigo-500/10"><Clock3 className="size-5 text-indigo-400"/></span><div><p className="text-xs text-zinc-500">Keep scrolling</p><h2 className="text-xl font-black">Endless video feed</h2></div></div><div className="grid gap-x-5 gap-y-8 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{endlessFeed.map(video=><VideoCard key={video.id} video={video}/>)}</div><div ref={sentinel} className="grid min-h-28 place-items-center">{hasMore?<Loader2 className="size-6 animate-spin text-indigo-400"/>:videos.length?<p className="text-xs text-zinc-600">You’re caught up for now. New uploads will appear automatically.</p>:null}</div></section>
+    </div></main></div>;
 }
