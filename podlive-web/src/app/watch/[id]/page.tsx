@@ -34,7 +34,6 @@ import {
     ChevronLast,
     Keyboard,
     Lock,
-    Unlock,
     Repeat2,
     Timer
 } from "lucide-react";
@@ -599,7 +598,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
                 zIndex: 9999,
                 cursor: isDraggingRef.current ? 'grabbing' : 'grab'
             } : undefined}
-            className={`relative aspect-video w-full bg-black rounded-2xl overflow-hidden border border-white/10 shadow-2xl group/player select-none touch-none ${
+            className={`relative aspect-video w-full bg-black overflow-hidden border-y border-white/10 shadow-2xl group/player select-none touch-none sm:rounded-2xl sm:border ${
                 isMini ? "shadow-[0_20px_50px_rgba(0,0,0,0.5)] border-indigo-500/30" : ""
             }`}
         >
@@ -696,7 +695,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
             )}
 
             {controlsLocked && (
-                <button onClick={() => setControlsLocked(false)} className="absolute z-40 right-4 top-1/2 -translate-y-1/2 rounded-full bg-black/70 p-3 text-white backdrop-blur" title="Unlock controls">
+                <button onClick={() => setControlsLocked(false)} className="absolute z-40 right-3 top-1/2 -translate-y-1/2 rounded-full border border-white/10 bg-black/75 p-3 text-white shadow-xl backdrop-blur-md sm:right-5" title="Unlock controls" aria-label="Unlock controls">
                     <Lock className="h-5 w-5" />
                 </button>
             )}
@@ -714,7 +713,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
 
             {/* Video controls container */}
             <div
-                className={`absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-black/95 via-black/50 to-transparent p-4 flex flex-col gap-3 transition-opacity duration-300 ${
+                className={`absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-black via-black/70 to-transparent px-2.5 pb-2.5 pt-8 flex flex-col gap-2 transition-opacity duration-300 sm:px-4 sm:pb-4 sm:pt-12 sm:gap-3 ${
                     showControls && !controlsLocked ? "opacity-100" : "opacity-0 pointer-events-none"
                 }`}
             >
@@ -723,7 +722,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
                     ref={progressBarRef}
                     onClick={handleProgressClick}
                     onMouseMove={handleProgressDrag}
-                    className="w-full h-1.5 hover:h-2 bg-white/20 rounded-full cursor-pointer relative group/scrubber transition-all"
+                    className="w-full h-1.5 hover:h-2 bg-white/20 rounded-full cursor-pointer relative group/scrubber transition-all touch-none"
                 >
                     <div className="absolute top-0 left-0 h-full rounded-full bg-white/25" style={{ width: `${bufferedPercent}%` }} />
                     {/* Played progress fill */}
@@ -737,12 +736,13 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
                 </div>
 
                 {/* 2. Control bar items */}
-                <div className="flex items-center justify-between">
+                <div className="flex min-w-0 items-center justify-between gap-2">
                     {/* Left: Play/Pause, Volume, Time */}
-                    <div className="flex items-center gap-4">
+                    <div className="flex min-w-0 items-center gap-2 sm:gap-3 lg:gap-4">
                         <button
                             onClick={handleTogglePlay}
-                            className="text-white hover:text-red-500 transition-colors cursor-pointer border-none bg-transparent outline-none"
+                            className="grid size-9 shrink-0 place-items-center rounded-full text-white transition-colors hover:bg-white/10 hover:text-red-500 sm:size-8"
+                            aria-label={isPlaying ? "Pause" : "Play"}
                         >
                             {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
                         </button>
@@ -750,7 +750,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
                         {/* Skip Backward 5s */}
                         <button
                             onClick={handleSkipBackward}
-                            className="text-white hover:text-red-500 transition-colors cursor-pointer border-none bg-transparent outline-none relative group/skip"
+                            className="relative hidden size-8 shrink-0 place-items-center rounded-full text-white transition-colors hover:bg-white/10 hover:text-red-500 min-[390px]:grid"
                             title="Back 5 seconds"
                         >
                             <SkipBack className="w-5 h-5" />
@@ -760,7 +760,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
                         {/* Skip Forward 5s */}
                         <button
                             onClick={handleSkipForward}
-                            className="text-white hover:text-red-500 transition-colors cursor-pointer border-none bg-transparent outline-none relative group/skip"
+                            className="relative hidden size-8 shrink-0 place-items-center rounded-full text-white transition-colors hover:bg-white/10 hover:text-red-500 min-[390px]:grid"
                             title="Forward 5 seconds"
                         >
                             <SkipForward className="w-5 h-5" />
@@ -771,7 +771,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
                         {hasPrev && onPrev && (
                             <button
                                 onClick={onPrev}
-                                className="text-white hover:text-red-500 transition-colors cursor-pointer border-none bg-transparent outline-none"
+                                className="hidden size-8 shrink-0 place-items-center rounded-full text-white transition-colors hover:bg-white/10 hover:text-red-500 lg:grid"
                                 title="Previous video"
                             >
                                 <ChevronFirst className="w-5 h-5" />
@@ -782,17 +782,17 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
                         {hasNext && onNext && (
                             <button
                                 onClick={onNext}
-                                className="text-white hover:text-red-500 transition-colors cursor-pointer border-none bg-transparent outline-none"
+                                className="hidden size-8 shrink-0 place-items-center rounded-full text-white transition-colors hover:bg-white/10 hover:text-red-500 lg:grid"
                                 title="Next video"
                             >
                                 <ChevronLast className="w-5 h-5" />
                             </button>
                         )}
 
-                        <div className="flex items-center gap-2 group/volume">
+                        <div className="hidden items-center gap-1 group/volume sm:flex">
                             <button
                                 onClick={handleToggleMute}
-                                className="text-white hover:text-red-500 transition-colors cursor-pointer border-none bg-transparent outline-none"
+                                className="grid size-8 shrink-0 place-items-center rounded-full text-white transition-colors hover:bg-white/10 hover:text-red-500"
                             >
                                 {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
                             </button>
@@ -803,34 +803,26 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
                                 step={0.05}
                                 value={isMuted ? 0 : volume}
                                 onChange={handleVolumeSliderChange}
-                                className="w-0 group-hover/volume:w-16 hover:w-16 h-1 bg-white/30 rounded-lg appearance-none cursor-pointer accent-red-600 transition-all duration-300"
+                                className="hidden h-1 w-16 cursor-pointer appearance-none rounded-lg bg-white/30 accent-red-600 lg:block"
                             />
                         </div>
 
-                        <div className="text-xs font-mono text-zinc-300">
+                        <div className="whitespace-nowrap text-[11px] font-medium tabular-nums text-zinc-200 sm:text-xs">
                             <span>{formatTime(currentTime)}</span>
-                            <span className="mx-1.5 text-zinc-500">/</span>
-                            <span>{formatTime(duration)}</span>
+                            <span className="mx-1 hidden text-zinc-500 min-[460px]:inline">/</span>
+                            <span className="hidden min-[460px]:inline">{formatTime(duration)}</span>
                         </div>
                     </div>
 
                     {/* Right: Subtitles, Miniplayer, Settings, Fullscreen */}
-                    <div className="flex items-center gap-4 relative">
-                        <button onClick={() => setIsLooping(!isLooping)} className={isLooping ? "text-red-500" : "text-white hover:text-red-500"} title="Loop video">
+                    <div className="relative flex shrink-0 items-center gap-1 sm:gap-2">
+                        <button onClick={() => setIsLooping(!isLooping)} className={`hidden size-8 place-items-center rounded-full transition-colors hover:bg-white/10 sm:grid ${isLooping ? "text-red-500" : "text-white hover:text-red-500"}`} title="Loop video" aria-label="Loop video">
                             <Repeat2 className="w-5 h-5" />
-                        </button>
-
-                        <button onClick={() => setShowShortcuts(true)} className="hidden text-white hover:text-red-500 sm:block" title="Keyboard shortcuts">
-                            <Keyboard className="w-5 h-5" />
-                        </button>
-
-                        <button onClick={() => setControlsLocked(true)} className="text-white hover:text-red-500" title="Lock controls">
-                            <Unlock className="w-5 h-5" />
                         </button>
 
                         <button
                             onClick={handleToggleSubtitles}
-                            className={`text-white hover:text-red-500 transition-colors cursor-pointer border-none bg-transparent outline-none ${
+                            className={`hidden size-8 place-items-center rounded-full text-white transition-colors hover:bg-white/10 hover:text-red-500 sm:grid ${
                                 subtitlesEnabled ? "text-red-500" : ""
                             }`}
                             title="Subtitles/Closed Captions"
@@ -840,7 +832,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
 
                         <button
                             onClick={(event) => event.shiftKey ? handleToggleMini() : void togglePictureInPicture()}
-                            className={`text-white hover:text-red-500 transition-colors cursor-pointer border-none bg-transparent outline-none ${
+                            className={`hidden size-8 place-items-center rounded-full text-white transition-colors hover:bg-white/10 hover:text-red-500 md:grid ${
                                 isMini ? "text-red-500 animate-pulse" : ""
                             }`}
                             title="Picture in picture"
@@ -850,7 +842,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
 
                         <button
                             onClick={() => setShowSettings(!showSettings)}
-                            className={`text-white hover:text-red-500 transition-colors cursor-pointer border-none bg-transparent outline-none ${
+                            className={`grid size-9 place-items-center rounded-full text-white transition-colors hover:bg-white/10 hover:text-red-500 sm:size-8 ${
                                 showSettings ? "text-red-500 rotate-45" : ""
                             } transition-transform duration-300`}
                         >
@@ -859,18 +851,22 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
 
                         <button
                             onClick={handleToggleFullscreen}
-                            className="text-white hover:text-red-500 transition-colors cursor-pointer border-none bg-transparent outline-none"
+                            className="grid size-9 place-items-center rounded-full text-white transition-colors hover:bg-white/10 hover:text-red-500 sm:size-8"
                         >
                             {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
                         </button>
 
                         {/* Custom Quality / Speed Settings menu overlay */}
                         {showSettings && (
-                            <div className="absolute bottom-10 right-0 bg-zinc-950/95 border border-white/10 rounded-xl overflow-hidden w-52 shadow-2xl z-30 backdrop-blur-md animate-fade-in text-white">
+                            <div className="absolute bottom-11 right-0 z-30 max-h-[min(72vh,34rem)] w-[min(18rem,calc(100vw-1.5rem))] overflow-y-auto rounded-2xl border border-white/10 bg-zinc-950/95 text-white shadow-2xl backdrop-blur-xl animate-fade-in">
+                                <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-zinc-950/95 px-4 py-3 backdrop-blur-xl">
+                                    <span className="text-sm font-semibold">Player settings</span>
+                                    <button onClick={() => setShowSettings(false)} className="grid size-7 place-items-center rounded-full text-zinc-400 hover:bg-white/10 hover:text-white" aria-label="Close settings">✕</button>
+                                </div>
                                 <div className="px-3 py-2 border-b border-white/10 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
                                     Quality
                                 </div>
-                                <div className="max-h-36 overflow-y-auto">
+                                <div className="max-h-32 overflow-y-auto">
                                     <button
                                         onClick={() => handleQualityChange(-1)}
                                         className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-white/5 transition-colors cursor-pointer border-none bg-transparent outline-none ${
@@ -908,17 +904,16 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
                                 <div className="px-3 py-2 border-t border-b border-white/10 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
                                     Speed
                                 </div>
-                                <div className="flex flex-col">
+                                <div className="grid grid-cols-4 gap-1.5 p-2">
                                     {[0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4].map((rate) => (
                                         <button
                                             key={rate}
                                             onClick={() => handleSpeedChange(rate)}
-                                            className={`w-full text-left px-3 py-2 text-xs flex items-center justify-between hover:bg-white/5 transition-colors cursor-pointer border-none bg-transparent outline-none ${
+                                            className={`rounded-lg px-1.5 py-2 text-center text-[11px] transition-colors ${
                                                 playbackRate === rate ? "text-red-500 font-bold bg-red-500/10" : "text-zinc-200"
                                             }`}
                                         >
                                             {rate === 1 ? "Normal" : `${rate}x`}
-                                            {playbackRate === rate && <CheckCircle2 className="w-3.5 h-3.5 text-red-500" />}
                                         </button>
                                     ))}
                                 </div>
@@ -931,6 +926,48 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
                                             {minutes ? `${minutes}m` : 'Off'}
                                         </button>
                                     ))}
+                                </div>
+                                <div className="border-t border-white/10 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                                    Controls
+                                </div>
+                                <div className="space-y-1 p-2 pt-0">
+                                    <button
+                                        onClick={() => {
+                                            setShowSettings(false);
+                                            setShowShortcuts(true);
+                                        }}
+                                        className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition-colors hover:bg-white/5"
+                                    >
+                                        <Keyboard className="h-4 w-4 text-zinc-400" />
+                                        <span className="flex-1">Keyboard shortcuts</span>
+                                        <span className="text-xs text-zinc-500">?</span>
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setShowSettings(false);
+                                            setControlsLocked(true);
+                                        }}
+                                        className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition-colors hover:bg-white/5"
+                                    >
+                                        <Lock className="h-4 w-4 text-zinc-400" />
+                                        <span className="flex-1">Lock player controls</span>
+                                    </button>
+                                    <button
+                                        onClick={handleToggleSubtitles}
+                                        className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition-colors hover:bg-white/5 sm:hidden"
+                                    >
+                                        <Subtitles className="h-4 w-4 text-zinc-400" />
+                                        <span className="flex-1">Captions</span>
+                                        <span className={`h-2 w-2 rounded-full ${subtitlesEnabled ? 'bg-red-500' : 'bg-zinc-700'}`} />
+                                    </button>
+                                    <button
+                                        onClick={() => setIsLooping(!isLooping)}
+                                        className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition-colors hover:bg-white/5 sm:hidden"
+                                    >
+                                        <Repeat2 className="h-4 w-4 text-zinc-400" />
+                                        <span className="flex-1">Loop video</span>
+                                        <span className={`h-2 w-2 rounded-full ${isLooping ? 'bg-red-500' : 'bg-zinc-700'}`} />
+                                    </button>
                                 </div>
                             </div>
                         )}
