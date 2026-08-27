@@ -17,7 +17,6 @@ import {
     CheckCircle2,
     Users,
     Clock,
-    ArrowLeft,
     Loader2,
     Send,
     Settings,
@@ -93,6 +92,10 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
     const isDraggingRef = React.useRef(false);
     const dragStartRef = React.useRef({ x: 0, y: 0 });
     const touchStartRef = React.useRef<{ x: number, y: number, time: number, volume: number, brightness: number } | null>(null);
+    const longPressTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    const longPressActiveRef = React.useRef(false);
+    const previousPlaybackRateRef = React.useRef(1);
+    const [isHoldBoostActive, setIsHoldBoostActive] = useState(false);
 
     // Skip overlay state
     const [skipOverlay, setSkipOverlay] = useState<string | null>(null);
@@ -231,28 +234,115 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
         };
     }, [subtitlesEnabled, subtitles]);
 
-    // Touch Swipe Gesture Handlers for Mobile (Swipe UP -> Fullscreen, Swipe DOWN -> Normal)
+    const stopHoldBoost = () => {
+        if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+        if (longPressActiveRef.current && videoRef.current) {
+            videoRef.current.playbackRate = previousPlaybackRateRef.current;
+            setPlaybackRate(previousPlaybackRateRef.current);
+        }
+        longPressActiveRef.current = false;
+        setIsHoldBoostActive(false);
+    };
+
+    const enterMobileLandscape = async () => {
+        const container = containerRef.current;
+        if (!container) return;
+        try {
+            if (!document.fullscreenElement) await container.requestFullscreen();
+            const orientation = screen.orientation as ScreenOrientation & { lock?: (mode: 'landscape') => Promise<void> };
+            await orientation.lock?.('landscape');
+            setIsFullscreen(true);
+            showSkipOverlay('Landscape mode');
+        } catch (error) {
+            console.warn('Landscape mode request was not available:', error);
+            const mobileVideo = videoRef.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null;
+            if (!document.fullscreenElement && mobileVideo?.webkitEnterFullscreen) {
+                mobileVideo.webkitEnterFullscreen();
+            }
+            setIsFullscreen(Boolean(document.fullscreenElement));
+        }
+    };
+
+    const exitMobileLandscape = async () => {
+        try {
+            const orientation = screen.orientation as ScreenOrientation & { unlock?: () => void };
+            orientation.unlock?.();
+            if (document.fullscreenElement) await document.exitFullscreen();
+            setIsFullscreen(false);
+        } catch (error) {
+            console.warn('Could not exit landscape mode:', error);
+        }
+    };
+
+    // Mobile gestures: center vertical swipe changes orientation; side hold enables temporary 2x.
     const handleTouchStart = (e: React.TouchEvent) => {
         if (e.touches.length === 1) {
+            const rect = containerRef.current?.getBoundingClientRect();
+            const localX = e.touches[0].clientX - (rect?.left || 0);
+            const width = rect?.width || window.innerWidth;
             touchStartRef.current = {
-                x: e.touches[0].clientX,
+                x: localX,
                 y: e.touches[0].clientY,
                 time: e.timeStamp,
                 volume,
                 brightness
             };
+            if (localX < width * 0.35 || localX > width * 0.65) {
+                longPressTimerRef.current = setTimeout(() => {
+                    const video = videoRef.current;
+                    if (!video) return;
+                    previousPlaybackRateRef.current = video.playbackRate;
+                    video.playbackRate = 2;
+                    setPlaybackRate(2);
+                    longPressActiveRef.current = true;
+                    setIsHoldBoostActive(true);
+                }, 450);
+            }
+        }
+    };
+
+    const handleTouchMove = (e: React.TouchEvent) => {
+        const start = touchStartRef.current;
+        if (!start || e.touches.length !== 1 || longPressActiveRef.current) return;
+        const rect = containerRef.current?.getBoundingClientRect();
+        const localX = e.touches[0].clientX - (rect?.left || 0);
+        if (Math.abs(localX - start.x) > 14 || Math.abs(e.touches[0].clientY - start.y) > 14) {
+            if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+            longPressTimerRef.current = null;
         }
     };
 
     const handleTouchEnd = (e: React.TouchEvent) => {
         if (!touchStartRef.current || e.changedTouches.length !== 1) return;
 
-        const deltaX = e.changedTouches[0].clientX - touchStartRef.current.x;
+        if (longPressActiveRef.current) {
+            stopHoldBoost();
+            touchStartRef.current = null;
+            return;
+        }
+        if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+        longPressTimerRef.current = null;
+
+        const rect = containerRef.current?.getBoundingClientRect();
+        const endX = e.changedTouches[0].clientX - (rect?.left || 0);
+        const deltaX = endX - touchStartRef.current.x;
         const deltaY = e.changedTouches[0].clientY - touchStartRef.current.y;
 
         const containerWidth = containerRef.current?.clientWidth || window.innerWidth;
         const isVertical = Math.abs(deltaY) > Math.abs(deltaX);
         if (isVertical && Math.abs(deltaY) > 35) {
+            const isCenterGesture = touchStartRef.current.x >= containerWidth * 0.35 && touchStartRef.current.x <= containerWidth * 0.65;
+            if (isCenterGesture && deltaY < -55) {
+                void enterMobileLandscape();
+                touchStartRef.current = null;
+                return;
+            }
+            if (isCenterGesture && deltaY > 55 && document.fullscreenElement) {
+                void exitMobileLandscape();
+                touchStartRef.current = null;
+                return;
+            }
             const amount = Math.max(-1, Math.min(1, -deltaY / 180));
             if (touchStartRef.current.x < containerWidth / 2) {
                 const nextBrightness = Math.max(0.25, Math.min(1, touchStartRef.current.brightness + amount));
@@ -270,12 +360,12 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
         } else if (e.timeStamp - touchStartRef.current.time < 280) {
             const now = e.timeStamp;
             if (lastTapRef.current && now - lastTapRef.current.time < 350) {
-                const x = e.changedTouches[0].clientX;
+                const x = endX;
                 if (x < containerWidth * 0.35) seekBy(-10);
                 else if (x > containerWidth * 0.65) seekBy(10);
                 else handleTogglePlay();
                 lastTapRef.current = null;
-            } else lastTapRef.current = { time: now, x: e.changedTouches[0].clientX };
+            } else lastTapRef.current = { time: now, x: endX };
         }
         touchStartRef.current = null;
     };
@@ -628,7 +718,12 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
         <div
             ref={containerRef}
             onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
+            onTouchCancel={() => {
+                stopHoldBoost();
+                touchStartRef.current = null;
+            }}
             onMouseDown={(e) => {
                 if (isMini) handleMiniDragStart(e);
             }}
@@ -652,7 +747,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
                 zIndex: 9999,
                 cursor: isDraggingRef.current ? 'grabbing' : 'grab'
             } : undefined}
-            className={`relative aspect-video w-full bg-black overflow-hidden border-y border-white/10 shadow-2xl group/player select-none touch-none sm:rounded-2xl sm:border ${
+            className={`relative -mx-4 aspect-video w-[calc(100%_+_2rem)] bg-black overflow-hidden border-y border-white/10 shadow-2xl group/player select-none touch-none sm:mx-0 sm:w-full sm:rounded-2xl sm:border fullscreen:m-0 fullscreen:h-screen fullscreen:w-screen fullscreen:aspect-auto fullscreen:rounded-none fullscreen:border-0 fullscreen:bg-black ${
                 isMini ? "shadow-[0_20px_50px_rgba(0,0,0,0.5)] border-indigo-500/30" : ""
             }`}
         >
@@ -745,6 +840,12 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
                     <div className="bg-black/70 text-white text-lg font-bold px-6 py-3 rounded-xl backdrop-blur-sm animate-bounce-once">
                         {skipOverlay}
                     </div>
+                </div>
+            )}
+
+            {isHoldBoostActive && (
+                <div className="pointer-events-none absolute left-1/2 top-4 z-40 -translate-x-1/2 rounded-full border border-white/15 bg-black/75 px-4 py-2 text-sm font-bold text-white shadow-xl backdrop-blur-md">
+                    2x speed
                 </div>
             )}
 
@@ -1650,34 +1751,15 @@ export default function WatchPage() {
     return (
         <div className="min-h-screen bg-[#0a0a0a] text-white selection:bg-indigo-500/30 font-sans pb-20">
 
-            {/* ===== NAVBAR ===== */}
-            <nav className="fixed top-0 w-full z-50 border-b border-white/5 bg-[#0a0a0a]/80 backdrop-blur-md">
-                <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-                    <button
-                        onClick={() => router.back()}
-                        className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors"
-                    >
-                        <ArrowLeft className="w-5 h-5" />
-                        <span className="font-medium">Back</span>
-                    </button>
-
-                    <div className="flex flex-col items-center">
-                        <span className="text-xs font-bold uppercase tracking-widest text-indigo-500">Recorded Broadcast</span>
-                    </div>
-
-                    <div className="w-16"></div> {/* Spacer for centering */}
-                </div>
-            </nav>
-
-            <main className="pt-20 px-4 md:px-8 max-w-7xl mx-auto">
-                <div className="flex flex-col lg:flex-row gap-8">
+            <main className="mx-auto max-w-[1800px] px-4 pt-0 sm:pt-4 md:px-6 md:pt-6 xl:px-8">
+                <div className="flex flex-col gap-6 lg:flex-row xl:gap-8">
 
                     {/* ===== LEFT COLUMN (VIDEO & INFO) ===== */}
-                    <div className="flex-1 w-full">
+                    <div className="w-full min-w-0 flex-1">
 
                         {/* VIDEO PLAYER CONTAINER */}
                         {recording.is_processing ? (
-                            <div className="relative aspect-video w-full bg-zinc-900 rounded-2xl overflow-hidden border border-white/10 shadow-2xl flex flex-col items-center justify-center p-8 text-center">
+                            <div className="relative -mx-4 flex aspect-video w-[calc(100%_+_2rem)] flex-col items-center justify-center overflow-hidden border-y border-white/10 bg-zinc-900 p-5 text-center shadow-2xl sm:mx-0 sm:w-full sm:rounded-2xl sm:border sm:p-8">
                                 <Activity className="w-12 h-12 text-indigo-500 animate-pulse mb-6" />
                                 <h2 className="text-2xl font-bold text-white mb-2">Processing High-Quality Video</h2>
                                 <p className="text-zinc-400 max-w-md">
