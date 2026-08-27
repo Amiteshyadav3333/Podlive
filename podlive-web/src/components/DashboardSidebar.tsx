@@ -106,7 +106,7 @@ export default function DashboardSidebar() {
         {/* Bottom */}
         <div className="px-3 py-4 border-t border-white/[0.06] space-y-0.5">
           {user && (
-            <div className="flex items-center gap-3 px-3 py-2.5 mb-2">
+            <Link href="/dashboard/settings" className="flex items-center gap-3 px-3 py-2.5 mb-2 rounded-xl hover:bg-white/[.05] transition-colors" aria-label="Open profile settings">
               <Image
                 unoptimized
                 width={32}
@@ -123,7 +123,7 @@ export default function DashboardSidebar() {
                 <p className="text-sm font-semibold text-white truncate">{user.display_name}</p>
                 <p className="text-xs text-zinc-500 truncate">{user.unique_handle}</p>
               </div>
-            </div>
+            </Link>
           )}
           <Link
             href="/dashboard/settings"

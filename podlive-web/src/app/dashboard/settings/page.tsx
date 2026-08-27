@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, CheckCircle2, AlertCircle, LogOut, Users, Clock3, BadgeDollarSign, Upload, ShieldCheck, Copy, Crown } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, LogOut, Users, Clock3, BadgeDollarSign, Upload, ShieldCheck, Copy, Crown, Mail, IndianRupee, Settings2, BarChart3, Palette, Video, BookOpen, HelpCircle, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { buildApiUrl } from "@/lib/api";
@@ -93,7 +93,22 @@ export default function Settings() {
             </div>
           ) : (
             <div className="space-y-5">
-              <div className="glass p-6 rounded-2xl space-y-5">
+              <section className="overflow-hidden rounded-3xl border border-white/[.08] bg-gradient-to-br from-indigo-500/15 via-white/[.025] to-transparent p-6 sm:p-8">
+                <div className="flex flex-col gap-5 sm:flex-row sm:items-center"><div className="grid size-16 shrink-0 place-items-center rounded-full bg-gradient-to-br from-indigo-500 to-fuchsia-600 text-2xl font-black">{(profile?.display_name || "U").slice(0,1).toUpperCase()}</div><div className="min-w-0"><p className="text-xs font-bold uppercase tracking-[.2em] text-indigo-300">Account center</p><h2 className="mt-1 truncate text-2xl font-black">{profile?.display_name}</h2><p className="mt-1 truncate text-sm text-zinc-400">@{profile?.unique_handle} · <span className="font-mono text-xs text-zinc-600">{profile?.id}</span></p></div></div>
+              </section>
+
+              <section className="rounded-2xl border border-white/[.07] bg-white/[.02] p-5 sm:p-6"><div className="flex items-center gap-2"><Settings2 className="size-5 text-indigo-400"/><h2 className="font-black">All app settings</h2></div><p className="mt-1 text-xs text-zinc-500">Manage every account and creator feature from your profile.</p><div className="mt-5 grid gap-3 sm:grid-cols-2">{[
+                { href: "#profile", icon: Settings2, title: "Profile & language", text: "Name, User ID, bio, birth date and app language" },
+                { href: "#subscription", icon: Crown, title: "Subscription", text: "Basic Free, Plus, Max and payment support" },
+                { href: "/dashboard/creator", icon: BarChart3, title: "Creator analytics", text: "Views, audience, earnings, likes and comments" },
+                { href: "/dashboard/channel", icon: Palette, title: "Channel settings", text: "Brand, channel information and appearance" },
+                { href: "/dashboard/recordings", icon: Video, title: "Video settings", text: "Manage uploaded videos and subtitles" },
+                { href: "/dashboard/memberships", icon: Users, title: "Memberships", text: "Plans, benefits and channel members" },
+                { href: "/dashboard/courses", icon: BookOpen, title: "Courses", text: "Course content, pricing and students" },
+                { href: "#support", icon: HelpCircle, title: "Support & legal", text: "Payment help, Terms and Privacy Policy" }
+              ].map(({href,icon:Icon,title,text})=><Link key={title} href={href} className="group flex items-center gap-3 rounded-xl border border-white/[.07] bg-zinc-950/60 p-4 hover:border-indigo-400/25 hover:bg-indigo-500/[.05]"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-white/[.05] text-zinc-400 group-hover:text-indigo-300"><Icon className="size-5"/></span><span className="min-w-0 flex-1"><b className="block text-sm">{title}</b><small className="mt-0.5 block leading-5 text-zinc-500">{text}</small></span><ChevronRight className="size-4 text-zinc-700"/></Link>)}</div></section>
+
+              <div id="profile" className="glass scroll-mt-20 p-6 rounded-2xl space-y-5">
                 <h2 className="font-semibold">प्रोफ़ाइल जानकारी / Profile Details</h2>
 
                 <div>
@@ -170,9 +185,16 @@ export default function Settings() {
                 </button>
               </div>
 
-              <div className="overflow-hidden rounded-2xl border border-amber-400/15 bg-gradient-to-r from-amber-500/10 via-white/[.025] to-transparent p-5 sm:p-6">
+              <div id="subscription" className="scroll-mt-20 overflow-hidden rounded-2xl border border-amber-400/15 bg-gradient-to-r from-amber-500/10 via-white/[.025] to-transparent p-5 sm:p-6">
                 <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-xl bg-amber-400/15 text-amber-300"><Crown className="size-5"/></span><div><p className="text-xs font-bold uppercase tracking-wider text-amber-300">Your subscription</p><h2 className="mt-1 text-xl font-black">{plan?.active ? `PodLive ${plan.planCode === "max" ? "Max" : "Plus"}` : "Basic Free"}</h2><p className="mt-1 text-xs text-zinc-500">{plan?.active ? `${plan.maxVideoHeight ? `${plan.maxVideoHeight}p` : "Highest quality"} · ${plan.podcastLimit === null ? "Unlimited live podcasts" : `${plan.podcastLimit} live podcasts / 30 days`}` : "Watch public videos · Live streaming locked"}</p></div></div><button onClick={()=>router.push(`/subscribe?plan=${plan?.planCode === "plus" ? "max" : "plus"}`)} className="min-h-11 rounded-xl bg-white px-5 text-sm font-black text-black hover:bg-zinc-200">{plan?.active ? "Manage / Upgrade" : "Subscribe now"}</button></div>
               </div>
+
+              <section id="support" className="scroll-mt-20 overflow-hidden rounded-2xl border border-sky-400/15 bg-gradient-to-br from-sky-500/10 via-white/[.02] to-transparent p-5 sm:p-6">
+                <div className="flex items-start gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-xl bg-sky-400/15 text-sky-300"><Mail className="size-5"/></span><div><p className="text-xs font-bold uppercase tracking-wider text-sky-300">Support & Help</p><h2 className="mt-1 text-lg font-black">Payment and subscription support</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">Payment pending, wrong amount, UTR verification, subscription activation, refund or billing query के लिए support team को email करें। अपना User ID, order ID और UTR लिखें—UPI PIN या OTP कभी share न करें।</p></div></div>
+                <a href="mailto:yadavamiteshkumar11@gmail.com?subject=PodLive%20Payment%20Support&body=User%20ID%3A%20%0AOrder%20ID%3A%20%0AUTR%3A%20%0AIssue%3A%20" className="mt-5 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-sky-400 px-5 text-sm font-black text-black hover:bg-sky-300 sm:w-fit"><IndianRupee className="size-4"/>Email payment support</a>
+                <p className="mt-3 break-all text-xs text-zinc-500">yadavamiteshkumar11@gmail.com</p>
+                <div className="mt-5 grid gap-3 border-t border-white/[.07] pt-5 sm:grid-cols-2"><Link href="/terms" className="flex items-center justify-between rounded-xl border border-white/[.08] bg-black/30 p-4 text-sm font-bold hover:bg-white/[.05]">Terms and Conditions <ChevronRight className="size-4 text-zinc-600"/></Link><Link href="/privacy" className="flex items-center justify-between rounded-xl border border-white/[.08] bg-black/30 p-4 text-sm font-bold hover:bg-white/[.05]">Privacy Policy <ChevronRight className="size-4 text-zinc-600"/></Link></div>
+              </section>
 
               <div className="glass overflow-hidden rounded-2xl">
                 <div className="border-b border-white/[0.07] bg-gradient-to-r from-emerald-500/10 via-indigo-500/5 to-transparent p-5 sm:p-6">

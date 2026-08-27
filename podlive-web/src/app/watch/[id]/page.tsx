@@ -719,25 +719,37 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
         handleProgressClick(e);
     };
 
-    const handleToggleFullscreen = () => {
+    const handleToggleFullscreen = async () => {
         const container = containerRef.current;
         if (!container) return;
-
-        if (!document.fullscreenElement) {
-            container.requestFullscreen().then(() => setIsFullscreen(true)).catch(err => {
-                console.error("Fullscreen failed:", err);
-            });
-        } else {
-            document.exitFullscreen().then(() => setIsFullscreen(false));
+        const webkitContainer = container as HTMLDivElement & { webkitRequestFullscreen?: () => Promise<void> | void };
+        const webkitDocument = document as Document & { webkitFullscreenElement?: Element | null; webkitExitFullscreen?: () => Promise<void> | void };
+        try {
+            if (!document.fullscreenElement && !webkitDocument.webkitFullscreenElement) {
+                if (container.requestFullscreen) await container.requestFullscreen();
+                else await webkitContainer.webkitRequestFullscreen?.();
+                setIsFullscreen(true);
+            } else {
+                if (document.exitFullscreen) await document.exitFullscreen();
+                else await webkitDocument.webkitExitFullscreen?.();
+                setIsFullscreen(false);
+            }
+        } catch (error) {
+            console.error("Fullscreen failed:", error);
         }
     };
 
     useEffect(() => {
         const onFullscreenChange = () => {
-            setIsFullscreen(!!document.fullscreenElement);
+            const webkitDocument = document as Document & { webkitFullscreenElement?: Element | null };
+            setIsFullscreen(Boolean(document.fullscreenElement || webkitDocument.webkitFullscreenElement));
         };
         document.addEventListener("fullscreenchange", onFullscreenChange);
-        return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+        document.addEventListener("webkitfullscreenchange", onFullscreenChange);
+        return () => {
+            document.removeEventListener("fullscreenchange", onFullscreenChange);
+            document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
+        };
     }, []);
 
     // Auto-hide controls
@@ -879,7 +891,9 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
                 zIndex: 9999,
                 cursor: 'grab'
             } : undefined}
-            className={`relative -mx-4 aspect-video w-[calc(100%_+_2rem)] bg-black overflow-hidden border-y border-white/10 shadow-2xl group/player select-none touch-none sm:mx-0 sm:w-full sm:rounded-2xl sm:border fullscreen:m-0 fullscreen:h-screen fullscreen:w-screen fullscreen:aspect-auto fullscreen:rounded-none fullscreen:border-0 fullscreen:bg-black ${
+            className={`podlive-player relative -mx-4 aspect-video w-[calc(100%_+_2rem)] bg-black overflow-hidden border-y border-white/10 shadow-2xl group/player select-none touch-none sm:mx-0 sm:w-full sm:rounded-2xl sm:border fullscreen:m-0 fullscreen:h-screen fullscreen:w-screen fullscreen:aspect-auto fullscreen:rounded-none fullscreen:border-0 fullscreen:bg-black ${
+                isFullscreen ? "!fixed !inset-0 !z-[99999] !m-0 !h-[100dvh] !max-h-none !w-[100dvw] !max-w-none !aspect-auto !rounded-none !border-0" : ""
+            } ${
                 isMini ? "shadow-[0_20px_50px_rgba(0,0,0,0.5)] border-indigo-500/30" : ""
             }`}
         >
@@ -912,7 +926,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
             <video
                 ref={videoRef}
                 crossOrigin="anonymous"
-                className="w-full h-full object-contain cursor-pointer"
+                className="absolute inset-0 h-full w-full max-h-none max-w-none cursor-pointer object-contain"
                 style={{ filter: `brightness(${brightness})` }}
                 poster={poster}
                 onClick={handleTogglePlay}
