@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect } from "react";
+import { detectLanguage } from "@/lib/language";
 
 export default function LanguageInitializer() {
   useEffect(() => {
-    const language = localStorage.getItem("podliveLanguage") || "hi";
-    localStorage.setItem("podliveLanguage", language);
+    const language = detectLanguage();
     document.documentElement.lang = language;
   }, []);
   return null;

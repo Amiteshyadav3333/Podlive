@@ -59,6 +59,7 @@ export default function Settings() {
       if (res.ok) {
         setMessage({ type: "success", text: "Profile updated successfully!" });
         localStorage.setItem("podliveLanguage", profile.profile?.language || "hi");
+        localStorage.setItem("podliveLanguageSource", "manual");
         document.documentElement.lang = profile.profile?.language || "hi";
         const u = localStorage.getItem("user");
         if (u) localStorage.setItem("user", JSON.stringify({ ...JSON.parse(u), display_name: profile.display_name }));
