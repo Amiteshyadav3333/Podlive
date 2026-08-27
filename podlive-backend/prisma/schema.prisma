@@ -61,16 +61,17 @@ model User {
 }
 
 model Profile {
-  id            String   @id @default(uuid())
-  user_id       String   @unique
+  id            String    @id @default(uuid())
+  user_id       String    @unique
   profile_photo String?
   cover_image   String?
   bio           String?
   links         Json?
   location      String?
   language      String?
-  created_at    DateTime @default(now())
-  updated_at    DateTime @updatedAt
+  birth_date    DateTime?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
 
   user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
 }
@@ -491,6 +492,7 @@ model View {
   ip_hash            String?
   session_key        String?  @unique
   qualified          Boolean  @default(false)
+  age_group          String?
   created_at         DateTime @default(now())
   updated_at         DateTime @updatedAt
 
@@ -498,21 +500,24 @@ model View {
 
   @@index([video_id, created_at])
   @@index([video_id, qualified, created_at])
+  @@index([video_id, age_group, qualified])
 }
 
 model MonetizationAccount {
-  id                     String    @id @default(uuid())
-  user_id                String    @unique
-  status                 String    @default("ineligible") // ineligible, active, suspended
-  followers_snapshot     Int       @default(0)
-  watch_seconds_snapshot BigInt    @default(0)
-  eligible_at            DateTime?
-  activated_at           DateTime?
-  suspended_at           DateTime?
-  suspension_reason      String?
-  last_evaluated_at      DateTime  @default(now())
-  created_at             DateTime  @default(now())
-  updated_at             DateTime  @updatedAt
+  id                      String    @id @default(uuid())
+  user_id                 String    @unique
+  status                  String    @default("ineligible") // ineligible, active, suspended
+  followers_snapshot      Int       @default(0)
+  watch_seconds_snapshot  BigInt    @default(0)
+  eligible_at             DateTime?
+  activated_at            DateTime?
+  suspended_at            DateTime?
+  suspension_reason       String?
+  estimated_balance_paise BigInt    @default(0)
+  lifetime_earnings_paise BigInt    @default(0)
+  last_evaluated_at       DateTime  @default(now())
+  created_at              DateTime  @default(now())
+  updated_at              DateTime  @updatedAt
 
   user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
 

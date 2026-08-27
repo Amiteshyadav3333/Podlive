@@ -1,15 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, CheckCircle2, AlertCircle, LogOut, Users, Clock3, BadgeDollarSign, Upload, ShieldCheck } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, LogOut, Users, Clock3, BadgeDollarSign, Upload, ShieldCheck, Copy } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { buildApiUrl } from "@/lib/api";
 import DashboardSidebar from "@/components/DashboardSidebar";
 
 interface CreatorProfile {
+  id: string;
   display_name: string;
   unique_handle: string;
   bio?: string | null;
+  profile?: { birth_date?: string | null } | null;
 }
 
 interface MonetizationDetails {
@@ -51,7 +54,7 @@ export default function Settings() {
       const res = await fetch(buildApiUrl("/api/user/profile"), {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ display_name: profile.display_name, bio: profile.bio })
+        body: JSON.stringify({ display_name: profile.display_name, bio: profile.bio, birth_date: profile.profile?.birth_date || null })
       });
       if (res.ok) {
         setMessage({ type: "success", text: "Profile updated successfully!" });
@@ -109,6 +112,14 @@ export default function Settings() {
                 </div>
 
                 <div>
+                  <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">User ID</label>
+                  <div className="flex gap-2">
+                    <input type="text" value={profile?.id || ""} disabled className="min-w-0 flex-1 rounded-xl border border-zinc-800 bg-zinc-950 px-4 py-3 font-mono text-xs text-zinc-500" />
+                    <button onClick={() => profile?.id && navigator.clipboard?.writeText(profile.id)} className="grid size-11 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10" aria-label="Copy user ID"><Copy className="size-4" /></button>
+                  </div>
+                </div>
+
+                <div>
                   <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Handle</label>
                   <input
                     type="text"
@@ -117,6 +128,12 @@ export default function Settings() {
                     className="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-3 text-sm text-zinc-600 cursor-not-allowed"
                   />
                   <p className="text-xs text-zinc-600 mt-1.5">Handles cannot be changed.</p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Birth date</label>
+                  <input type="date" value={profile?.profile?.birth_date?.slice(0, 10) || ""} onChange={(e) => setProfile((previous) => previous ? { ...previous, profile: { ...previous.profile, birth_date: e.target.value || null } } : previous)} className="w-full rounded-xl border border-white/[0.08] bg-zinc-900/60 px-4 py-3 text-sm text-white outline-none focus:border-indigo-500/70" />
+                  <p className="mt-1.5 text-xs text-zinc-600">Optional. Used only for aggregated audience age analytics; creators never see viewer identities.</p>
                 </div>
 
                 <div>
@@ -194,6 +211,11 @@ export default function Settings() {
                   <LogOut className="w-4 h-4" />
                   Log out
                 </button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-1 text-xs text-zinc-500">
+                <Link href="/terms" className="hover:text-white">Terms and Conditions</Link>
+                <Link href="/privacy" className="hover:text-white">Privacy Policy</Link>
               </div>
             </div>
           )}

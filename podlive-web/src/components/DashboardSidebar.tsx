@@ -2,14 +2,16 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { Mic, Home, Radio, UploadCloud, Video, Users, Settings, LogOut, ChevronRight, Palette, Crown, BookOpen } from "lucide-react";
+import { Mic, Home, Radio, UploadCloud, Video, Users, Settings, LogOut, ChevronRight, Palette, Crown, BookOpen, BarChart3 } from "lucide-react";
 
 const NAV = [
   { href: "/dashboard", icon: Home, label: "Home" },
   { href: "/dashboard/setup", icon: Radio, label: "Go Live" },
   { href: "/dashboard/upload", icon: UploadCloud, label: "Upload" },
   { href: "/dashboard/recordings", icon: Video, label: "Videos" },
+  { href: "/dashboard/creator", icon: BarChart3, label: "Creator" },
   { href: "/dashboard/audience", icon: Users, label: "Audience" },
   { href: "/dashboard/channel", icon: Palette, label: "Channel" },
   { href: "/dashboard/memberships", icon: Crown, label: "Memberships" },
@@ -18,22 +20,34 @@ const NAV = [
 
 const MOBILE_NAV = [
   { href: "/dashboard", icon: Home, label: "Home" },
-  { href: "/dashboard/setup", icon: Radio, label: "Live" },
   { href: "/dashboard/upload", icon: UploadCloud, label: "Upload" },
+  { href: "/dashboard/creator", icon: BarChart3, label: "Creator" },
   { href: "/dashboard/recordings", icon: Video, label: "Video" },
-  { href: "/dashboard/audience", icon: Users, label: "Audience" },
-  { href: "/dashboard/channel", icon: Palette, label: "Channel" },
   { href: "/dashboard/settings", icon: Settings, label: "Settings" },
 ];
+
+interface StoredUser {
+  display_name?: string;
+  unique_handle?: string;
+  avatar_url?: string;
+}
 
 export default function DashboardSidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<StoredUser | null>(null);
 
   useEffect(() => {
-    const u = localStorage.getItem("user");
-    if (u) setUser(JSON.parse(u));
+    const timer = window.setTimeout(() => {
+      const storedUser = localStorage.getItem("user");
+      if (!storedUser) return;
+      try {
+        setUser(JSON.parse(storedUser) as StoredUser);
+      } catch {
+        localStorage.removeItem("user");
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const handleLogout = () => {
@@ -88,14 +102,17 @@ export default function DashboardSidebar() {
         <div className="px-3 py-4 border-t border-white/[0.06] space-y-0.5">
           {user && (
             <div className="flex items-center gap-3 px-3 py-2.5 mb-2">
-              <img
+              <Image
+                unoptimized
+                width={32}
+                height={32}
                 src={getAvatarUrl()}
                 onError={(e) => {
                   e.currentTarget.onerror = null;
                   e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.display_name || "U")}&background=6366f1&color=fff`;
                 }}
                 className="w-8 h-8 rounded-full object-cover border border-white/10"
-                alt={user.display_name}
+                alt={user.display_name || "User avatar"}
               />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-white truncate">{user.display_name}</p>

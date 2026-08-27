@@ -34,7 +34,11 @@ exports.getProfile = async (req, res) => {
 // Update Host Settings
 exports.updateProfile = async (req, res) => {
     try {
-        const { display_name, bio, avatar_url, cover_image_url, links, location, language } = req.body;
+        const { display_name, bio, avatar_url, cover_image_url, links, location, language, birth_date } = req.body;
+        const parsedBirthDate = birth_date ? new Date(birth_date) : null;
+        if (birth_date && (Number.isNaN(parsedBirthDate.getTime()) || parsedBirthDate > new Date())) {
+            return res.status(400).json({ error: 'Invalid birth date' });
+        }
         const user = await prisma.user.update({
             where: { id: req.user.id },
             data: {
@@ -51,7 +55,8 @@ exports.updateProfile = async (req, res) => {
                             cover_image: cover_image_url,
                             links,
                             location,
-                            language
+                            language,
+                            birth_date: parsedBirthDate
                         },
                         update: {
                             ...(bio !== undefined ? { bio } : {}),
@@ -59,7 +64,8 @@ exports.updateProfile = async (req, res) => {
                             ...(cover_image_url !== undefined ? { cover_image: cover_image_url } : {}),
                             ...(links !== undefined ? { links } : {}),
                             ...(location !== undefined ? { location } : {}),
-                            ...(language !== undefined ? { language } : {})
+                            ...(language !== undefined ? { language } : {}),
+                            ...(birth_date !== undefined ? { birth_date: parsedBirthDate } : {})
                         }
                     }
                 }
@@ -82,6 +88,89 @@ exports.getMonetization = async (req, res) => {
     } catch (error) {
         console.error('Fetch monetization error:', error);
         res.status(500).json({ error: 'Failed to fetch monetization details' });
+    }
+};
+
+exports.getCreatorDashboard = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const videos = await prisma.video.findMany({
+            where: { owner_id: userId },
+            select: {
+                id: true,
+                title: true,
+                thumbnail: true,
+                upload_date: true,
+                visibility: true,
+                processing_status: true,
+                duration_seconds: true,
+                views: true,
+                likes: true,
+                dislikes: true,
+                comments_count: true,
+                watch_time: true
+            },
+            orderBy: { upload_date: 'desc' }
+        });
+        const videoIds = videos.map((video) => video.id);
+        const [viewGroups, ageGroups, monetization] = await Promise.all([
+            videoIds.length ? prisma.view.groupBy({
+                by: ['video_id'],
+                where: { video_id: { in: videoIds }, qualified: true },
+                _count: { _all: true }
+            }) : [],
+            videoIds.length ? prisma.view.groupBy({
+                by: ['age_group'],
+                where: { video_id: { in: videoIds }, qualified: true, age_group: { not: null } },
+                _count: { _all: true }
+            }) : [],
+            syncMonetizationAccount(prisma, userId)
+        ]);
+        const qualifiedByVideo = new Map(viewGroups.map((group) => [group.video_id, group._count._all]));
+        const paisePerView = Math.max(Number(process.env.MONETIZATION_PAISE_PER_QUALIFIED_VIEW || 3), 0);
+        const totals = videos.reduce((result, video) => ({
+            views: result.views + Number(video.views),
+            likes: result.likes + video.likes,
+            comments: result.comments + video.comments_count,
+            watchSeconds: result.watchSeconds + Number(video.watch_time)
+        }), { views: 0, likes: 0, comments: 0, watchSeconds: 0 });
+
+        res.setHeader('Cache-Control', 'private, no-store');
+        res.json({
+            overview: {
+                videos: videos.length,
+                views: totals.views,
+                likes: totals.likes,
+                comments: totals.comments,
+                watchHours: Number((totals.watchSeconds / 3600).toFixed(1)),
+                estimatedBalanceRupees: Number(((monetization?.account?.estimatedBalancePaise || 0) / 100).toFixed(2)),
+                lifetimeEarningsRupees: Number(((monetization?.account?.lifetimeEarningsPaise || 0) / 100).toFixed(2)),
+                monetizationStatus: monetization?.status || 'ineligible'
+            },
+            audience: {
+                ageGroups: ageGroups
+                    .filter((group) => group._count._all >= 5)
+                    .map((group) => ({ ageGroup: group.age_group, viewers: group._count._all })),
+                minimumAudienceSize: 5
+            },
+            videos: videos.map((video) => {
+                const qualifiedViews = qualifiedByVideo.get(video.id) || 0;
+                return {
+                    ...video,
+                    views: video.views.toString(),
+                    watchTimeSeconds: video.watch_time.toString(),
+                    watchHours: Number((Number(video.watch_time) / 3600).toFixed(1)),
+                    qualifiedViews,
+                    estimatedRevenueRupees: monetization?.status === 'active'
+                        ? Number(((qualifiedViews * paisePerView) / 100).toFixed(2))
+                        : 0,
+                    watch_time: undefined
+                };
+            })
+        });
+    } catch (error) {
+        console.error('Fetch creator dashboard error:', error);
+        res.status(500).json({ error: 'Failed to fetch creator dashboard' });
     }
 };
 

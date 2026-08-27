@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { getAgeGroup } = require('../services/audience.service');
 const { PrismaClient } = require('@prisma/client');
 const path = require('path');
 const fs = require('fs');
@@ -274,6 +275,10 @@ exports.recordView = async (req, res) => {
         const sessionId = String(req.body.sessionId || req.headers['x-view-session'] || crypto.randomUUID()).slice(0, 200);
         const sessionKey = crypto.createHash('sha256').update(`${video.id}:${sessionId}`).digest('hex');
         const existing = await prisma.view.findUnique({ where: { session_key: sessionKey } });
+        const viewerProfile = !existing && req.user?.id ? await prisma.profile.findUnique({
+            where: { user_id: req.user.id },
+            select: { birth_date: true }
+        }) : null;
         const viewProgress = calculateViewProgress({
             previousWatchTime: existing?.watch_time_seconds,
             submittedWatchTime: req.body.watchTimeSeconds,
@@ -288,7 +293,8 @@ exports.recordView = async (req, res) => {
             watch_time_seconds: nextWatchTime,
             completion_rate: Math.max(existing?.completion_rate || 0, completionRate),
             ip_hash: existing?.ip_hash || getClientHash(req),
-            qualified
+            qualified,
+            age_group: existing?.age_group || getAgeGroup(viewerProfile?.birth_date)
         };
 
         const operations = [
@@ -319,6 +325,16 @@ exports.recordView = async (req, res) => {
                 where: { id: video.owner_id },
                 data: { total_views: { increment: BigInt(1) } }
             }));
+            const revenuePaise = Math.max(Number(process.env.MONETIZATION_PAISE_PER_QUALIFIED_VIEW || 3), 0);
+            if (revenuePaise > 0) {
+                operations.push(prisma.monetizationAccount.updateMany({
+                    where: { user_id: video.owner_id, status: 'active' },
+                    data: {
+                        estimated_balance_paise: { increment: BigInt(Math.round(revenuePaise)) },
+                        lifetime_earnings_paise: { increment: BigInt(Math.round(revenuePaise)) }
+                    }
+                }));
+            }
         }
 
         const [, updated] = await prisma.$transaction(operations);

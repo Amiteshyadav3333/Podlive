@@ -72,7 +72,9 @@ const syncMonetizationAccount = async (prisma, userId) => {
             status: account.status,
             activatedAt: account.activated_at,
             lastEvaluatedAt: account.last_evaluated_at,
-            suspensionReason: account.suspension_reason
+            suspensionReason: account.suspension_reason,
+            estimatedBalancePaise: Number(account.estimated_balance_paise || 0),
+            lifetimeEarningsPaise: Number(account.lifetime_earnings_paise || 0)
         }
     };
 };

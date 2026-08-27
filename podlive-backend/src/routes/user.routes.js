@@ -8,6 +8,7 @@ router.put('/profile', authMiddleware, userController.updateProfile);
 router.get('/audience', authMiddleware, userController.getAudienceStats);
 router.get('/recordings', authMiddleware, userController.getRecordings);
 router.get('/monetization', authMiddleware, userController.getMonetization);
+router.get('/creator-dashboard', authMiddleware, userController.getCreatorDashboard);
 
 // Public route to view creator profile
 router.get('/creator/:id', userController.getCreatorProfile);
