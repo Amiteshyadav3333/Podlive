@@ -32,7 +32,7 @@ const faq = {
 const projects = [
   { name: "IndiaSearch", url: "https://indiasearch.site", hi: "भारतीय users के लिए बनाया गया AI voice search engine", en: "AI voice search engine designed for Indian users" },
   { name: "CHEETCHAT", url: "https://chat.indiasearch.site/", hi: "भारतीय users के लिए बनाया गया all-in-one app", en: "An all-in-one app designed for Indian users" },
-  { name: "Arundhati App", url: "https://downloaser.indiasearch.site", hi: "भाषा की बाधा खत्म करने के लिए real-time language translator", en: "A real-time translator designed to remove language barriers" },
+  { name: "Arundhati App", url: "https://downloader.indiasearch.site/", hi: "भाषा की बाधा खत्म करने के लिए real-time language translator", en: "A real-time translator designed to remove language barriers" },
 ] as const;
 
 const plans = [
