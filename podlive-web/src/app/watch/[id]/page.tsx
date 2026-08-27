@@ -77,9 +77,14 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [sleepMinutes, setSleepMinutes] = useState<number | null>(null);
     const [brightness, setBrightness] = useState(1);
+    const [stableVolume, setStableVolume] = useState(false);
+    const [voiceBoost, setVoiceBoost] = useState(false);
     const sleepTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const lastTapRef = React.useRef<{ time: number, x: number } | null>(null);
     const resumeAppliedRef = React.useRef(false);
+    const audioContextRef = React.useRef<AudioContext | null>(null);
+    const compressorRef = React.useRef<DynamicsCompressorNode | null>(null);
+    const voiceFilterRef = React.useRef<BiquadFilterNode | null>(null);
 
     // CC & Miniplayer States
     const [subtitlesEnabled, setSubtitlesEnabled] = useState(false);
@@ -143,6 +148,55 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
                 showSkipOverlay('Sleep timer finished');
             }, minutes * 60 * 1000);
         }
+    };
+
+    const ensureAudioEnhancements = async () => {
+        const video = videoRef.current;
+        if (!video) return false;
+        try {
+            if (!audioContextRef.current) {
+                const context = new AudioContext();
+                const source = context.createMediaElementSource(video);
+                const compressor = context.createDynamicsCompressor();
+                const voiceFilter = context.createBiquadFilter();
+                voiceFilter.type = 'peaking';
+                voiceFilter.frequency.value = 2400;
+                voiceFilter.Q.value = 0.9;
+                source.connect(compressor).connect(voiceFilter).connect(context.destination);
+                audioContextRef.current = context;
+                compressorRef.current = compressor;
+                voiceFilterRef.current = voiceFilter;
+            }
+            if (audioContextRef.current.state === 'suspended') await audioContextRef.current.resume();
+            return true;
+        } catch (error) {
+            console.error('Audio enhancement setup failed:', error);
+            showSkipOverlay('Audio enhancement unavailable');
+            return false;
+        }
+    };
+
+    const toggleStableVolume = async () => {
+        if (!await ensureAudioEnhancements()) return;
+        const next = !stableVolume;
+        const compressor = compressorRef.current;
+        if (compressor) {
+            compressor.threshold.value = next ? -28 : 0;
+            compressor.knee.value = next ? 24 : 0;
+            compressor.ratio.value = next ? 8 : 1;
+            compressor.attack.value = next ? 0.01 : 0;
+            compressor.release.value = next ? 0.25 : 0.05;
+        }
+        setStableVolume(next);
+        showSkipOverlay(next ? 'Stable volume on' : 'Stable volume off');
+    };
+
+    const toggleVoiceBoost = async () => {
+        if (!await ensureAudioEnhancements()) return;
+        const next = !voiceBoost;
+        if (voiceFilterRef.current) voiceFilterRef.current.gain.value = next ? 7 : 0;
+        setVoiceBoost(next);
+        showSkipOverlay(next ? 'Voice boost on' : 'Voice boost off');
     };
 
     // Toggle Subtitles (CC)
@@ -858,10 +912,44 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
 
                         {/* Custom Quality / Speed Settings menu overlay */}
                         {showSettings && (
-                            <div className="absolute bottom-11 right-0 z-30 max-h-[min(72vh,34rem)] w-[min(18rem,calc(100vw-1.5rem))] overflow-y-auto rounded-2xl border border-white/10 bg-zinc-950/95 text-white shadow-2xl backdrop-blur-xl animate-fade-in">
+                            <div className="absolute bottom-11 right-0 z-30 max-h-[calc(100%_-_3.25rem)] w-[min(18rem,calc(100vw_-_1.5rem))] overscroll-contain overflow-y-auto rounded-2xl border border-white/10 bg-zinc-950/95 text-white shadow-2xl backdrop-blur-xl animate-fade-in">
                                 <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-zinc-950/95 px-4 py-3 backdrop-blur-xl">
                                     <span className="text-sm font-semibold">Player settings</span>
                                     <button onClick={() => setShowSettings(false)} className="grid size-7 place-items-center rounded-full text-zinc-400 hover:bg-white/10 hover:text-white" aria-label="Close settings">✕</button>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 p-2">
+                                    <button
+                                        onClick={() => { setShowSettings(false); setControlsLocked(true); }}
+                                        className="flex min-h-12 items-center gap-2 rounded-xl bg-white/5 px-3 text-left text-xs font-medium text-zinc-100 transition-colors hover:bg-white/10"
+                                    >
+                                        <Lock className="h-4 w-4 text-red-400" /> Lock controls
+                                    </button>
+                                    <button
+                                        onClick={() => { setShowSettings(false); setShowShortcuts(true); }}
+                                        className="flex min-h-12 items-center gap-2 rounded-xl bg-white/5 px-3 text-left text-xs font-medium text-zinc-100 transition-colors hover:bg-white/10"
+                                    >
+                                        <Keyboard className="h-4 w-4 text-red-400" /> Shortcuts
+                                    </button>
+                                </div>
+                                <div className="border-t border-white/10 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
+                                    Audio & captions
+                                </div>
+                                <div className="space-y-1 p-2 pt-0">
+                                    <button onClick={() => void toggleStableVolume()} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-zinc-200 hover:bg-white/5">
+                                        <Volume2 className="h-4 w-4 text-zinc-400" />
+                                        <span className="flex-1"><span className="block">Stable volume</span><span className="block text-[10px] text-zinc-500">Balances quiet and loud audio</span></span>
+                                        <span className={`relative h-5 w-9 rounded-full transition-colors ${stableVolume ? 'bg-red-600' : 'bg-zinc-700'}`}><span className={`absolute top-0.5 size-4 rounded-full bg-white transition-transform ${stableVolume ? 'translate-x-[18px]' : 'translate-x-0.5'}`} /></span>
+                                    </button>
+                                    <button onClick={() => void toggleVoiceBoost()} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-zinc-200 hover:bg-white/5">
+                                        <Activity className="h-4 w-4 text-zinc-400" />
+                                        <span className="flex-1"><span className="block">Voice boost</span><span className="block text-[10px] text-zinc-500">Improves spoken voice clarity</span></span>
+                                        <span className={`relative h-5 w-9 rounded-full transition-colors ${voiceBoost ? 'bg-red-600' : 'bg-zinc-700'}`}><span className={`absolute top-0.5 size-4 rounded-full bg-white transition-transform ${voiceBoost ? 'translate-x-[18px]' : 'translate-x-0.5'}`} /></span>
+                                    </button>
+                                    <button onClick={handleToggleSubtitles} disabled={!subtitles?.length} className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-zinc-200 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-40">
+                                        <Subtitles className="h-4 w-4 text-zinc-400" />
+                                        <span className="flex-1">Subtitles / CC</span>
+                                        <span className={`relative h-5 w-9 rounded-full transition-colors ${subtitlesEnabled ? 'bg-red-600' : 'bg-zinc-700'}`}><span className={`absolute top-0.5 size-4 rounded-full bg-white transition-transform ${subtitlesEnabled ? 'translate-x-[18px]' : 'translate-x-0.5'}`} /></span>
+                                    </button>
                                 </div>
                                 <div className="px-3 py-2 border-b border-white/10 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
                                     Quality
@@ -926,48 +1014,6 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
                                             {minutes ? `${minutes}m` : 'Off'}
                                         </button>
                                     ))}
-                                </div>
-                                <div className="border-t border-white/10 px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                                    Controls
-                                </div>
-                                <div className="space-y-1 p-2 pt-0">
-                                    <button
-                                        onClick={() => {
-                                            setShowSettings(false);
-                                            setShowShortcuts(true);
-                                        }}
-                                        className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition-colors hover:bg-white/5"
-                                    >
-                                        <Keyboard className="h-4 w-4 text-zinc-400" />
-                                        <span className="flex-1">Keyboard shortcuts</span>
-                                        <span className="text-xs text-zinc-500">?</span>
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            setShowSettings(false);
-                                            setControlsLocked(true);
-                                        }}
-                                        className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition-colors hover:bg-white/5"
-                                    >
-                                        <Lock className="h-4 w-4 text-zinc-400" />
-                                        <span className="flex-1">Lock player controls</span>
-                                    </button>
-                                    <button
-                                        onClick={handleToggleSubtitles}
-                                        className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition-colors hover:bg-white/5 sm:hidden"
-                                    >
-                                        <Subtitles className="h-4 w-4 text-zinc-400" />
-                                        <span className="flex-1">Captions</span>
-                                        <span className={`h-2 w-2 rounded-full ${subtitlesEnabled ? 'bg-red-500' : 'bg-zinc-700'}`} />
-                                    </button>
-                                    <button
-                                        onClick={() => setIsLooping(!isLooping)}
-                                        className="flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition-colors hover:bg-white/5 sm:hidden"
-                                    >
-                                        <Repeat2 className="h-4 w-4 text-zinc-400" />
-                                        <span className="flex-1">Loop video</span>
-                                        <span className={`h-2 w-2 rounded-full ${isLooping ? 'bg-red-500' : 'bg-zinc-700'}`} />
-                                    </button>
                                 </div>
                             </div>
                         )}
