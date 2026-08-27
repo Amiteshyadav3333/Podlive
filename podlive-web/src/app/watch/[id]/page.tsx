@@ -869,7 +869,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
                     </div>
 
                     {/* Right: Subtitles, Miniplayer, Settings, Fullscreen */}
-                    <div className="relative flex shrink-0 items-center gap-1 sm:gap-2">
+                    <div className="flex shrink-0 items-center gap-1 sm:gap-2">
                         <button onClick={() => setIsLooping(!isLooping)} className={`hidden size-8 place-items-center rounded-full transition-colors hover:bg-white/10 sm:grid ${isLooping ? "text-red-500" : "text-white hover:text-red-500"}`} title="Loop video" aria-label="Loop video">
                             <Repeat2 className="w-5 h-5" />
                         </button>
@@ -895,7 +895,10 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
                         </button>
 
                         <button
-                            onClick={() => setShowSettings(!showSettings)}
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                setShowSettings((visible) => !visible);
+                            }}
                             className={`grid size-9 place-items-center rounded-full text-white transition-colors hover:bg-white/10 hover:text-red-500 sm:size-8 ${
                                 showSettings ? "text-red-500 rotate-45" : ""
                             } transition-transform duration-300`}
@@ -912,7 +915,10 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
 
                         {/* Custom Quality / Speed Settings menu overlay */}
                         {showSettings && (
-                            <div className="absolute bottom-11 right-0 z-30 max-h-[calc(100%_-_3.25rem)] w-[min(18rem,calc(100vw_-_1.5rem))] overscroll-contain overflow-y-auto rounded-2xl border border-white/10 bg-zinc-950/95 text-white shadow-2xl backdrop-blur-xl animate-fade-in">
+                            <div
+                                onClick={(event) => event.stopPropagation()}
+                                className="fixed inset-x-3 bottom-3 z-50 max-h-[80dvh] w-auto overscroll-contain overflow-y-auto rounded-2xl border border-white/10 bg-zinc-950/95 text-white shadow-2xl backdrop-blur-xl animate-fade-in sm:absolute sm:inset-x-auto sm:bottom-11 sm:right-0 sm:max-h-[min(70vh,34rem)] sm:w-72"
+                            >
                                 <div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-zinc-950/95 px-4 py-3 backdrop-blur-xl">
                                     <span className="text-sm font-semibold">Player settings</span>
                                     <button onClick={() => setShowSettings(false)} className="grid size-7 place-items-center rounded-full text-zinc-400 hover:bg-white/10 hover:text-white" aria-label="Close settings">✕</button>
