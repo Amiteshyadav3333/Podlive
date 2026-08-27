@@ -1,5 +1,6 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const { syncMonetizationAccount } = require('../services/monetization.service');
 
 const serializeUser = (user) => {
     if (!user) return user;
@@ -69,6 +70,18 @@ exports.updateProfile = async (req, res) => {
     } catch (error) {
         console.error('Update profile error:', error);
         res.status(500).json({ error: 'Failed to update profile' });
+    }
+};
+
+exports.getMonetization = async (req, res) => {
+    try {
+        const monetization = await syncMonetizationAccount(prisma, req.user.id);
+        if (!monetization) return res.status(404).json({ error: 'User not found' });
+        res.setHeader('Cache-Control', 'private, no-store');
+        res.json({ monetization });
+    } catch (error) {
+        console.error('Fetch monetization error:', error);
+        res.status(500).json({ error: 'Failed to fetch monetization details' });
     }
 };
 

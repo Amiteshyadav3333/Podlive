@@ -3,6 +3,7 @@ const { PrismaClient } = require('@prisma/client');
 const path = require('path');
 const fs = require('fs');
 const { buildPlayerConfig } = require('../services/player-config.service');
+const { calculateViewProgress } = require('../services/view-metrics.service');
 
 const prisma = new PrismaClient();
 const publicUserSelect = { id: true, unique_handle: true, display_name: true, avatar_url: true, is_verified: true };
@@ -269,47 +270,64 @@ exports.recordView = async (req, res) => {
             return res.status(404).json({ error: 'Video not found' });
         }
 
-        const watchTime = Math.max(Number(req.body.watchTimeSeconds || 0), 0);
-        const completionRate = Math.min(Math.max(Number(req.body.completionRate || 0), 0), 1);
+        const duration = Math.max(Number(req.body.durationSeconds || video.duration_seconds || 0), 0);
+        const sessionId = String(req.body.sessionId || req.headers['x-view-session'] || crypto.randomUUID()).slice(0, 200);
+        const sessionKey = crypto.createHash('sha256').update(`${video.id}:${sessionId}`).digest('hex');
+        const existing = await prisma.view.findUnique({ where: { session_key: sessionKey } });
+        const viewProgress = calculateViewProgress({
+            previousWatchTime: existing?.watch_time_seconds,
+            submittedWatchTime: req.body.watchTimeSeconds,
+            duration,
+            completionRate: req.body.completionRate,
+            wasQualified: existing?.qualified
+        });
+        const { nextWatchTime, watchDelta, completionRate, qualified, becameQualified } = viewProgress;
+        const viewData = {
+            user_id: req.user?.id || existing?.user_id || null,
+            device_id: req.body.deviceId || req.headers['x-device-id'] || existing?.device_id || null,
+            watch_time_seconds: nextWatchTime,
+            completion_rate: Math.max(existing?.completion_rate || 0, completionRate),
+            ip_hash: existing?.ip_hash || getClientHash(req),
+            qualified
+        };
 
-        const [, updated] = await prisma.$transaction([
-            prisma.view.create({
-                data: {
-                    video_id: video.id,
-                    user_id: req.user?.id || null,
-                    device_id: req.body.deviceId || req.headers['x-device-id'] || null,
-                    watch_time_seconds: Math.round(watchTime),
-                    completion_rate: completionRate,
-                    ip_hash: getClientHash(req)
-                }
-            }),
+        const operations = [
+            existing
+                ? prisma.view.update({ where: { id: existing.id }, data: viewData })
+                : prisma.view.create({ data: { video_id: video.id, session_key: sessionKey, ...viewData } }),
             prisma.video.update({
                 where: { id: video.id },
                 data: {
-                    views: { increment: 1 },
-                    watch_time: { increment: BigInt(Math.round(watchTime)) }
+                    ...(becameQualified ? { views: { increment: BigInt(1) } } : {}),
+                    ...(watchDelta ? { watch_time: { increment: BigInt(watchDelta) } } : {})
                 }
-            }),
-            prisma.analytics.upsert({
+            })
+        ];
+
+        if (watchDelta || becameQualified) {
+            operations.push(prisma.analytics.upsert({
                 where: { video_id_metric_date: { video_id: video.id, metric_date: toDateBucket() } },
-                create: {
-                    video_id: video.id,
-                    metric_date: toDateBucket(),
-                    views: 1,
-                    watch_time: Math.round(watchTime)
-                },
+                create: { video_id: video.id, metric_date: toDateBucket(), views: becameQualified ? 1 : 0, watch_time: watchDelta },
                 update: {
-                    views: { increment: 1 },
-                    watch_time: { increment: Math.round(watchTime) }
+                    ...(becameQualified ? { views: { increment: 1 } } : {}),
+                    ...(watchDelta ? { watch_time: { increment: watchDelta } } : {})
                 }
-            }),
-            prisma.user.update({
+            }));
+        }
+        if (becameQualified) {
+            operations.push(prisma.user.update({
                 where: { id: video.owner_id },
                 data: { total_views: { increment: BigInt(1) } }
-            })
-        ]);
+            }));
+        }
 
-        res.json({ views: updated.views.toString(), watch_time: updated.watch_time.toString() });
+        const [, updated] = await prisma.$transaction(operations);
+        res.json({
+            counted: becameQualified,
+            qualified,
+            views: updated.views.toString(),
+            watch_time: updated.watch_time.toString()
+        });
     } catch (error) {
         console.error('[Videos] view error:', error);
         res.status(500).json({ error: 'Failed to record view' });

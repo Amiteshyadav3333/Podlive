@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Image from "next/image";
 import { formatDistanceToNow } from "date-fns";
 import {
     Play,
@@ -39,15 +40,78 @@ import {
 import Hls from "hls.js";
 import { buildApiUrl } from "@/lib/api";
 
+interface SubtitleTrack {
+    id: string;
+    language: string;
+    label: string;
+    vtt_url: string;
+}
+
+interface PlayerQuality {
+    height: number | string;
+}
+
+interface CreatorSummary {
+    id: string;
+    display_name: string;
+    unique_handle: string;
+    avatar_url?: string | null;
+    follower_count: number;
+    is_verified?: boolean;
+}
+
+interface ChatMessage {
+    id: string;
+    sender_handle: string;
+    message: string;
+    created_at: string;
+}
+
+interface RecordingDetails {
+    title: string;
+    recording_url: string;
+    host: CreatorSummary;
+    video?: { id: string; processing_status?: string } | null;
+    subtitles?: SubtitleTrack[];
+    thumbnail_url?: string | null;
+    category?: string | null;
+    ended_at?: string | null;
+    created_at: string;
+    description?: string | null;
+    views?: string | number;
+    viewer_count_peak?: number;
+    like_count?: number;
+    dislike_count?: number;
+    chat_enabled?: boolean;
+    chat_messages?: ChatMessage[];
+    is_processing?: boolean;
+}
+
+interface PlaylistEntry { video?: { id: string } }
+interface VideoPlaylist { id: string; title: string; kind?: string; videos?: PlaylistEntry[] }
+interface RecommendedVideo {
+    id: string;
+    title: string;
+    thumbnail_url?: string | null;
+    category?: string | null;
+    views?: string | number;
+    ended_at?: string | null;
+    created_at: string;
+    host?: { id: string };
+    video?: { duration_seconds?: number | null } | null;
+}
+interface CurrentUser { id: string; display_name?: string }
+
 // Custom HLS player component with familiar video controls
-function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, hasNext, hasPrev }: {
+function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, onViewUpdate, hasNext, hasPrev }: {
     videoId?: string,
     url: string,
     poster: string,
-    subtitles: any[],
+    subtitles: SubtitleTrack[],
     onNext?: () => void,
     onPrev?: () => void,
     onEnded?: () => void,
+    onViewUpdate?: (views: string) => void,
     hasNext?: boolean,
     hasPrev?: boolean
 }) {
@@ -55,9 +119,10 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
     const containerRef = React.useRef<HTMLDivElement>(null);
     const progressBarRef = React.useRef<HTMLDivElement>(null);
 
-    const [qualities, setQualities] = useState<any[]>([]);
+    const [qualities, setQualities] = useState<PlayerQuality[]>([]);
     const [currentQuality, setCurrentQuality] = useState<number>(-1); // -1 is Auto
-    const [hlsInstance, setHlsInstance] = useState<Hls | null>(null);
+    const hlsInstanceRef = React.useRef<Hls | null>(null);
+    const viewHeartbeatInFlightRef = React.useRef(false);
 
     // Player States
     const [isPlaying, setIsPlaying] = useState(false);
@@ -203,7 +268,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
     };
 
     // Toggle Subtitles (CC)
-    const handleToggleSubtitles = () => {
+    const handleToggleSubtitles = React.useCallback(() => {
         const video = videoRef.current;
         if (!video) return;
 
@@ -213,7 +278,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
         for (let i = 0; i < video.textTracks.length; i++) {
             video.textTracks[i].mode = nextState ? 'showing' : 'disabled';
         }
-    };
+    }, [subtitlesEnabled]);
 
     // Subtitles track initializer effect
     useEffect(() => {
@@ -382,7 +447,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
         }
     };
 
-    const handleMiniDragStart = (e: any) => {
+    const handleMiniDragStart = (e: React.MouseEvent | React.TouchEvent) => {
         if (!isMini) return;
 
         // Prevent dragging if clicking controls or inputs
@@ -402,7 +467,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
         };
     };
 
-    const handleMiniDragMove = (e: any) => {
+    const handleMiniDragMove = (e: React.MouseEvent | React.TouchEvent) => {
         if (!isDraggingRef.current) return;
         
         const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
@@ -432,6 +497,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
 
         let hls: Hls;
         let retryTimer: ReturnType<typeof setTimeout> | undefined;
+        let directMetadataHandler: (() => void) | undefined;
         let disposed = false;
 
         if (Hls.isSupported() && url.includes('.m3u8')) {
@@ -448,11 +514,11 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
             hls.loadSource(url);
             hls.attachMedia(video);
 
-            hls.on(Hls.Events.MANIFEST_PARSED, function (event, data) {
+            hls.on(Hls.Events.MANIFEST_PARSED, function (_event, data) {
                 setQualities(data.levels);
             });
 
-            hls.on(Hls.Events.LEVEL_SWITCHED, function (event, data) {
+            hls.on(Hls.Events.LEVEL_SWITCHED, function () {
                 setCurrentQuality(hls.currentLevel);
             });
 
@@ -468,20 +534,23 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
                 }
             });
 
-            setHlsInstance(hls);
+            hlsInstanceRef.current = hls;
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
             video.src = url;
         } else {
             video.src = url;
-            setQualities([{ height: 'Original (MP4)' }]);
+            directMetadataHandler = () => setQualities([{ height: 'Original (MP4)' }]);
+            video.addEventListener('loadedmetadata', directMetadataHandler, { once: true });
         }
 
         return () => {
             disposed = true;
             if (retryTimer) clearTimeout(retryTimer);
+            if (directMetadataHandler) video.removeEventListener('loadedmetadata', directMetadataHandler);
             if (hls) {
                 hls.destroy();
             }
+            hlsInstanceRef.current = null;
         };
     }, [url]);
 
@@ -499,6 +568,56 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
             }
         }).catch(() => undefined);
     }, [videoId]);
+
+    useEffect(() => {
+        if (!videoId) return;
+        const sessionStorageKey = `view-session:${videoId}`;
+        const deviceStorageKey = 'podlive-device-id';
+        const createClientId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        const sessionId = sessionStorage.getItem(sessionStorageKey) || createClientId();
+        const deviceId = localStorage.getItem(deviceStorageKey) || createClientId();
+        sessionStorage.setItem(sessionStorageKey, sessionId);
+        localStorage.setItem(deviceStorageKey, deviceId);
+
+        const reportView = () => {
+            const video = videoRef.current;
+            if (!video || viewHeartbeatInFlightRef.current || !Number.isFinite(video.duration) || video.duration <= 0) return;
+            let watchedSeconds = 0;
+            for (let index = 0; index < video.played.length; index += 1) {
+                watchedSeconds += Math.max(video.played.end(index) - video.played.start(index), 0);
+            }
+            if (watchedSeconds <= 0) return;
+            viewHeartbeatInFlightRef.current = true;
+            const token = localStorage.getItem('accessToken');
+            fetch(buildApiUrl(`/api/videos/${videoId}/view`), {
+                method: 'POST',
+                keepalive: true,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Device-Id': deviceId,
+                    ...(token ? { Authorization: `Bearer ${token}` } : {})
+                },
+                body: JSON.stringify({
+                    sessionId,
+                    deviceId,
+                    watchTimeSeconds: Math.floor(watchedSeconds),
+                    durationSeconds: video.duration,
+                    completionRate: watchedSeconds / video.duration
+                })
+            }).then(async (response) => response.ok ? response.json() : null)
+                .then((data) => data?.views && onViewUpdate?.(data.views))
+                .catch(() => undefined)
+                .finally(() => { viewHeartbeatInFlightRef.current = false; });
+        };
+
+        const interval = window.setInterval(reportView, 10000);
+        window.addEventListener('pagehide', reportView);
+        return () => {
+            window.clearInterval(interval);
+            window.removeEventListener('pagehide', reportView);
+            reportView();
+        };
+    }, [videoId, onViewUpdate]);
 
     useEffect(() => {
         if (!videoId) return;
@@ -547,7 +666,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
         }
     };
 
-    const handleToggleMute = () => {
+    const handleToggleMute = React.useCallback(() => {
         const video = videoRef.current;
         if (!video) return;
         const nextMute = !isMuted;
@@ -557,7 +676,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
             setVolume(0.5);
             video.volume = 0.5;
         }
-    };
+    }, [isMuted, volume]);
 
     const formatTime = (secs: number) => {
         if (isNaN(secs)) return "00:00";
@@ -693,11 +812,12 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [duration, playbackRate, seekBy]);
+    }, [duration, playbackRate, seekBy, handleToggleMute, handleToggleSubtitles]);
 
     const handleQualityChange = (levelIndex: number) => {
-        if (hlsInstance) {
-            hlsInstance.currentLevel = levelIndex;
+        const hls = hlsInstanceRef.current;
+        if (hls) {
+            hls.currentLevel = levelIndex;
             setCurrentQuality(levelIndex);
             setShowSettings(false);
         }
@@ -745,7 +865,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
                 width: '340px',
                 height: '191px',
                 zIndex: 9999,
-                cursor: isDraggingRef.current ? 'grabbing' : 'grab'
+                cursor: 'grab'
             } : undefined}
             className={`relative -mx-4 aspect-video w-[calc(100%_+_2rem)] bg-black overflow-hidden border-y border-white/10 shadow-2xl group/player select-none touch-none sm:mx-0 sm:w-full sm:rounded-2xl sm:border fullscreen:m-0 fullscreen:h-screen fullscreen:w-screen fullscreen:aspect-auto fullscreen:rounded-none fullscreen:border-0 fullscreen:bg-black ${
                 isMini ? "shadow-[0_20px_50px_rgba(0,0,0,0.5)] border-indigo-500/30" : ""
@@ -812,7 +932,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
                     } else if (onEnded) onEnded();
                 }}
             >
-                {subtitles && subtitles.map((sub: any, idx: number) => (
+                {subtitles && subtitles.map((sub, idx: number) => (
                     <track
                         key={sub.id}
                         kind="subtitles"
@@ -1134,19 +1254,19 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, h
 export default function WatchPage() {
     const router = useRouter();
     const params = useParams();
-    const [recording, setRecording] = useState<any>(null);
+    const [recording, setRecording] = useState<RecordingDetails | null>(null);
     const [loading, setLoading] = useState(true);
     const [isLiked, setIsLiked] = useState(false);
     const [isDisliked, setIsDisliked] = useState(false);
     const [isFollowing, setIsFollowing] = useState(false);
     const [newComment, setNewComment] = useState("");
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [currentUser, setCurrentUser] = useState<any>(null);
+    const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
 
     // Playlist & Report & Menu states
     const [isBookmarked, setIsBookmarked] = useState(false);
     const [showPlaylistModal, setShowPlaylistModal] = useState(false);
-    const [playlists, setPlaylists] = useState<any[]>([]);
+    const [playlists, setPlaylists] = useState<VideoPlaylist[]>([]);
     const [newPlaylistTitle, setNewPlaylistTitle] = useState("");
     const [showReportModal, setShowReportModal] = useState(false);
     const [reportReason, setReportReason] = useState("");
@@ -1154,11 +1274,11 @@ export default function WatchPage() {
     const [showMenu, setShowMenu] = useState(false);
 
     // Suggested videos states
-    const [recommendedVideos, setRecommendedVideos] = useState<any[]>([]);
+    const [recommendedVideos, setRecommendedVideos] = useState<RecommendedVideo[]>([]);
     const [recommendedLoading, setRecommendedLoading] = useState(true);
     const [recommendedFilter, setRecommendedFilter] = useState<'all' | 'creator' | 'related'>('all');
     const [autoPlayEnabled, setAutoPlayEnabled] = useState(true);
-    const [videoSubtitles, setVideoSubtitles] = useState<any[]>([]);
+    const [videoSubtitles, setVideoSubtitles] = useState<SubtitleTrack[]>([]);
 
     useEffect(() => {
         if (typeof window !== "undefined") {
@@ -1258,9 +1378,10 @@ export default function WatchPage() {
                 });
                 const data = await res.json();
                 if (res.ok && Array.isArray(data.playlists)) {
-                    const watchLater = data.playlists.find((p: any) => p.kind === 'watch_later');
+                    const availablePlaylists = data.playlists as VideoPlaylist[];
+                    const watchLater = availablePlaylists.find((p) => p.kind === 'watch_later');
                     if (watchLater) {
-                        const hasVideo = watchLater.videos?.some((v: any) => v.video?.id === recording.video.id);
+                        const hasVideo = watchLater.videos?.some((v) => v.video?.id === recording.video?.id);
                         setIsBookmarked(!!hasVideo);
                     }
                 }
@@ -1283,7 +1404,7 @@ export default function WatchPage() {
                 const res = await fetch(buildApiUrl("/api/live/videos?limit=30"));
                 const data = await res.json();
                 if (res.ok) {
-                    const filtered = data.filter((vod: any) => vod.id !== params.id);
+                    const filtered = (data as RecommendedVideo[]).filter((vod) => vod.id !== params.id);
                     setRecommendedVideos(filtered);
                 }
             } catch (err) {
@@ -1319,7 +1440,7 @@ export default function WatchPage() {
     }, [recording]);
 
     // Next/Previous video navigation
-    const currentVideoIndex = recommendedVideos.findIndex((v: any) => v.id === params.id);
+    const currentVideoIndex = recommendedVideos.findIndex((v) => v.id === params.id);
     const hasNextVideo = recommendedVideos.length > 0;
     const hasPrevVideo = currentVideoIndex > 0;
 
@@ -1348,14 +1469,19 @@ export default function WatchPage() {
         }
     };
 
+    const handleViewUpdate = React.useCallback((views: string) => {
+        setRecording((previous) => previous ? { ...previous, views } : previous);
+    }, []);
+
     const displayedVideos = recommendedVideos.filter((vod) => {
-        if (recommendedFilter === 'creator') return vod.host?.id === recording.host?.id;
-        if (recommendedFilter === 'related') return vod.category === recording.category;
+        if (recommendedFilter === 'creator') return vod.host?.id === recording?.host?.id;
+        if (recommendedFilter === 'related') return vod.category === recording?.category;
         return true;
     });
 
     const handleFollowToggle = async (e: React.MouseEvent) => {
         e.stopPropagation();
+        if (!recording) return;
         try {
             const token = localStorage.getItem("accessToken");
             if (!token) {
@@ -1374,13 +1500,13 @@ export default function WatchPage() {
             const data = await res.json();
             if (res.ok) {
                 setIsFollowing(data.following);
-                setRecording((prev: any) => ({
+                setRecording((prev) => prev ? ({
                     ...prev,
                     host: {
                         ...prev.host,
                         follower_count: data.following ? prev.host.follower_count + 1 : prev.host.follower_count - 1
                     }
-                }));
+                }) : prev);
             }
         } catch (error) {
             console.error("Error toggling follow:", error);
@@ -1408,11 +1534,11 @@ export default function WatchPage() {
             if (res.ok) {
                 setIsLiked(data.liked);
                 setIsDisliked(data.disliked);
-                setRecording((prev: any) => ({
+                setRecording((prev) => prev ? ({
                     ...prev,
                     like_count: data.like_count,
                     dislike_count: data.dislike_count
-                }));
+                }) : prev);
             }
         } catch (error) {
             console.error(`Error toggling ${type}:`, error);
@@ -1437,7 +1563,7 @@ export default function WatchPage() {
             const playlistsData = await playlistsRes.json();
             if (!playlistsRes.ok) throw new Error(playlistsData.error || "Failed to fetch playlists");
 
-            let watchLater = playlistsData.playlists?.find((p: any) => p.kind === 'watch_later');
+            let watchLater = (playlistsData.playlists as VideoPlaylist[] | undefined)?.find((p) => p.kind === 'watch_later');
 
             if (!watchLater) {
                 const createRes = await fetch(buildApiUrl("/api/videos/playlists"), {
@@ -1452,6 +1578,8 @@ export default function WatchPage() {
                 if (!createRes.ok) throw new Error(createData.error || "Failed to create Watch Later playlist");
                 watchLater = createData.playlist;
             }
+
+            if (!watchLater) throw new Error("Watch Later playlist is unavailable");
 
             const videoId = recording.video.id;
             if (isBookmarked) {
@@ -1475,9 +1603,9 @@ export default function WatchPage() {
                     setIsBookmarked(true);
                 }
             }
-        } catch (error: any) {
+        } catch (error: unknown) {
             console.error("Bookmark toggle failed:", error);
-            alert(error.message || "Failed to toggle bookmark");
+            alert(error instanceof Error ? error.message : "Failed to toggle bookmark");
         }
     };
 
@@ -1507,6 +1635,7 @@ export default function WatchPage() {
     };
 
     const handleTogglePlaylistVideo = async (playlistId: string, isAlreadyIn: boolean) => {
+        if (!recording?.video?.id) return;
         try {
             const token = localStorage.getItem("accessToken");
             const videoId = recording.video.id;
@@ -1519,7 +1648,7 @@ export default function WatchPage() {
                 if (res.ok) {
                     setPlaylists(prev => prev.map(p => p.id === playlistId ? {
                         ...p,
-                        videos: p.videos?.filter((v: any) => v.video?.id !== videoId)
+                        videos: p.videos?.filter((v) => v.video?.id !== videoId)
                     } : p));
                 }
             } else {
@@ -1624,6 +1753,7 @@ export default function WatchPage() {
     };
 
     const handleToggleComments = async () => {
+        if (!recording) return;
         try {
             const token = localStorage.getItem("accessToken");
             const nextState = !recording.chat_enabled;
@@ -1636,7 +1766,7 @@ export default function WatchPage() {
                 body: JSON.stringify({ chat_enabled: nextState })
             });
             if (res.ok) {
-                setRecording((prev: any) => ({ ...prev, chat_enabled: nextState }));
+                setRecording((prev) => prev ? ({ ...prev, chat_enabled: nextState }) : prev);
             }
         } catch (err) {
             console.error("Failed to toggle comments:", err);
@@ -1644,6 +1774,7 @@ export default function WatchPage() {
     };
 
     const handleShare = async () => {
+        if (!recording) return;
         const shareData = {
             title: recording.title,
             text: `Check out this podcast: ${recording.title} on PodLive!`,
@@ -1671,20 +1802,6 @@ export default function WatchPage() {
         }
     };
 
-    useEffect(() => {
-        if (params.id && !loading) {
-            // Increment view count on video playback
-            fetch(buildApiUrl(`/api/live/${params.id}/view`), { method: 'POST' })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.views) {
-                        setRecording((prev: any) => prev ? ({ ...prev, views: data.views }) : null);
-                    }
-                })
-                .catch(err => console.error("View count increment failed", err));
-        }
-    }, [params.id, loading]);
-
     const handlePostComment = async (e?: React.FormEvent) => {
         if (e) e.preventDefault();
         if (!newComment.trim()) return;
@@ -1709,10 +1826,10 @@ export default function WatchPage() {
 
             const data = await res.json();
             if (res.ok) {
-                setRecording((prev: any) => ({
+                setRecording((prev) => prev ? ({
                     ...prev,
                     chat_messages: [...(prev.chat_messages || []), data.comment]
-                }));
+                }) : prev);
                 setNewComment("");
             } else {
                 alert(data.error || 'Failed to post comment');
@@ -1763,7 +1880,7 @@ export default function WatchPage() {
                                 <Activity className="w-12 h-12 text-indigo-500 animate-pulse mb-6" />
                                 <h2 className="text-2xl font-bold text-white mb-2">Processing High-Quality Video</h2>
                                 <p className="text-zinc-400 max-w-md">
-                                    We're currently converting this video into multiple resolutions (1080p, 720p, 480p) for smooth, buffer-free adaptive streaming.
+                                    We&apos;re currently converting this video into multiple resolutions (1080p, 720p, 480p) for smooth, buffer-free adaptive streaming.
                                 </p>
                                 <div className="mt-8 flex items-center gap-2 text-indigo-400 text-sm font-semibold bg-indigo-500/10 px-4 py-2 rounded-full">
                                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -1779,6 +1896,7 @@ export default function WatchPage() {
                                 onNext={handleNextVideo}
                                 onPrev={handlePrevVideo}
                                 onEnded={handleVideoEnded}
+                                onViewUpdate={handleViewUpdate}
                                 hasNext={hasNextVideo}
                                 hasPrev={hasPrevVideo}
                             />
@@ -1828,11 +1946,11 @@ export default function WatchPage() {
                                     </div>
                                 </div>
 
-                                <div className="flex items-center gap-3">
-                                    <div className="flex items-center bg-white/5 rounded-full border border-white/10 p-0.5">
+                                <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto sm:flex-nowrap sm:gap-3">
+                                    <div className="flex shrink-0 items-center rounded-full border border-white/10 bg-white/5 p-0.5">
                                         <button
                                             onClick={() => handleReactionToggle('like')}
-                                            className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-all ${isLiked ? 'bg-pink-500/20 text-pink-500 border border-pink-500/30' : 'hover:bg-white/5 text-white'}`}
+                                            className={`flex items-center gap-1.5 rounded-full px-3 py-2 font-medium transition-all sm:px-4 ${isLiked ? 'bg-pink-500/20 text-pink-500 border border-pink-500/30' : 'hover:bg-white/5 text-white'}`}
                                         >
                                             <Heart className={`w-4 h-4 ${isLiked ? 'fill-current' : ''}`} />
                                             <span>{recording.like_count || 0}</span>
@@ -1840,7 +1958,7 @@ export default function WatchPage() {
                                         <div className="w-[1px] h-5 bg-white/10 mx-1" />
                                         <button
                                             onClick={() => handleReactionToggle('dislike')}
-                                            className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-all ${isDisliked ? 'bg-red-500/20 text-red-500 border border-red-500/30' : 'hover:bg-white/5 text-white'}`}
+                                            className={`flex items-center gap-1.5 rounded-full px-3 py-2 font-medium transition-all sm:px-4 ${isDisliked ? 'bg-red-500/20 text-red-500 border border-red-500/30' : 'hover:bg-white/5 text-white'}`}
                                         >
                                             <ThumbsDown className={`w-4 h-4 ${isDisliked ? 'fill-current' : ''}`} />
                                             <span>{recording.dislike_count || 0}</span>
@@ -1848,22 +1966,22 @@ export default function WatchPage() {
                                     </div>
                                     <button
                                         onClick={handleShare}
-                                        className="flex items-center gap-2 px-4 py-2 bg-indigo-600/10 hover:bg-indigo-600/20 rounded-full font-medium text-indigo-400 transition-all border border-indigo-500/20"
+                                        className="flex min-h-10 shrink-0 items-center gap-2 rounded-full border border-indigo-500/20 bg-indigo-600/10 px-3 py-2 font-medium text-indigo-400 transition-all hover:bg-indigo-600/20 sm:px-4"
                                     >
                                         <Share2 className="w-5 h-5" />
-                                        Share
+                                        <span className="hidden min-[420px]:inline">Share</span>
                                     </button>
                                     <button
                                         onClick={handleBookmarkToggle}
-                                        className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium transition-all ${isBookmarked ? 'bg-amber-500/20 text-amber-500 border border-amber-500/50' : 'bg-white/5 hover:bg-white/10 text-white border border-transparent'}`}
+                                        className={`flex min-h-10 min-w-10 shrink-0 items-center justify-center gap-2 rounded-full px-3 py-2 font-medium transition-all sm:px-4 ${isBookmarked ? 'bg-amber-500/20 text-amber-500 border border-amber-500/50' : 'bg-white/5 hover:bg-white/10 text-white border border-transparent'}`}
                                     >
                                         <Bookmark className={`w-5 h-5 ${isBookmarked ? 'fill-current' : ''}`} />
-                                        <span>{isBookmarked ? 'Bookmarked' : 'Bookmark'}</span>
+                                        <span className="hidden md:inline">{isBookmarked ? 'Bookmarked' : 'Bookmark'}</span>
                                     </button>
-                                    <div className="relative">
+                                    <div className="relative ml-auto shrink-0 sm:ml-0">
                                         <button
                                             onClick={() => setShowMenu(!showMenu)}
-                                            className="p-2 bg-white/5 hover:bg-white/10 rounded-full text-white transition-colors"
+                                            className="grid min-h-10 min-w-10 place-items-center rounded-full bg-white/5 text-white transition-colors hover:bg-white/10"
                                         >
                                             <MoreVertical className="w-5 h-5" />
                                         </button>
@@ -1913,7 +2031,7 @@ export default function WatchPage() {
                                     onClick={() => router.push(`/creator/${host.id}`)}
                                 >
                                     <div className="relative">
-                                        <img src={avatarUrl} alt={host.display_name} className="w-14 h-14 rounded-full object-cover border-2 border-transparent group-hover:border-indigo-500 transition-colors" />
+                                        <Image unoptimized src={avatarUrl} alt={host.display_name} width={56} height={56} className="w-14 h-14 rounded-full object-cover border-2 border-transparent group-hover:border-indigo-500 transition-colors" />
                                     </div>
                                     <div>
                                         <div className="flex items-center gap-2">
@@ -1997,7 +2115,7 @@ export default function WatchPage() {
                                                     <p className="text-sm">No comments yet. Share your thoughts!</p>
                                                 </div>
                                             ) : (
-                                                recording.chat_messages.map((chat: any) => {
+                                                recording.chat_messages.map((chat) => {
                                                     const hash = [...chat.sender_handle].reduce((acc, char) => acc + char.charCodeAt(0), 0);
                                                     const colors = ['bg-orange-500', 'bg-green-500', 'bg-blue-500', 'bg-pink-500', 'bg-purple-500', 'bg-indigo-500'];
                                                     const textColor = colors[hash % colors.length].replace('bg-', 'text-');
@@ -2092,7 +2210,7 @@ export default function WatchPage() {
                                 ) : displayedVideos.length === 0 ? (
                                     <p className="text-sm text-zinc-500 text-center py-8">No matching recommendations.</p>
                                 ) : (
-                                    displayedVideos.map((vod: any) => {
+                                    displayedVideos.map((vod) => {
                                         return (
                                             <div
                                                 key={vod.id}
@@ -2101,9 +2219,12 @@ export default function WatchPage() {
                                             >
                                                 {/* Thumbnail */}
                                                 <div className="relative w-32 aspect-video shrink-0 bg-zinc-900 rounded-lg overflow-hidden border border-white/5">
-                                                    <img
+                                                    <Image
+                                                        unoptimized
                                                         src={vod.thumbnail_url || "https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&q=80&w=600"}
                                                         alt={vod.title}
+                                                        fill
+                                                        sizes="128px"
                                                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                                                     />
                                                     {vod.video?.duration_seconds && (
@@ -2162,7 +2283,7 @@ export default function WatchPage() {
                                 <p className="text-zinc-500 text-sm">No playlists found. Create one below!</p>
                             ) : (
                                 playlists.map((p) => {
-                                    const isAlreadyIn = p.videos?.some((v: any) => v.video?.id === recording?.video?.id);
+                                    const isAlreadyIn = p.videos?.some((v) => v.video?.id === recording?.video?.id);
                                     return (
                                         <label key={p.id} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl border border-white/5 cursor-pointer hover:bg-white/10 transition-colors">
                                             <input

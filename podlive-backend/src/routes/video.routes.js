@@ -66,7 +66,7 @@ router.delete('/:id', authMiddleware, videoController.deleteVideo);
 router.get('/:id/access', authMiddleware, videoController.listAccessGrants);
 router.post('/:id/access', authMiddleware, videoController.grantAccess);
 router.delete('/:id/access/:userId', authMiddleware, videoController.revokeAccess);
-router.post('/:id/view', authMiddleware, videoController.recordView);
+router.post('/:id/view', authMiddleware.optionalAuth, videoController.recordView);
 router.post('/:id/reaction', authMiddleware, videoController.reactToVideo);
 router.post('/:id/history', authMiddleware, videoController.updateHistory);
 router.post('/:id/report', authMiddleware, videoController.reportVideo);

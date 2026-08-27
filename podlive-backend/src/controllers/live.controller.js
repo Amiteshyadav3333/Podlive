@@ -618,6 +618,7 @@ exports.getRecordingDetails = async (req, res) => {
 
         res.json({
             ...sessionData,
+            views: video?.views?.toString?.() || sessionData.views,
             video: serializeVideo(video),
             realtimeOnly: true,
             host: {
@@ -1271,12 +1272,19 @@ exports.getPublicVODs = async (req, res) => {
             where,
             include: {
                 host: { select: { id: true, unique_handle: true, display_name: true, avatar_url: true, is_verified: true } },
-                video: { select: { duration_seconds: true } }
+                video: { select: { id: true, duration_seconds: true, views: true } }
             },
             orderBy,
             take: parseInt(limit)
         });
-        res.json(sessions);
+        res.json(sessions.map((session) => ({
+            ...session,
+            views: session.video?.views?.toString?.() || session.views,
+            video: session.video ? {
+                ...session.video,
+                views: session.video.views?.toString?.() || session.video.views
+            } : null
+        })));
     } catch (error) {
         console.error('Get Public VODs Error:', error);
         res.status(500).json({ error: 'Internal Server Error' });
@@ -1286,12 +1294,16 @@ exports.getPublicVODs = async (req, res) => {
 exports.incrementViewCount = async (req, res) => {
     try {
         const { id } = req.params;
-        const session = await prisma.liveSession.update({
+        const session = await prisma.liveSession.findUnique({
             where: { id },
-            data: { views: { increment: 1 } }
+            include: { video: { select: { views: true } } }
         });
-
-        res.json({ views: session.views });
+        if (!session) return res.status(404).json({ error: 'Video not found' });
+        res.json({
+            views: session.video?.views?.toString?.() || session.views,
+            deprecated: true,
+            message: 'Use the qualified video view endpoint'
+        });
     } catch (error) {
         console.error("Increment view error:", error);
         res.status(500).json({ error: 'Failed to increment view count' });
