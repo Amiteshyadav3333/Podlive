@@ -1,12 +1,11 @@
 export type SupportedLanguage = "hi" | "en";
 
 export function detectLanguage(): SupportedLanguage {
-  if (typeof window === "undefined") return "hi";
+  if (typeof window === "undefined") return "en";
   const manuallySelected = localStorage.getItem("podliveLanguageSource") === "manual";
   const saved = localStorage.getItem("podliveLanguage");
   if (manuallySelected && (saved === "hi" || saved === "en")) return saved;
-  const deviceLanguages = navigator.languages?.length ? navigator.languages : [navigator.language];
-  return deviceLanguages.some(language => language.toLowerCase().startsWith("hi")) ? "hi" : "en";
+  return "en";
 }
 
 export function saveLanguage(language: SupportedLanguage) {

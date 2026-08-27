@@ -41,7 +41,7 @@ const plans = [
 ] as const;
 
 export default function MarketingLanding() {
-  const [language, setLanguage] = useState<SupportedLanguage>("hi");
+  const [language, setLanguage] = useState<SupportedLanguage>("en");
   const [openFaq, setOpenFaq] = useState(0);
   useEffect(() => {
     const timer = window.setTimeout(() => setLanguage(detectLanguage()), 0);

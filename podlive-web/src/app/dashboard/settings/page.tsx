@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader2, CheckCircle2, AlertCircle, LogOut, Users, Clock3, BadgeDollarSign, Upload, ShieldCheck, Copy } from "lucide-react";
+import { Loader2, CheckCircle2, AlertCircle, LogOut, Users, Clock3, BadgeDollarSign, Upload, ShieldCheck, Copy, Crown } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { buildApiUrl } from "@/lib/api";
 import DashboardSidebar from "@/components/DashboardSidebar";
+import { saveLanguage, type SupportedLanguage } from "@/lib/language";
 
 interface CreatorProfile {
   id: string;
@@ -25,6 +26,7 @@ interface MonetizationDetails {
     watchHoursPercent: number;
   };
 }
+interface PlanStatus { planCode: "free" | "plus" | "max"; active: boolean; maxVideoHeight: number | null; podcastLimit: number | null }
 
 export default function Settings() {
   const router = useRouter();
@@ -32,6 +34,7 @@ export default function Settings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [monetization, setMonetization] = useState<MonetizationDetails | null>(null);
+  const [plan, setPlan] = useState<PlanStatus | null>(null);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   useEffect(() => {
@@ -39,10 +42,12 @@ export default function Settings() {
     if (!token) { router.push("/login"); return; }
     Promise.all([
       fetch(buildApiUrl("/api/user/profile"), { headers: { Authorization: `Bearer ${token}` } }).then(r => r.json()),
-      fetch(buildApiUrl("/api/user/monetization"), { headers: { Authorization: `Bearer ${token}` } }).then(r => r.ok ? r.json() : null)
-    ]).then(([profileData, monetizationData]) => {
+      fetch(buildApiUrl("/api/user/monetization"), { headers: { Authorization: `Bearer ${token}` } }).then(r => r.ok ? r.json() : null),
+      fetch(buildApiUrl("/api/plans/status"), { headers: { Authorization: `Bearer ${token}` } }).then(r => r.ok ? r.json() : null)
+    ]).then(([profileData, monetizationData, planData]) => {
       setProfile(profileData);
       setMonetization(monetizationData?.monetization || null);
+      setPlan(planData?.entitlements || null);
     }).catch(console.error).finally(() => setLoading(false));
   }, [router]);
 
@@ -54,13 +59,11 @@ export default function Settings() {
       const res = await fetch(buildApiUrl("/api/user/profile"), {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ display_name: profile.display_name, bio: profile.bio, birth_date: profile.profile?.birth_date || null, language: profile.profile?.language || "hi" })
+        body: JSON.stringify({ display_name: profile.display_name, bio: profile.bio, birth_date: profile.profile?.birth_date || null, language: profile.profile?.language || "en" })
       });
       if (res.ok) {
         setMessage({ type: "success", text: "Profile updated successfully!" });
-        localStorage.setItem("podliveLanguage", profile.profile?.language || "hi");
-        localStorage.setItem("podliveLanguageSource", "manual");
-        document.documentElement.lang = profile.profile?.language || "hi";
+        saveLanguage((profile.profile?.language || "en") as SupportedLanguage);
         const u = localStorage.getItem("user");
         if (u) localStorage.setItem("user", JSON.stringify({ ...JSON.parse(u), display_name: profile.display_name }));
       } else {
@@ -95,9 +98,9 @@ export default function Settings() {
 
                 <div>
                   <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">ऐप की भाषा / App language</label>
-                  <select value={profile?.profile?.language || "hi"} onChange={(event) => setProfile(previous => previous ? { ...previous, profile: { ...previous.profile, language: event.target.value } } : previous)} className="w-full rounded-xl border border-white/[0.08] bg-zinc-900 px-4 py-3 text-sm text-white outline-none focus:border-indigo-500/70">
-                    <option value="hi">हिन्दी (Default)</option><option value="en">English</option><option value="bn">বাংলা</option><option value="te">తెలుగు</option><option value="mr">मराठी</option><option value="ta">தமிழ்</option><option value="ur">اردو</option><option value="gu">ગુજરાતી</option><option value="kn">ಕನ್ನಡ</option><option value="ml">മലയാളം</option><option value="pa">ਪੰਜਾਬੀ</option><option value="or">ଓଡ଼ିଆ</option><option value="as">অসমীয়া</option><option value="mai">मैथिली</option><option value="sa">संस्कृतम्</option><option value="ks">کٲشُر</option><option value="ne">नेपाली</option><option value="sd">سنڌي</option><option value="kok">कोंकणी</option><option value="doi">डोगरी</option><option value="mni">মৈতৈলোন্</option><option value="brx">बड़ो</option><option value="sat">ᱥᱟᱱᱛᱟᱲᱤ</option></select>
-                  <p className="mt-1.5 text-xs text-zinc-600">Hindi is the default. The selected language is saved to your profile and device.</p>
+                  <select value={profile?.profile?.language || "en"} onChange={(event) => setProfile(previous => previous ? { ...previous, profile: { ...previous.profile, language: event.target.value } } : previous)} className="w-full rounded-xl border border-white/[0.08] bg-zinc-900 px-4 py-3 text-sm text-white outline-none focus:border-indigo-500/70">
+                    <option value="en">English (Default)</option><option value="hi">हिन्दी</option></select>
+                  <p className="mt-1.5 text-xs text-zinc-600">English is the default. Save changes to apply your selection across the app.</p>
                 </div>
 
                 {message && (
@@ -165,6 +168,10 @@ export default function Settings() {
                   {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                   {saving ? "Saving..." : "Save Changes"}
                 </button>
+              </div>
+
+              <div className="overflow-hidden rounded-2xl border border-amber-400/15 bg-gradient-to-r from-amber-500/10 via-white/[.025] to-transparent p-5 sm:p-6">
+                <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex gap-3"><span className="grid size-11 shrink-0 place-items-center rounded-xl bg-amber-400/15 text-amber-300"><Crown className="size-5"/></span><div><p className="text-xs font-bold uppercase tracking-wider text-amber-300">Your subscription</p><h2 className="mt-1 text-xl font-black">{plan?.active ? `PodLive ${plan.planCode === "max" ? "Max" : "Plus"}` : "Basic Free"}</h2><p className="mt-1 text-xs text-zinc-500">{plan?.active ? `${plan.maxVideoHeight ? `${plan.maxVideoHeight}p` : "Highest quality"} · ${plan.podcastLimit === null ? "Unlimited live podcasts" : `${plan.podcastLimit} live podcasts / 30 days`}` : "Watch public videos · Live streaming locked"}</p></div></div><button onClick={()=>router.push(`/subscribe?plan=${plan?.planCode === "plus" ? "max" : "plus"}`)} className="min-h-11 rounded-xl bg-white px-5 text-sm font-black text-black hover:bg-zinc-200">{plan?.active ? "Manage / Upgrade" : "Subscribe now"}</button></div>
               </div>
 
               <div className="glass overflow-hidden rounded-2xl">

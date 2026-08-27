@@ -1,5 +1,5 @@
 const PLAN_ENTITLEMENTS = Object.freeze({
-    free: { adFree: false, maxVideoHeight: 720, personalizedFeed: false, podcastLimit: 2 },
+    free: { adFree: false, maxVideoHeight: 720, personalizedFeed: false, podcastLimit: 0 },
     plus: { adFree: true, maxVideoHeight: 1080, personalizedFeed: true, podcastLimit: 10 },
     max: { adFree: true, maxVideoHeight: null, personalizedFeed: true, podcastLimit: null }
 });

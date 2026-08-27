@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { Radio, AlertCircle, Loader2, CheckCircle2, Mic, Camera, Wifi, Globe2, Lock, Link2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Radio, AlertCircle, Loader2, CheckCircle2, Mic, Camera, Wifi, Globe2, Lock, Link2, Crown, Play } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { buildApiUrl } from "@/lib/api";
 import DashboardSidebar from "@/components/DashboardSidebar";
@@ -14,6 +15,16 @@ export default function SetupPage() {
   const [allowedHandle, setAllowedHandle] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [liveAllowed, setLiveAllowed] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem("accessToken");
+    if (!token) { router.replace("/login?next=/dashboard/setup"); return; }
+    fetch(buildApiUrl("/api/plans/status"), { headers: { Authorization: `Bearer ${token}` } })
+      .then(response => response.ok ? response.json() : null)
+      .then(data => setLiveAllowed(Boolean(data?.entitlements?.active && data?.entitlements?.podcastLimit !== 0)))
+      .catch(() => setLiveAllowed(false));
+  }, [router]);
 
   const handleGoLive = async () => {
     if (!formData.title.trim()) { setError("Title is required."); return; }
@@ -41,8 +52,8 @@ export default function SetupPage() {
         sessionStorage.setItem(`privateInvite:${data.session.id}`, joinUrl);
       }
       router.push(`/live/${data.session.id}`);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to start session.");
       setLoading(false);
     }
   };
@@ -53,6 +64,9 @@ export default function SetupPage() {
     { icon: Wifi, label: "Stable connection", ok: true },
     { icon: CheckCircle2, label: "Title filled", ok: !!formData.title.trim() },
   ];
+
+  if (liveAllowed === null) return <div className="grid min-h-screen place-items-center bg-[#080808] text-white"><Loader2 className="size-8 animate-spin text-red-500" /></div>;
+  if (!liveAllowed) return <div className="min-h-screen bg-[#080808] text-white"><DashboardSidebar/><main className="grid min-h-screen place-items-center px-5 pb-24 md:ml-60"><section className="w-full max-w-3xl rounded-3xl border border-amber-400/20 bg-gradient-to-br from-amber-500/15 via-zinc-950 to-zinc-950 p-6 text-center sm:p-10"><span className="mx-auto grid size-14 place-items-center rounded-2xl bg-amber-400/15 text-amber-300"><Crown className="size-7"/></span><p className="mt-6 text-xs font-black uppercase tracking-[.2em] text-amber-300">Premium live streaming</p><h1 className="mt-3 text-3xl font-black sm:text-5xl">Subscribe to go live</h1><p className="mx-auto mt-4 max-w-xl leading-7 text-zinc-400">Free plan users can watch public videos. Starting a live podcast unlocks after a verified Plus or Max subscription.</p><div className="mt-8 grid gap-4 sm:grid-cols-2"><Link href="/subscribe?plan=plus" className="rounded-2xl border border-indigo-400/25 bg-indigo-500/10 p-5 text-left hover:bg-indigo-500/15"><b className="text-lg">Plus · ₹299/month</b><span className="mt-2 block text-sm text-zinc-400">Up to 10 live podcasts every 30 days</span><span className="mt-5 flex items-center gap-2 font-bold text-indigo-300"><Play className="size-4"/> Subscribe</span></Link><Link href="/subscribe?plan=max" className="rounded-2xl border border-fuchsia-400/25 bg-fuchsia-500/10 p-5 text-left hover:bg-fuchsia-500/15"><b className="text-lg">Max · ₹599/month</b><span className="mt-2 block text-sm text-zinc-400">Unlimited live podcasts</span><span className="mt-5 flex items-center gap-2 font-bold text-fuchsia-300"><Play className="size-4"/> Subscribe</span></Link></div><Link href="/" className="mt-7 inline-block text-sm text-zinc-500 hover:text-white">Continue watching free videos</Link></section></main></div>;
 
   return (
     <div className="min-h-screen bg-[#080808] text-white">
@@ -103,9 +117,9 @@ export default function SetupPage() {
                   <div className="rounded-2xl border border-white/[.08] p-5 space-y-5">
                     <div><h3 className="font-bold">Live experience</h3><p className="text-xs text-zinc-500">Customize how your studio looks and how viewers participate.</p></div>
                     <div className="grid sm:grid-cols-2 gap-4"><label><span className="block text-xs font-semibold text-zinc-400 mb-2">Brand color</span><div className="flex gap-2"><input type="color" value={formData.brand_color} onChange={e=>setFormData({...formData,brand_color:e.target.value})} className="w-12 h-11"/><input value={formData.brand_color} onChange={e=>setFormData({...formData,brand_color:e.target.value})} className="flex-1 bg-zinc-900 border border-white/[.08] rounded-xl px-3 text-sm"/></div></label><label><span className="block text-xs font-semibold text-zinc-400 mb-2">Stage layout</span><select value={formData.studio_config.layout} onChange={e=>setFormData({...formData,studio_config:{...formData.studio_config,layout:e.target.value}})} className="w-full h-11 bg-zinc-900 border border-white/[.08] rounded-xl px-3 text-sm"><option value="speaker">Focus speaker</option><option value="grid">Guest grid</option><option value="interview">Interview</option><option value="classroom">Classroom</option></select></label></div>
-                    <div className="grid sm:grid-cols-2 gap-3">{[["chat_enabled","Live chat"],["moderation_enabled","Auto moderation"],["low_latency","Low latency"]].map(([key,label])=><button key={key} onClick={()=>setFormData({...formData,[key]:!(formData as any)[key]})} className="flex justify-between items-center p-3 rounded-xl bg-zinc-900/70 border border-white/[.06] text-sm"><span>{label}</span><span className={`w-9 h-5 rounded-full p-0.5 ${(formData as any)[key]?'bg-indigo-500':'bg-zinc-700'}`}><span className={`block w-4 h-4 rounded-full bg-white transition ${(formData as any)[key]?'translate-x-4':''}`}/></span></button>)}</div>
+                    <div className="grid sm:grid-cols-2 gap-3">{([['chat_enabled','Live chat'],['moderation_enabled','Auto moderation'],['low_latency','Low latency']] as const).map(([key,label])=><button key={key} onClick={()=>setFormData({...formData,[key]:!formData[key]})} className="flex justify-between items-center p-3 rounded-xl bg-zinc-900/70 border border-white/[.06] text-sm"><span>{label}</span><span className={`w-9 h-5 rounded-full p-0.5 ${formData[key]?'bg-indigo-500':'bg-zinc-700'}`}><span className={`block w-4 h-4 rounded-full bg-white transition ${formData[key]?'translate-x-4':''}`}/></span></button>)}</div>
                     <div className="rounded-xl bg-emerald-500/[.07] border border-emerald-400/15 p-3 text-xs text-emerald-300">Live podcasts are realtime-only. Recording and replay are disabled to keep the server lightweight.</div>
-                    <div><p className="text-xs font-semibold text-zinc-400 mb-2">Audience tools</p><div className="flex flex-wrap gap-2">{[["reactions","Reactions"],["questions","Q&A"],["polls","Polls"],["guestRequests","Guest requests"]].map(([key,label])=><button key={key} onClick={()=>setFormData({...formData,studio_config:{...formData.studio_config,[key]:!(formData.studio_config as any)[key]}})} className={`px-3 py-2 rounded-full text-xs border ${(formData.studio_config as any)[key]?'border-indigo-400 bg-indigo-500/10 text-indigo-300':'border-white/10 text-zinc-500'}`}>{label}</button>)}</div></div>
+                    <div><p className="text-xs font-semibold text-zinc-400 mb-2">Audience tools</p><div className="flex flex-wrap gap-2">{([['reactions','Reactions'],['questions','Q&A'],['polls','Polls'],['guestRequests','Guest requests']] as const).map(([key,label])=><button key={key} onClick={()=>setFormData({...formData,studio_config:{...formData.studio_config,[key]:!formData.studio_config[key]}})} className={`px-3 py-2 rounded-full text-xs border ${formData.studio_config[key]?'border-indigo-400 bg-indigo-500/10 text-indigo-300':'border-white/10 text-zinc-500'}`}>{label}</button>)}</div></div>
                   </div>
 
                   <div>
@@ -157,7 +171,7 @@ export default function SetupPage() {
                   Pre-flight Checklist
                 </h3>
                 <ul className="space-y-2.5">
-                  {checks.map(({ icon: Icon, label, ok }) => (
+                  {checks.map(({ label, ok }) => (
                     <li key={label} className="flex items-center gap-3 text-sm">
                       <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${ok ? "bg-green-500/20" : "bg-zinc-800 border border-zinc-700"}`}>
                         {ok && <CheckCircle2 className="w-3 h-3 text-green-400" />}

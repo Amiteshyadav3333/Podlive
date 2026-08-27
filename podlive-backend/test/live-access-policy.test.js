@@ -14,6 +14,7 @@ const state = {
     accessInviteUpdates: [],
     stageInviteUpdates: [],
     lastLiveFindMany: null
+    , platformSubscription: { plan_code: 'max', status: 'active', expires_at: new Date(Date.now() + 86400000) }
 };
 
 const prisma = {
@@ -21,7 +22,8 @@ const prisma = {
         findUnique: async () => state.session,
         findMany: async (args) => { state.lastLiveFindMany = args; return []; },
         update: async ({ data }) => (state.session = { ...state.session, ...data }),
-        create: async ({ data }) => ({ id: 'session-1', ...data })
+        create: async ({ data }) => ({ id: 'session-1', ...data }),
+        count: async () => 0
     },
     liveAccessInvite: {
         findUnique: async ({ where }) => state.accessInvite?.token_hash === where.token_hash ? state.accessInvite : null,
@@ -53,6 +55,7 @@ const prisma = {
     },
     user: { findUnique: async () => state.user },
     videoAccessGrant: { findUnique: async () => null }
+    , platformSubscription: { findFirst: async () => state.platformSubscription }
 };
 
 const prismaModule = require('@prisma/client');
@@ -91,6 +94,7 @@ const reset = (session = baseSession()) => {
     state.accessInviteUpdates = [];
     state.stageInviteUpdates = [];
     state.lastLiveFindMany = null;
+    state.platformSubscription = { plan_code: 'max', status: 'active', expires_at: new Date(Date.now() + 86400000) };
 };
 
 const accessInvite = (token, overrides = {}) => ({
@@ -130,6 +134,15 @@ test('live creation validates visibility and creates realtime-only sessions', as
     assert.equal(created.body.session.status, 'live');
     assert.equal(created.body.realtimeOnly, true);
     assert.equal(created.body.hlsEnabled, false);
+});
+
+test('free users can watch but cannot create a live stream', async () => {
+    reset();
+    state.platformSubscription = null;
+    const res = response();
+    await liveController.createLiveSession({ body: { title: 'Free show', visibility: 'public' }, user: { id: 'host-1' } }, res);
+    assert.equal(res.statusCode, 403);
+    assert.equal(res.body.code, 'subscription_required');
 });
 
 test('private live rejects anonymous guests and viewers without an invite', async () => {

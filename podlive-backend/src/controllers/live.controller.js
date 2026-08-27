@@ -7,6 +7,7 @@ const path = require('path');
 const livekitEgressService = require('../services/livekit-egress.service');
 const livekitRoomService = require('../services/livekit-room.service');
 const bunnyService = require('../services/bunny.service');
+const { resolveEntitlements } = require('../services/platform-subscription.service');
 
 const allowedVisibility = new Set(['public', 'private', 'unlisted']);
 const allowedIngressTypes = new Set(['rtmp', 'whip']);
@@ -194,6 +195,25 @@ exports.createLiveSession = async (req, res) => {
             return res.status(400).json({ error: 'visibility must be public, private or unlisted' });
         }
 
+        const platformSubscription = await prisma.platformSubscription.findFirst({
+            where: { user_id: host_user_id },
+            orderBy: { created_at: 'desc' }
+        });
+        const entitlements = resolveEntitlements(platformSubscription);
+        if (entitlements.podcastLimit === 0) {
+            return res.status(403).json({
+                error: 'A verified Plus or Max subscription is required to start a live stream.',
+                code: 'subscription_required'
+            });
+        }
+        if (typeof entitlements.podcastLimit === 'number') {
+            const periodStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+            const recentLives = await prisma.liveSession.count({ where: { host_user_id, created_at: { gte: periodStart } } });
+            if (recentLives >= entitlements.podcastLimit) {
+                return res.status(403).json({ error: 'Your monthly live podcast limit has been reached. Upgrade to Max for unlimited live podcasts.', code: 'plan_limit_reached' });
+            }
+        }
+
         const livekit_room_name = `room-${crypto.randomBytes(8).toString('hex')}`;
         const shouldStartNow = goLiveNow !== false && !scheduled_at;
 
@@ -223,6 +243,7 @@ exports.createLiveSession = async (req, res) => {
         res.status(201).json({
             message: 'Live session created successfully',
             session: sanitizeSession(newSession, true),
+            subscription: { planCode: entitlements.planCode, remainingPodcasts: entitlements.podcastLimit === null ? null : entitlements.podcastLimit - 1 },
             livekitUrl: process.env.LIVEKIT_URL,
             hlsEnabled: false,
             realtimeOnly: true

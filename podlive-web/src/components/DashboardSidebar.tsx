@@ -5,25 +5,26 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { Mic, Home, Radio, UploadCloud, Video, Users, Settings, LogOut, ChevronRight, Palette, Crown, BookOpen, BarChart3 } from "lucide-react";
+import { detectLanguage, type SupportedLanguage } from "@/lib/language";
 
 const NAV = [
-  { href: "/dashboard", icon: Home, label: "होम / Home" },
-  { href: "/dashboard/setup", icon: Radio, label: "लाइव जाएँ / Go Live" },
-  { href: "/dashboard/upload", icon: UploadCloud, label: "अपलोड / Upload" },
-  { href: "/dashboard/recordings", icon: Video, label: "वीडियो / Videos" },
-  { href: "/dashboard/creator", icon: BarChart3, label: "क्रिएटर / Creator" },
-  { href: "/dashboard/audience", icon: Users, label: "ऑडियंस / Audience" },
-  { href: "/dashboard/channel", icon: Palette, label: "चैनल / Channel" },
-  { href: "/dashboard/memberships", icon: Crown, label: "मेंबरशिप" },
-  { href: "/dashboard/courses", icon: BookOpen, label: "कोर्स / Courses" },
+  { href: "/dashboard", icon: Home, label: { en: "Home", hi: "होम" } },
+  { href: "/dashboard/setup", icon: Radio, label: { en: "Go Live", hi: "लाइव जाएँ" } },
+  { href: "/dashboard/upload", icon: UploadCloud, label: { en: "Upload", hi: "अपलोड" } },
+  { href: "/dashboard/recordings", icon: Video, label: { en: "Videos", hi: "वीडियो" } },
+  { href: "/dashboard/creator", icon: BarChart3, label: { en: "Creator", hi: "क्रिएटर" } },
+  { href: "/dashboard/audience", icon: Users, label: { en: "Audience", hi: "ऑडियंस" } },
+  { href: "/dashboard/channel", icon: Palette, label: { en: "Channel", hi: "चैनल" } },
+  { href: "/dashboard/memberships", icon: Crown, label: { en: "Memberships", hi: "मेंबरशिप" } },
+  { href: "/dashboard/courses", icon: BookOpen, label: { en: "Courses", hi: "कोर्स" } },
 ];
 
 const MOBILE_NAV = [
-  { href: "/dashboard", icon: Home, label: "होम" },
-  { href: "/dashboard/upload", icon: UploadCloud, label: "अपलोड" },
-  { href: "/dashboard/creator", icon: BarChart3, label: "क्रिएटर" },
-  { href: "/dashboard/recordings", icon: Video, label: "वीडियो" },
-  { href: "/dashboard/settings", icon: Settings, label: "सेटिंग" },
+  { href: "/dashboard", icon: Home, label: { en: "Home", hi: "होम" } },
+  { href: "/dashboard/upload", icon: UploadCloud, label: { en: "Upload", hi: "अपलोड" } },
+  { href: "/dashboard/creator", icon: BarChart3, label: { en: "Creator", hi: "क्रिएटर" } },
+  { href: "/dashboard/recordings", icon: Video, label: { en: "Video", hi: "वीडियो" } },
+  { href: "/dashboard/settings", icon: Settings, label: { en: "Settings", hi: "सेटिंग" } },
 ];
 
 interface StoredUser {
@@ -36,9 +37,11 @@ export default function DashboardSidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<StoredUser | null>(null);
+  const [language, setLanguage] = useState<SupportedLanguage>("en");
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
+      setLanguage(detectLanguage());
       const storedUser = localStorage.getItem("user");
       if (!storedUser) return;
       try {
@@ -47,7 +50,9 @@ export default function DashboardSidebar() {
         localStorage.removeItem("user");
       }
     }, 0);
-    return () => window.clearTimeout(timer);
+    const handleLanguage = (event: Event) => setLanguage((event as CustomEvent<SupportedLanguage>).detail);
+    window.addEventListener("podlive-language-change", handleLanguage);
+    return () => { window.clearTimeout(timer); window.removeEventListener("podlive-language-change", handleLanguage); };
   }, []);
 
   const handleLogout = () => {
@@ -91,7 +96,7 @@ export default function DashboardSidebar() {
                 }`}
               >
                 <Icon className={`w-4 h-4 shrink-0 ${active ? "text-indigo-400" : "text-zinc-500 group-hover:text-white"}`} />
-                {label}
+                {label[language]}
                 {active && <ChevronRight className="w-3 h-3 ml-auto text-indigo-400/60" />}
               </Link>
             );
@@ -129,14 +134,14 @@ export default function DashboardSidebar() {
             }`}
           >
             <Settings className="w-4 h-4 shrink-0" />
-            सेटिंग्स / Settings
+            {language === "hi" ? "सेटिंग्स" : "Settings"}
           </Link>
           <button
             onClick={handleLogout}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-zinc-400 hover:text-red-400 hover:bg-red-500/[0.07] transition-all"
           >
             <LogOut className="w-4 h-4 shrink-0" />
-            लॉग आउट / Log out
+            {language === "hi" ? "लॉग आउट" : "Log out"}
           </button>
         </div>
       </aside>
@@ -157,7 +162,7 @@ export default function DashboardSidebar() {
                 <Icon className="w-5 h-5" />
               </div>
               <span className={`text-[10px] tracking-tight mt-0.5 ${active ? "font-bold text-indigo-400" : "font-medium text-zinc-400"}`}>
-                {label}
+                {label[language]}
               </span>
             </Link>
           );
