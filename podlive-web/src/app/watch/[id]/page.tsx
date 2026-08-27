@@ -31,13 +31,19 @@ import {
     SkipBack,
     SkipForward,
     ChevronFirst,
-    ChevronLast
+    ChevronLast,
+    Keyboard,
+    Lock,
+    Unlock,
+    Repeat2,
+    Timer
 } from "lucide-react";
 import Hls from "hls.js";
 import { buildApiUrl } from "@/lib/api";
 
 // Custom HLS player component with familiar video controls
-function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, hasPrev }: {
+function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, hasNext, hasPrev }: {
+    videoId?: string,
     url: string,
     poster: string,
     subtitles: any[],
@@ -65,6 +71,16 @@ function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, h
     const [showControls, setShowControls] = useState(true);
     const [showSettings, setShowSettings] = useState(false);
     const [playbackRate, setPlaybackRate] = useState(1);
+    const [bufferedPercent, setBufferedPercent] = useState(0);
+    const [controlsLocked, setControlsLocked] = useState(false);
+    const [isLooping, setIsLooping] = useState(false);
+    const [loopRange, setLoopRange] = useState<{ start: number | null, end: number | null }>({ start: null, end: null });
+    const [showShortcuts, setShowShortcuts] = useState(false);
+    const [sleepMinutes, setSleepMinutes] = useState<number | null>(null);
+    const [brightness, setBrightness] = useState(1);
+    const sleepTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    const lastTapRef = React.useRef<{ time: number, x: number } | null>(null);
+    const resumeAppliedRef = React.useRef(false);
 
     // CC & Miniplayer States
     const [subtitlesEnabled, setSubtitlesEnabled] = useState(false);
@@ -72,7 +88,7 @@ function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, h
     const [miniPosition, setMiniPosition] = useState({ x: 20, y: 20 });
     const isDraggingRef = React.useRef(false);
     const dragStartRef = React.useRef({ x: 0, y: 0 });
-    const touchStartRef = React.useRef<{ x: number, y: number } | null>(null);
+    const touchStartRef = React.useRef<{ x: number, y: number, time: number, volume: number, brightness: number } | null>(null);
 
     // Skip overlay state
     const [skipOverlay, setSkipOverlay] = useState<string | null>(null);
@@ -98,6 +114,36 @@ function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, h
         video.currentTime = Math.min(duration, video.currentTime + 5);
         setCurrentTime(video.currentTime);
         showSkipOverlay('↪ +5s');
+    };
+
+    const seekBy = React.useCallback((seconds: number) => {
+        const video = videoRef.current;
+        if (!video) return;
+        video.currentTime = Math.max(0, Math.min(video.duration || Infinity, video.currentTime + seconds));
+        showSkipOverlay(`${seconds > 0 ? '+' : ''}${seconds}s`);
+    }, []);
+
+    const togglePictureInPicture = async () => {
+        const video = videoRef.current;
+        if (!video || !("pictureInPictureEnabled" in document)) return;
+        try {
+            if (document.pictureInPictureElement) await document.exitPictureInPicture();
+            else if (video.readyState >= 1) await video.requestPictureInPicture();
+        } catch (error) {
+            console.error("Picture-in-picture failed:", error);
+        }
+    };
+
+    const setSleepTimer = (minutes: number | null) => {
+        if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
+        setSleepMinutes(minutes);
+        if (minutes) {
+            sleepTimerRef.current = setTimeout(() => {
+                videoRef.current?.pause();
+                setSleepMinutes(null);
+                showSkipOverlay('Sleep timer finished');
+            }, minutes * 60 * 1000);
+        }
     };
 
     // Toggle Subtitles (CC)
@@ -137,7 +183,10 @@ function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, h
         if (e.touches.length === 1) {
             touchStartRef.current = {
                 x: e.touches[0].clientX,
-                y: e.touches[0].clientY
+                y: e.touches[0].clientY,
+                time: e.timeStamp,
+                volume,
+                brightness
             };
         }
     };
@@ -148,20 +197,32 @@ function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, h
         const deltaX = e.changedTouches[0].clientX - touchStartRef.current.x;
         const deltaY = e.changedTouches[0].clientY - touchStartRef.current.y;
 
-        if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 50) {
-            if (deltaY < 0) {
-                // Swiped UP -> Enter Fullscreen
-                if (!document.fullscreenElement) {
-                    containerRef.current?.requestFullscreen().then(() => setIsFullscreen(true)).catch(err => {
-                        console.error("Fullscreen failed:", err);
-                    });
-                }
+        const containerWidth = containerRef.current?.clientWidth || window.innerWidth;
+        const isVertical = Math.abs(deltaY) > Math.abs(deltaX);
+        if (isVertical && Math.abs(deltaY) > 35) {
+            const amount = Math.max(-1, Math.min(1, -deltaY / 180));
+            if (touchStartRef.current.x < containerWidth / 2) {
+                const nextBrightness = Math.max(0.25, Math.min(1, touchStartRef.current.brightness + amount));
+                setBrightness(nextBrightness);
+                showSkipOverlay(`Brightness ${Math.round(nextBrightness * 100)}%`);
             } else {
-                // Swiped DOWN -> Exit Fullscreen
-                if (document.fullscreenElement) {
-                    document.exitFullscreen().then(() => setIsFullscreen(false));
-                }
+                const nextVolume = Math.max(0, Math.min(1, touchStartRef.current.volume + amount));
+                if (videoRef.current) videoRef.current.volume = nextVolume;
+                setVolume(nextVolume);
+                setIsMuted(nextVolume === 0);
+                showSkipOverlay(`Volume ${Math.round(nextVolume * 100)}%`);
             }
+        } else if (!isVertical && Math.abs(deltaX) > 45) {
+            seekBy(Math.round(deltaX / 10));
+        } else if (e.timeStamp - touchStartRef.current.time < 280) {
+            const now = e.timeStamp;
+            if (lastTapRef.current && now - lastTapRef.current.time < 350) {
+                const x = e.changedTouches[0].clientX;
+                if (x < containerWidth * 0.35) seekBy(-10);
+                else if (x > containerWidth * 0.65) seekBy(10);
+                else handleTogglePlay();
+                lastTapRef.current = null;
+            } else lastTapRef.current = { time: now, x: e.changedTouches[0].clientX };
         }
         touchStartRef.current = null;
     };
@@ -280,6 +341,46 @@ function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, h
             }
         };
     }, [url]);
+
+    useEffect(() => {
+        if (!videoId) return;
+        const token = localStorage.getItem("accessToken");
+        fetch(buildApiUrl(`/api/videos/${videoId}/player`), {
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined
+        }).then(async (res) => res.ok ? res.json() : null).then((data) => {
+            const position = data?.player?.resume?.positionSeconds;
+            if (videoRef.current && position > 0 && !resumeAppliedRef.current) {
+                videoRef.current.currentTime = position;
+                resumeAppliedRef.current = true;
+                showSkipOverlay(`Resumed at ${Math.floor(position / 60)}:${String(Math.floor(position % 60)).padStart(2, '0')}`);
+            }
+        }).catch(() => undefined);
+    }, [videoId]);
+
+    useEffect(() => {
+        if (!videoId) return;
+        const saveProgress = () => {
+            const token = localStorage.getItem("accessToken");
+            const video = videoRef.current;
+            if (!token || !video || !Number.isFinite(video.duration)) return;
+            fetch(buildApiUrl(`/api/videos/${videoId}/history`), {
+                method: "POST",
+                keepalive: true,
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                body: JSON.stringify({
+                    positionSeconds: Math.floor(video.currentTime),
+                    completed: video.duration > 0 && video.currentTime / video.duration >= 0.95
+                })
+            }).catch(() => undefined);
+        };
+        const interval = window.setInterval(saveProgress, 15000);
+        window.addEventListener("pagehide", saveProgress);
+        return () => {
+            window.clearInterval(interval);
+            window.removeEventListener("pagehide", saveProgress);
+            saveProgress();
+        };
+    }, [videoId]);
 
     const handleTogglePlay = () => {
         const video = videoRef.current;
@@ -403,29 +504,53 @@ function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, h
         };
     }, [isPlaying]);
 
-    // Keyboard shortcuts for skip
+    // Complete keyboard control set.
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-            switch (e.key) {
-                case 'ArrowLeft':
+            const video = videoRef.current;
+            if (!video) return;
+            const key = e.key.toLowerCase();
+            switch (key) {
+                case 'arrowleft':
                     e.preventDefault();
-                    handleSkipBackward();
+                    seekBy(-5);
                     break;
-                case 'ArrowRight':
+                case 'arrowright':
                     e.preventDefault();
-                    handleSkipForward();
+                    seekBy(5);
                     break;
                 case ' ':
+                case 'k':
                     e.preventDefault();
                     handleTogglePlay();
                     break;
+                case 'j': seekBy(-10); break;
+                case 'l': seekBy(10); break;
+                case 'arrowup': video.volume = Math.min(1, video.volume + 0.05); e.preventDefault(); break;
+                case 'arrowdown': video.volume = Math.max(0, video.volume - 0.05); e.preventDefault(); break;
+                case 'm': handleToggleMute(); break;
+                case 'f': handleToggleFullscreen(); break;
+                case 'i': void togglePictureInPicture(); break;
+                case 'c': handleToggleSubtitles(); break;
+                case 'r': setIsLooping((value) => !value); break;
+                case '[': setLoopRange((range) => ({ ...range, start: video.currentTime })); showSkipOverlay('Loop start set'); break;
+                case ']': setLoopRange((range) => ({ ...range, end: video.currentTime })); showSkipOverlay('Loop end set'); break;
+                case ',': if (video.paused) video.currentTime = Math.max(0, video.currentTime - 1 / 30); break;
+                case '.': if (video.paused) video.currentTime = Math.min(video.duration, video.currentTime + 1 / 30); break;
+                case '?': setShowShortcuts((value) => !value); break;
+                case 'home': video.currentTime = 0; e.preventDefault(); break;
+                case 'end': video.currentTime = video.duration; e.preventDefault(); break;
+                case '>': video.playbackRate = Math.min(4, playbackRate + 0.25); setPlaybackRate(video.playbackRate); break;
+                case '<': video.playbackRate = Math.max(0.25, playbackRate - 0.25); setPlaybackRate(video.playbackRate); break;
+                default:
+                    if (/^[0-9]$/.test(key)) video.currentTime = video.duration * Number(key) / 10;
             }
         };
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [duration]);
+    }, [duration, playbackRate, seekBy]);
 
     const handleQualityChange = (levelIndex: number) => {
         if (hlsInstance) {
@@ -474,7 +599,7 @@ function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, h
                 zIndex: 9999,
                 cursor: isDraggingRef.current ? 'grabbing' : 'grab'
             } : undefined}
-            className={`relative aspect-video w-full bg-black rounded-2xl overflow-hidden border border-white/10 shadow-2xl group/player select-none ${
+            className={`relative aspect-video w-full bg-black rounded-2xl overflow-hidden border border-white/10 shadow-2xl group/player select-none touch-none ${
                 isMini ? "shadow-[0_20px_50px_rgba(0,0,0,0.5)] border-indigo-500/30" : ""
             }`}
         >
@@ -508,12 +633,23 @@ function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, h
                 ref={videoRef}
                 crossOrigin="anonymous"
                 className="w-full h-full object-contain cursor-pointer"
+                style={{ filter: `brightness(${brightness})` }}
                 poster={poster}
                 onClick={handleTogglePlay}
                 onDoubleClick={handleToggleFullscreen}
                 onPlay={() => setIsPlaying(true)}
                 onPause={() => setIsPlaying(false)}
-                onTimeUpdate={() => videoRef.current && setCurrentTime(videoRef.current.currentTime)}
+                onTimeUpdate={() => {
+                    const video = videoRef.current;
+                    if (!video) return;
+                    if (loopRange.start !== null && loopRange.end !== null && loopRange.end > loopRange.start && video.currentTime >= loopRange.end) {
+                        video.currentTime = loopRange.start;
+                    }
+                    setCurrentTime(video.currentTime);
+                    if (video.buffered.length && video.duration) {
+                        setBufferedPercent((video.buffered.end(video.buffered.length - 1) / video.duration) * 100);
+                    }
+                }}
                 onDurationChange={() => videoRef.current && setDuration(videoRef.current.duration)}
                 onVolumeChange={() => {
                     if (videoRef.current) {
@@ -522,7 +658,10 @@ function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, h
                     }
                 }}
                 onEnded={() => {
-                    if (onEnded) onEnded();
+                    if (isLooping && videoRef.current) {
+                        videoRef.current.currentTime = 0;
+                        videoRef.current.play().catch(() => undefined);
+                    } else if (onEnded) onEnded();
                 }}
             >
                 {subtitles && subtitles.map((sub: any, idx: number) => (
@@ -556,10 +695,27 @@ function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, h
                 </div>
             )}
 
+            {controlsLocked && (
+                <button onClick={() => setControlsLocked(false)} className="absolute z-40 right-4 top-1/2 -translate-y-1/2 rounded-full bg-black/70 p-3 text-white backdrop-blur" title="Unlock controls">
+                    <Lock className="h-5 w-5" />
+                </button>
+            )}
+
+            {showShortcuts && (
+                <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm" onClick={() => setShowShortcuts(false)}>
+                    <div className="max-h-[85%] w-full max-w-xl overflow-auto rounded-2xl border border-white/10 bg-zinc-950 p-5" onClick={(e) => e.stopPropagation()}>
+                        <div className="mb-4 flex items-center justify-between"><h3 className="font-bold">Keyboard shortcuts</h3><button onClick={() => setShowShortcuts(false)}>✕</button></div>
+                        <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+                            {[['Space / K','Play or pause'],['J / L','Back or forward 10s'],['← / →','Back or forward 5s'],['↑ / ↓','Volume'],['M','Mute'],['F','Fullscreen'],['I','Picture in picture'],['C','Captions'],['< / >','Playback speed'],['0–9','Jump to percentage'],[', / .','Frame step while paused'],['R','Loop video'],['[ / ]','Set loop range'],['?','Shortcut help']].map(([key, action]) => <div key={key} className="flex justify-between gap-3 rounded-lg bg-white/5 px-3 py-2"><kbd className="font-mono text-red-400">{key}</kbd><span className="text-zinc-300">{action}</span></div>)}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Video controls container */}
             <div
                 className={`absolute bottom-0 left-0 right-0 z-20 bg-gradient-to-t from-black/95 via-black/50 to-transparent p-4 flex flex-col gap-3 transition-opacity duration-300 ${
-                    showControls ? "opacity-100" : "opacity-0 pointer-events-none"
+                    showControls && !controlsLocked ? "opacity-100" : "opacity-0 pointer-events-none"
                 }`}
             >
                 {/* 1. Progress Bar / Red Scrubber */}
@@ -569,6 +725,7 @@ function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, h
                     onMouseMove={handleProgressDrag}
                     className="w-full h-1.5 hover:h-2 bg-white/20 rounded-full cursor-pointer relative group/scrubber transition-all"
                 >
+                    <div className="absolute top-0 left-0 h-full rounded-full bg-white/25" style={{ width: `${bufferedPercent}%` }} />
                     {/* Played progress fill */}
                     <div
                         className="absolute top-0 left-0 h-full bg-red-600 rounded-full flex items-center justify-end"
@@ -659,6 +816,18 @@ function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, h
 
                     {/* Right: Subtitles, Miniplayer, Settings, Fullscreen */}
                     <div className="flex items-center gap-4 relative">
+                        <button onClick={() => setIsLooping(!isLooping)} className={isLooping ? "text-red-500" : "text-white hover:text-red-500"} title="Loop video">
+                            <Repeat2 className="w-5 h-5" />
+                        </button>
+
+                        <button onClick={() => setShowShortcuts(true)} className="hidden text-white hover:text-red-500 sm:block" title="Keyboard shortcuts">
+                            <Keyboard className="w-5 h-5" />
+                        </button>
+
+                        <button onClick={() => setControlsLocked(true)} className="text-white hover:text-red-500" title="Lock controls">
+                            <Unlock className="w-5 h-5" />
+                        </button>
+
                         <button
                             onClick={handleToggleSubtitles}
                             className={`text-white hover:text-red-500 transition-colors cursor-pointer border-none bg-transparent outline-none ${
@@ -670,11 +839,11 @@ function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, h
                         </button>
 
                         <button
-                            onClick={handleToggleMini}
+                            onClick={(event) => event.shiftKey ? handleToggleMini() : void togglePictureInPicture()}
                             className={`text-white hover:text-red-500 transition-colors cursor-pointer border-none bg-transparent outline-none ${
                                 isMini ? "text-red-500 animate-pulse" : ""
                             }`}
-                            title="Miniplayer"
+                            title="Picture in picture"
                         >
                             <PictureInPicture2 className="w-5 h-5" />
                         </button>
@@ -740,7 +909,7 @@ function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, h
                                     Speed
                                 </div>
                                 <div className="flex flex-col">
-                                    {[0.5, 1, 1.25, 1.5, 2].map((rate) => (
+                                    {[0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4].map((rate) => (
                                         <button
                                             key={rate}
                                             onClick={() => handleSpeedChange(rate)}
@@ -750,6 +919,16 @@ function HlsPlayer({ url, poster, subtitles, onNext, onPrev, onEnded, hasNext, h
                                         >
                                             {rate === 1 ? "Normal" : `${rate}x`}
                                             {playbackRate === rate && <CheckCircle2 className="w-3.5 h-3.5 text-red-500" />}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="px-3 py-2 border-t border-b border-white/10 text-[10px] font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-2">
+                                    <Timer className="h-3 w-3" /> Sleep timer
+                                </div>
+                                <div className="grid grid-cols-4 gap-1 p-2">
+                                    {[null, 15, 30, 60].map((minutes) => (
+                                        <button key={minutes ?? 'off'} onClick={() => setSleepTimer(minutes)} className={`rounded px-1 py-2 text-[10px] ${sleepMinutes === minutes ? 'bg-red-500/20 text-red-400' : 'bg-white/5 text-zinc-300'}`}>
+                                            {minutes ? `${minutes}m` : 'Off'}
                                         </button>
                                     ))}
                                 </div>
@@ -934,7 +1113,10 @@ export default function WatchPage() {
         const fetchSubtitles = async () => {
             if (!recording?.video?.id) return;
             try {
-                const res = await fetch(buildApiUrl(`/api/videos/${recording.video.id}/subtitles`));
+                const token = localStorage.getItem("accessToken");
+                const res = await fetch(buildApiUrl(`/api/videos/${recording.video.id}/subtitles`), {
+                    headers: token ? { Authorization: `Bearer ${token}` } : undefined
+                });
                 const data = await res.json();
                 if (res.ok && data.subtitles) {
                     setVideoSubtitles(data.subtitles);
@@ -1419,6 +1601,7 @@ export default function WatchPage() {
                             </div>
                         ) : (
                             <HlsPlayer
+                                videoId={recording.video?.id}
                                 url={recording.recording_url}
                                 poster={recording.thumbnail_url || "https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&q=80&w=1200"}
                                 subtitles={videoSubtitles.length > 0 ? videoSubtitles : (recording.subtitles || [])}

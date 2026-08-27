@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const { PrismaClient } = require('@prisma/client');
 const path = require('path');
 const fs = require('fs');
+const { buildPlayerConfig } = require('../services/player-config.service');
 
 const prisma = new PrismaClient();
 const publicUserSelect = { id: true, unique_handle: true, display_name: true, avatar_url: true, is_verified: true };
@@ -159,6 +160,33 @@ exports.getVideo = async (req, res) => {
     } catch (error) {
         console.error('[Videos] detail error:', error);
         res.status(500).json({ error: 'Failed to fetch video' });
+    }
+};
+
+exports.getPlayerConfig = async (req, res) => {
+    try {
+        const video = await prisma.video.findUnique({
+            where: { id: req.params.id },
+            include: {
+                files: { orderBy: { height: 'asc' } },
+                thumbnails: { orderBy: { created_at: 'asc' } },
+                subtitles: { orderBy: { created_at: 'asc' } }
+            }
+        });
+
+        if (!await canAccessVideo(video, req.user?.id)) {
+            return res.status(404).json({ error: 'Video not found' });
+        }
+
+        const history = req.user?.id ? await prisma.history.findUnique({
+            where: { user_id_video_id: { user_id: req.user.id, video_id: video.id } }
+        }) : null;
+
+        res.setHeader('Cache-Control', req.user?.id ? 'private, no-store' : 'public, max-age=60');
+        res.json({ player: buildPlayerConfig({ video, history }) });
+    } catch (error) {
+        console.error('[Videos] player config error:', error);
+        res.status(500).json({ error: 'Failed to fetch player configuration' });
     }
 };
 
@@ -1050,7 +1078,7 @@ exports.uploadThumbnail = async (req, res) => {
 exports.listSubtitles = async (req, res) => {
     try {
         const video = await prisma.video.findUnique({ where: { id: req.params.id } });
-        if (!video) {
+        if (!await canAccessVideo(video, req.user?.id)) {
             return res.status(404).json({ error: 'Video not found' });
         }
 

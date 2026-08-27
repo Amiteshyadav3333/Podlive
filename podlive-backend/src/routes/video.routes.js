@@ -59,6 +59,7 @@ router.delete('/playlists/:playlistId/videos/:videoId', authMiddleware, videoCon
 router.post('/subscriptions/:creatorId', authMiddleware, videoController.toggleSubscription);
 router.get('/subscriptions/:creatorId/status', authMiddleware, videoController.getSubscriptionStatus);
 
+router.get('/:id/player', authMiddleware.optionalAuth, videoController.getPlayerConfig);
 router.get('/:id', authMiddleware.optionalAuth, videoController.getVideo);
 router.patch('/:id', authMiddleware, videoController.updateVideo);
 router.delete('/:id', authMiddleware, videoController.deleteVideo);
@@ -72,7 +73,7 @@ router.post('/:id/report', authMiddleware, videoController.reportVideo);
 router.get('/:id/analytics', authMiddleware, videoController.getCreatorAnalytics);
 
 router.post('/:id/thumbnail', authMiddleware, thumbnailUpload.single('thumbnail'), videoController.uploadThumbnail);
-router.get('/:id/subtitles', videoController.listSubtitles);
+router.get('/:id/subtitles', authMiddleware.optionalAuth, videoController.listSubtitles);
 router.post('/:id/subtitles', authMiddleware, subtitleUpload.single('subtitle'), videoController.uploadSubtitle);
 router.delete('/:id/subtitles/:subtitleId', authMiddleware, videoController.deleteSubtitle);
 
