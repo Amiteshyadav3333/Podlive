@@ -12,12 +12,15 @@ const publicPlans = () => Object.values(PLANS).map(({ durationDays, ...plan }) =
 exports.listPlans = (_req, res) => res.json({ plans: publicPlans() });
 
 exports.getStatus = async (req, res) => {
-    const subscription = await prisma.platformSubscription.findFirst({
-        where: { user_id: req.user.id },
-        orderBy: { created_at: 'desc' }
-    });
+    const [subscription, latestOrder] = await Promise.all([
+        prisma.platformSubscription.findFirst({
+            where: { user_id: req.user.id, status: 'active', expires_at: { gt: new Date() } },
+            orderBy: { expires_at: 'desc' }
+        }),
+        prisma.platformSubscription.findFirst({ where: { user_id: req.user.id }, orderBy: { created_at: 'desc' } })
+    ]);
     res.setHeader('Cache-Control', 'private, no-store');
-    res.json({ subscription, entitlements: resolveEntitlements(subscription) });
+    res.json({ subscription, latestOrder, entitlements: resolveEntitlements(subscription) });
 };
 
 exports.createCheckout = async (req, res) => {
@@ -41,25 +44,10 @@ exports.submitReference = async (req, res) => {
     if (!/^[A-Za-z0-9-]{6,64}$/.test(reference)) return res.status(400).json({ error: 'Enter a valid UPI transaction reference' });
     const result = await prisma.platformSubscription.updateMany({
         where: { id: req.params.id, user_id: req.user.id, status: 'pending' },
-        data: { upi_reference: reference, status: 'verification_pending' }
+        data: { upi_reference: reference, status: 'verification_pending', payment_submitted_at: new Date() }
     });
     if (!result.count) return res.status(404).json({ error: 'Pending order not found' });
     res.json({ message: 'Payment reference submitted for verification', status: 'verification_pending' });
-};
-
-exports.verifyPayment = async (req, res) => {
-    if (!process.env.PLATFORM_PAYMENT_WEBHOOK_SECRET || req.headers['x-payment-secret'] !== process.env.PLATFORM_PAYMENT_WEBHOOK_SECRET) {
-        return res.status(401).json({ error: 'Invalid payment verification signature' });
-    }
-    const order = await prisma.platformSubscription.findUnique({ where: { id: req.body.orderId } });
-    if (!order || order.status === 'active') return res.status(order ? 200 : 404).json(order || { error: 'Order not found' });
-    const startsAt = new Date();
-    const expiresAt = new Date(startsAt.getTime() + 30 * 24 * 60 * 60 * 1000);
-    const updated = await prisma.platformSubscription.update({
-        where: { id: order.id },
-        data: { status: 'active', provider_payment_id: String(req.body.paymentId || order.upi_reference || ''), starts_at: startsAt, expires_at: expiresAt }
-    });
-    res.json({ subscription: updated });
 };
 
 module.exports.PLANS = PLANS;

@@ -12,17 +12,40 @@ const { resolveEntitlements } = require('../services/platform-subscription.servi
 const allowedVisibility = new Set(['public', 'private', 'unlisted']);
 const allowedIngressTypes = new Set(['rtmp', 'whip']);
 
-const createToken = async (roomName, participantName, canPublish = false, role = 'viewer') => {
+const createToken = async (roomName, participantName, canPublish = false, role = 'viewer', ttlSeconds = null) => {
     const apiKey = process.env.LIVEKIT_API_KEY;
     const apiSecret = process.env.LIVEKIT_API_SECRET;
 
     const at = new AccessToken(apiKey, apiSecret, {
         identity: participantName,
-        metadata: JSON.stringify({ role })
+        metadata: JSON.stringify({ role }),
+        ...(ttlSeconds ? { ttl: Math.max(1, Math.ceil(ttlSeconds)) } : {})
     });
     at.addGrant({ roomJoin: true, room: roomName, canPublish, canSubscribe: true, canPublishData: true });
 
     return await at.toJwt();
+};
+
+const FREE_LIVE_SECONDS = 5 * 60;
+const remainingFreeLiveSeconds = (session, now = new Date()) => {
+    if (!session?.free_access_ends_at) return null;
+    return Math.floor((new Date(session.free_access_ends_at).getTime() - now.getTime()) / 1000);
+};
+
+const rejectExpiredFreeLive = async (session, res) => {
+    const remaining = remainingFreeLiveSeconds(session);
+    if (remaining === null || remaining > 0) return false;
+    if (session.status === 'live') {
+        await prisma.liveSession.update({
+            where: { id: session.id },
+            data: { status: 'ended', ended_at: new Date(), viewer_count: 0 }
+        });
+    }
+    res.status(402).json({
+        error: 'Your free 5-minute live limit has ended. Approve a paid plan to continue.',
+        code: 'payment_required'
+    });
+    return true;
 };
 
 const publicUserSelect = {
@@ -196,17 +219,11 @@ exports.createLiveSession = async (req, res) => {
         }
 
         const platformSubscription = await prisma.platformSubscription.findFirst({
-            where: { user_id: host_user_id },
-            orderBy: { created_at: 'desc' }
+            where: { user_id: host_user_id, status: 'active', expires_at: { gt: new Date() } },
+            orderBy: { expires_at: 'desc' }
         });
         const entitlements = resolveEntitlements(platformSubscription);
-        if (entitlements.podcastLimit === 0) {
-            return res.status(403).json({
-                error: 'A verified Plus or Max subscription is required to start a live stream.',
-                code: 'subscription_required'
-            });
-        }
-        if (typeof entitlements.podcastLimit === 'number') {
+        if (entitlements.fullAccess && typeof entitlements.podcastLimit === 'number') {
             const periodStart = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
             const recentLives = await prisma.liveSession.count({ where: { host_user_id, created_at: { gte: periodStart } } });
             if (recentLives >= entitlements.podcastLimit) {
@@ -216,6 +233,9 @@ exports.createLiveSession = async (req, res) => {
 
         const livekit_room_name = `room-${crypto.randomBytes(8).toString('hex')}`;
         const shouldStartNow = goLiveNow !== false && !scheduled_at;
+        const freeAccessEndsAt = entitlements.fullAccess || !shouldStartNow
+            ? null
+            : new Date(Date.now() + FREE_LIVE_SECONDS * 1000);
 
         const newSession = await prisma.liveSession.create({
             data: {
@@ -237,13 +257,19 @@ exports.createLiveSession = async (req, res) => {
                 replay_enabled: false,
                 studio_config,
                 started_at: shouldStartNow ? new Date() : null,
+                free_access_ends_at: freeAccessEndsAt,
             }
         });
 
         res.status(201).json({
             message: 'Live session created successfully',
             session: sanitizeSession(newSession, true),
-            subscription: { planCode: entitlements.planCode, remainingPodcasts: entitlements.podcastLimit === null ? null : entitlements.podcastLimit - 1 },
+            subscription: {
+                planCode: entitlements.planCode,
+                fullAccess: entitlements.fullAccess,
+                remainingPodcasts: entitlements.podcastLimit === null ? null : Math.max(0, entitlements.podcastLimit - 1),
+                freeLiveEndsAt: freeAccessEndsAt
+            },
             livekitUrl: process.env.LIVEKIT_URL,
             hlsEnabled: false,
             realtimeOnly: true
@@ -267,17 +293,27 @@ exports.startLiveSession = async (req, res) => {
         if (!session || session.host_user_id !== req.user.id) {
             return res.status(403).json({ error: 'Unauthorized to start this session' });
         }
+        if (await rejectExpiredFreeLive(session, res)) return;
+        const subscription = await prisma.platformSubscription.findFirst({
+            where: { user_id: req.user.id, status: 'active', expires_at: { gt: new Date() } },
+            orderBy: { expires_at: 'desc' }
+        });
+        const entitlements = resolveEntitlements(subscription);
+        const freeAccessEndsAt = entitlements.fullAccess
+            ? null
+            : (session.free_access_ends_at || new Date(Date.now() + FREE_LIVE_SECONDS * 1000));
 
         const updatedSession = await prisma.liveSession.update({
             where: { id },
             data: {
                 status: 'live',
                 started_at: session.started_at || new Date(),
-                ended_at: null
+                ended_at: null,
+                free_access_ends_at: freeAccessEndsAt
             }
         });
 
-        const token = await createToken(session.livekit_room_name, session.host.unique_handle, true, 'host');
+        const token = await createToken(session.livekit_room_name, session.host.unique_handle, true, 'host', remainingFreeLiveSeconds({ ...session, free_access_ends_at: freeAccessEndsAt }));
 
         if (req.io) {
             req.io.emit('live_started', sanitizeSession(updatedSession));
@@ -350,6 +386,7 @@ exports.getGuestToken = async (req, res) => {
         if (session.visibility === 'private') {
             return res.status(403).json({ error: 'This live stream is private' });
         }
+        if (await rejectExpiredFreeLive(session, res)) return;
 
         // Auto-generate livekit_room_name if missing
         if (!session.livekit_room_name) {
@@ -362,7 +399,7 @@ exports.getGuestToken = async (req, res) => {
 
         // Generate anonymous viewer identity
         const identity = `viewer-${crypto.randomBytes(4).toString('hex')}`;
-        const token = await createToken(session.livekit_room_name, identity, false, 'viewer');
+        const token = await createToken(session.livekit_room_name, identity, false, 'viewer', remainingFreeLiveSeconds(session));
 
         res.json({
             token,
@@ -409,6 +446,7 @@ exports.getViewerToken = async (req, res) => {
                 }
             });
         }
+        if (await rejectExpiredFreeLive(session, res)) return;
 
         if (session.visibility === 'private' && !await redeemPrivateInvite(session, userId, req.query.invite)) {
             return res.status(403).json({ error: 'This live stream is private' });
@@ -440,7 +478,7 @@ exports.getViewerToken = async (req, res) => {
 
         const canPublish = isHost || Boolean(stageInvite);
         const role = isHost ? 'host' : (stageInvite ? 'stage' : 'viewer');
-        const token = await createToken(session.livekit_room_name, identity, canPublish, role);
+        const token = await createToken(session.livekit_room_name, identity, canPublish, role, remainingFreeLiveSeconds(session));
 
         res.json({
             token,
@@ -470,6 +508,7 @@ exports.upgradeViewerToken = async (req, res) => {
         if (!session || session.status !== 'live') {
             return res.status(404).json({ error: 'Active live session not found' });
         }
+        if (await rejectExpiredFreeLive(session, res)) return;
 
         // Auto-generate livekit_room_name if missing
         if (!session.livekit_room_name) {
@@ -524,7 +563,7 @@ exports.upgradeViewerToken = async (req, res) => {
         }
 
         const identity = user.unique_handle || user.display_name || `user-${user.id.slice(0, 8)}`;
-        const token = await createToken(session.livekit_room_name, identity, true, isHost ? 'host' : 'stage');
+        const token = await createToken(session.livekit_room_name, identity, true, isHost ? 'host' : 'stage', remainingFreeLiveSeconds(session));
 
         res.json({
             token,
@@ -841,6 +880,13 @@ exports.createIngress = async (req, res) => {
         const session = await prisma.liveSession.findUnique({ where: { id } });
         if (!session || session.host_user_id !== req.user.id) {
             return res.status(403).json({ error: 'Unauthorized to create ingress for this session' });
+        }
+        const subscription = await prisma.platformSubscription.findFirst({
+            where: { user_id: req.user.id, status: 'active', expires_at: { gt: new Date() } },
+            orderBy: { expires_at: 'desc' }
+        });
+        if (!resolveEntitlements(subscription).fullAccess) {
+            return res.status(402).json({ error: 'OBS/RTMP streaming requires an approved paid plan.', code: 'payment_required' });
         }
         if (!livekitEgressService.isIngressEnabled()) {
             return res.status(202).json({

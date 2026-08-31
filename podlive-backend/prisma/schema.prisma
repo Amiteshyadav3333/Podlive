@@ -127,6 +127,9 @@ model LiveSession {
   brand_color        String    @default("#7C3AED")
   audience_mode      String    @default("everyone")
   replay_enabled     Boolean   @default(false)
+  // Non-paying hosts can use a room briefly, but cannot keep an unlimited live room.
+  // Paid sessions leave this null.
+  free_access_ends_at DateTime?
 
   // Relations
   host           User               @relation("HostSessions", fields: [host_user_id], references: [id])
@@ -547,6 +550,10 @@ model PlatformSubscription {
   status              String    @default("pending")
   upi_reference       String?
   provider_payment_id String?
+  payment_submitted_at DateTime?
+  reviewed_at         DateTime?
+  reviewed_by         String?
+  review_note         String?
   starts_at           DateTime?
   expires_at          DateTime?
   created_at          DateTime  @default(now())

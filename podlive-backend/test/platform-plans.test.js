@@ -18,11 +18,15 @@ test('only a verified and unexpired subscription grants paid entitlements', () =
     assert.equal(active.adFree, true);
     assert.equal(active.podcastLimit, null);
     assert.equal(resolveEntitlements({ plan_code: 'plus', status: 'active', expires_at: '2026-07-28T00:00:00Z' }, now).planCode, 'free');
+    const free = resolveEntitlements(null, now);
+    assert.equal(free.fullAccess, false);
+    assert.equal(free.liveMinutes, 5);
+    assert.equal(active.fullAccess, true);
 });
 
 test('subscription checkout routes protect user orders', () => {
     const routes = require('node:fs').readFileSync(require.resolve('../src/routes/plan.routes'), 'utf8');
     assert.match(routes, /post\('\/checkout', authMiddleware/);
     assert.match(routes, /post\('\/orders\/:id\/reference', authMiddleware/);
-    assert.match(routes, /payment-webhook/);
+    assert.doesNotMatch(routes, /payment-webhook|admin\/payment-reviews/);
 });

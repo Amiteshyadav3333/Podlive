@@ -186,7 +186,7 @@ exports.getPlayerConfig = async (req, res) => {
                 where: { user_id_video_id: { user_id: req.user.id, video_id: video.id } }
             }) : null,
             req.user?.id ? prisma.platformSubscription.findFirst({
-                where: { user_id: req.user.id }, orderBy: { created_at: 'desc' }
+                where: { user_id: req.user.id, status: 'active', expires_at: { gt: new Date() } }, orderBy: { expires_at: 'desc' }
             }) : null
         ]);
         const entitlements = resolveEntitlements(platformSubscription);

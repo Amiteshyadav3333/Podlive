@@ -7,6 +7,5 @@ router.get('/', controller.listPlans);
 router.get('/status', authMiddleware, controller.getStatus);
 router.post('/checkout', authMiddleware, controller.createCheckout);
 router.post('/orders/:id/reference', authMiddleware, controller.submitReference);
-router.post('/payment-webhook', controller.verifyPayment);
 
 module.exports = router;

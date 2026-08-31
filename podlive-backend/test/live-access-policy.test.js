@@ -136,13 +136,14 @@ test('live creation validates visibility and creates realtime-only sessions', as
     assert.equal(created.body.hlsEnabled, false);
 });
 
-test('free users can watch but cannot create a live stream', async () => {
+test('free users receive a five-minute live room, not an unlimited trial', async () => {
     reset();
     state.platformSubscription = null;
     const res = response();
     await liveController.createLiveSession({ body: { title: 'Free show', visibility: 'public' }, user: { id: 'host-1' } }, res);
-    assert.equal(res.statusCode, 403);
-    assert.equal(res.body.code, 'subscription_required');
+    assert.equal(res.statusCode, 201);
+    assert.equal(res.body.subscription.fullAccess, false);
+    assert.ok(res.body.subscription.freeLiveEndsAt);
 });
 
 test('private live rejects anonymous guests and viewers without an invite', async () => {

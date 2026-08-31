@@ -1,7 +1,9 @@
 const PLAN_ENTITLEMENTS = Object.freeze({
-    free: { adFree: false, maxVideoHeight: 720, personalizedFeed: false, podcastLimit: 0 },
-    plus: { adFree: true, maxVideoHeight: 1080, personalizedFeed: true, podcastLimit: 10 },
-    max: { adFree: true, maxVideoHeight: null, personalizedFeed: true, podcastLimit: null }
+    // This is not a trial. Free accounts can open a live room for five minutes;
+    // an approved subscription is required for a full live podcast.
+    free: { adFree: false, maxVideoHeight: 720, personalizedFeed: false, podcastLimit: 0, liveMinutes: 5, fullAccess: false },
+    plus: { adFree: true, maxVideoHeight: 1080, personalizedFeed: true, podcastLimit: 10, liveMinutes: null, fullAccess: true },
+    max: { adFree: true, maxVideoHeight: null, personalizedFeed: true, podcastLimit: null, liveMinutes: null, fullAccess: true }
 });
 
 const resolveEntitlements = (subscription, now = new Date()) => {
