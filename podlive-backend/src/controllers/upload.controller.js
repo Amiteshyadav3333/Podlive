@@ -5,6 +5,7 @@ const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
 const bunnyService = require('../services/bunny.service');
+const storageService = require('../services/storage.service');
 
 const safeUnlink = (filePath) => {
     try { if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch (e) { }
@@ -350,22 +351,24 @@ exports.uploadVideo = async (req, res) => {
 
         console.log(`[Upload] Starting upload: title="${title}", file="${videoFile.originalname}", size=${(videoFile.size / 1024 / 1024).toFixed(1)}MB`);
 
-        const bunnyUpload = await bunnyService.uploadVideoFile({
+        const storageResult = await storageService.uploadVideo({
             filePath: videoFilePath,
+            fileName: videoFile.originalname,
             title: title.trim(),
-            contentType: videoFile.mimetype || 'video/mp4',
-            thumbnailPath: thumbnailFilePath,
-            thumbnailContentType: thumbnailFile?.mimetype
+            description: description?.trim() || null,
+            contentType: videoFile.mimetype || 'video/mp4'
         });
 
-        console.log(`[Upload] Video uploaded to Bunny Stream: ${bunnyUpload.guid}`);
+        console.log(`[Upload] Video uploaded via ${storageResult.provider}: ${storageResult.guid}`);
 
-        let thumbnailUrl = bunnyUpload.thumbnailUrl || 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&q=80&w=1200';
+        let thumbnailUrl = storageResult.thumbnailUrl || 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&q=80&w=1200';
         if (thumbnailFile) {
             const hostUrl = `${req.protocol}://${req.get('host')}`;
             thumbnailUrl = `${hostUrl}/uploads/${path.basename(thumbnailFilePath)}`;
             thumbnailFilePath = null; // Do not delete this file in finally block
         }
+
+        const processingStatus = storageResult.provider === 'telegram' ? 'ready' : 'processing';
 
         // ── Save to DB ──
         const newVOD = await prisma.liveSession.create({
@@ -377,13 +380,11 @@ exports.uploadVideo = async (req, res) => {
                 visibility: visibility || 'public',
                 status: 'ended',
                 viewer_count_peak: 0,
-                recording_url: bunnyUpload.hlsUrl,
+                recording_url: storageResult.hlsUrl,
                 thumbnail_url: thumbnailUrl,
                 started_at: new Date(),
                 ended_at: new Date(),
                 is_processing: false,
-                // Comments on uploaded videos use the same moderated message
-                // model, but this never turns the upload into a live recording.
                 chat_enabled: true,
                 dvr_enabled: false
             }
@@ -413,13 +414,13 @@ exports.uploadVideo = async (req, res) => {
                 visibility: visibility || 'public',
                 language: language || null,
                 location: location || null,
-                hls_master_url: bunnyUpload.hlsUrl,
-                source_url: bunnyUpload.hlsUrl,
-                processing_status: 'processing'
+                hls_master_url: storageResult.hlsUrl,
+                source_url: storageResult.sourceUrl || storageResult.hlsUrl,
+                processing_status: processingStatus
             }
         });
 
-        await createBunnyVideoFile(video.id, bunnyUpload.hlsUrl);
+        await createBunnyVideoFile(video.id, storageResult.hlsUrl);
 
         console.log(`[Upload] DB record created: ${newVOD.id}`);
 
@@ -427,17 +428,20 @@ exports.uploadVideo = async (req, res) => {
         videoFilePath = null;
 
         res.status(201).json({
-            message: 'Video uploaded to Bunny Stream. Bunny processing has started.',
+            message: `Video uploaded successfully via ${storageResult.provider}.`,
             session: newVOD,
             video: serializeVideo(video),
-            bunny: {
-                videoId: bunnyUpload.guid,
-                hlsUrl: bunnyUpload.hlsUrl,
-                embedUrl: bunnyUpload.embedUrl
+            playback: {
+                provider: storageResult.provider,
+                videoId: storageResult.guid,
+                hlsUrl: storageResult.hlsUrl,
+                embedUrl: storageResult.embedUrl
             }
         });
 
-        syncBunnyProcessingStatus(video.id, bunnyUpload.guid).catch(() => {});
+        if (storageResult.provider === 'bunny') {
+            syncBunnyProcessingStatus(video.id, storageResult.guid).catch(() => {});
+        }
 
     } catch (error) {
         console.error('[Upload] Controller error:', error.message, error.stack);
@@ -665,14 +669,17 @@ exports.completeChunkUpload = async (req, res) => {
         }
 
         const metadata = session.metadata || {};
-        const bunnyUpload = await bunnyService.uploadVideoChunks({
+        const storageResult = await storageService.uploadVideo({
             chunkPaths,
-            totalSize: actualSize,
+            fileName: session.original_name,
             title: metadata.title || path.parse(session.original_name).name,
+            description: metadata.description || null,
             contentType: session.content_type
         });
 
-        console.log(`[ChunkUpload] Video uploaded to Bunny Stream: ${bunnyUpload.guid}`);
+        console.log(`[ChunkUpload] Video uploaded via ${storageResult.provider}: ${storageResult.guid}`);
+
+        const processingStatus = storageResult.provider === 'telegram' ? 'ready' : 'processing';
 
         let categoryId = null;
         if (metadata.category) {
@@ -695,14 +702,14 @@ exports.completeChunkUpload = async (req, res) => {
                 visibility: metadata.visibility || 'private',
                 language: metadata.language || null,
                 location: metadata.location || null,
-                hls_master_url: bunnyUpload.hlsUrl,
-                source_url: bunnyUpload.hlsUrl,
-                processing_status: 'processing',
+                hls_master_url: storageResult.hlsUrl,
+                source_url: storageResult.sourceUrl || storageResult.hlsUrl,
+                processing_status: processingStatus,
                 category_id: categoryId
             }
         });
 
-        await createBunnyVideoFile(video.id, bunnyUpload.hlsUrl);
+        await createBunnyVideoFile(video.id, storageResult.hlsUrl);
 
         await prisma.uploadSession.update({
             where: { id: session.id },
@@ -710,22 +717,25 @@ exports.completeChunkUpload = async (req, res) => {
                 status: 'completed',
                 completed_at: new Date(),
                 assembled_path: null,
-                r2_key: `bunny:${bunnyUpload.guid}`
+                r2_key: `${storageResult.provider}:${storageResult.guid}`
             }
         });
 
         fs.rmSync(dir, { recursive: true, force: true });
         res.status(201).json({
-            message: 'Upload completed on Bunny Stream. Bunny processing has started.',
+            message: `Upload completed via ${storageResult.provider}.`,
             video: serializeVideo(video),
-            bunny: {
-                videoId: bunnyUpload.guid,
-                hlsUrl: bunnyUpload.hlsUrl,
-                embedUrl: bunnyUpload.embedUrl
+            playback: {
+                provider: storageResult.provider,
+                videoId: storageResult.guid,
+                hlsUrl: storageResult.hlsUrl,
+                embedUrl: storageResult.embedUrl
             }
         });
 
-        syncBunnyProcessingStatus(video.id, bunnyUpload.guid).catch(() => {});
+        if (storageResult.provider === 'bunny') {
+            syncBunnyProcessingStatus(video.id, storageResult.guid).catch(() => {});
+        }
     } catch (error) {
         console.error('[ChunkUpload] complete error:', error);
         res.status(500).json({ error: 'Failed to complete upload', details: error.message });

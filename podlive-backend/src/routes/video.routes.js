@@ -57,7 +57,8 @@ router.post('/playlists/:playlistId/videos', authMiddleware, videoController.add
 router.delete('/playlists/:playlistId/videos/:videoId', authMiddleware, videoController.removeVideoFromPlaylist);
 
 router.post('/subscriptions/:creatorId', authMiddleware, videoController.toggleSubscription);
-router.get('/subscriptions/:creatorId/status', authMiddleware, videoController.getSubscriptionStatus);
+router.get('/stream-telegram/:fileId', videoController.streamTelegramVideo);
+router.get('/:id/stream', authMiddleware.optionalAuth, videoController.streamVideoById);
 
 router.get('/:id/player', authMiddleware.optionalAuth, videoController.getPlayerConfig);
 router.get('/:id', authMiddleware.optionalAuth, videoController.getVideo);

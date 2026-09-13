@@ -7,6 +7,7 @@ const fs = require('fs');
 const { buildPlayerConfig } = require('../services/player-config.service');
 const { calculateViewProgress } = require('../services/view-metrics.service');
 const bunnyService = require('../services/bunny.service');
+const telegramService = require('../services/telegram.service');
 
 const prisma = new PrismaClient();
 const publicUserSelect = { id: true, unique_handle: true, display_name: true, avatar_url: true, is_verified: true };
@@ -1231,5 +1232,45 @@ exports.deleteSubtitle = async (req, res) => {
     } catch (error) {
         console.error('[Videos] delete subtitle error:', error);
         res.status(500).json({ error: 'Failed to delete subtitle' });
+    }
+};
+
+exports.streamTelegramVideo = async (req, res) => {
+    try {
+        const { fileId } = req.params;
+        if (!fileId) return res.status(400).send('File ID is required');
+        await telegramService.streamVideo(fileId, req, res);
+    } catch (error) {
+        console.error('[Videos] streamTelegramVideo error:', error);
+        if (!res.headersSent) res.status(500).send('Streaming error');
+    }
+};
+
+exports.streamVideoById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const video = await prisma.video.findUnique({
+            where: { id },
+            select: { id: true, hls_master_url: true, source_url: true, visibility: true, owner_id: true }
+        });
+        if (!video) return res.status(404).send('Video not found');
+
+        const canAccess = await canAccessVideo(video, req.user?.id);
+        if (!canAccess) return res.status(403).send('Access denied');
+
+        const url = video.hls_master_url || video.source_url;
+        if (url && url.includes('/api/videos/stream-telegram/')) {
+            const fileId = url.split('/api/videos/stream-telegram/')[1];
+            return await telegramService.streamVideo(fileId, req, res);
+        }
+
+        if (url) {
+            return res.redirect(url);
+        }
+
+        return res.status(404).send('Video stream not available');
+    } catch (err) {
+        console.error('[Videos] streamVideoById error:', err);
+        return res.status(500).send('Internal server error');
     }
 };
