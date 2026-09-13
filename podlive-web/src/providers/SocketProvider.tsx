@@ -105,18 +105,11 @@ export default function SocketProvider({ children }: { children: React.ReactNode
         };
 
         const token = localStorage.getItem('accessToken');
-        if (!token) {
-            return () => {
-                window.fetch = originalFetch;
-                axios.interceptors.response.eject(axiosInterceptor);
-                XMLHttpRequest.prototype.send = originalSend;
-            };
-        }
 
         const newSocket = io(getSocketUrl(), {
-            auth: { token },
-            transports: ['websocket'],
-            upgrade: false,
+            auth: { token: token || undefined },
+            transports: ['websocket', 'polling'],
+            upgrade: true,
             reconnection: true,
             reconnectionAttempts: Infinity,
             reconnectionDelay: 1000,
@@ -126,8 +119,14 @@ export default function SocketProvider({ children }: { children: React.ReactNode
         newSocket.on('connect', () => {
             const currentUserData = localStorage.getItem('user');
             if (currentUserData) {
-                const user = JSON.parse(currentUserData);
-                newSocket.emit('register_user', user.id);
+                try {
+                    const user = JSON.parse(currentUserData);
+                    if (user?.id) {
+                        newSocket.emit('register_user', user.id);
+                    }
+                } catch (e) {
+                    console.error('Failed to parse user data from localStorage', e);
+                }
             }
         });
 

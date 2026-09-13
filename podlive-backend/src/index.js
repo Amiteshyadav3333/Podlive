@@ -23,13 +23,22 @@ if (missingEnvVars.length > 0) {
 
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim())
-  : [process.env.FRONTEND_URL, 'http://localhost:3000', 'http://localhost:3001'].filter(Boolean);
+  : [process.env.FRONTEND_URL, 'https://indiapodlive.vercel.app', 'http://localhost:3000', 'http://localhost:3001'].filter(Boolean);
+
+const isOriginAllowed = (origin) => {
+  if (!origin) return true; // Server-to-server or mobile requests
+  if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) return true;
+  // Allow all vercel preview & production domains (*.vercel.app), render (*.onrender.com), and localhost
+  if (/^https:\/\/(?:[a-zA-Z0-9-]+\.)*(vercel\.app|onrender\.com)$/i.test(origin)) return true;
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return true;
+  return false;
+};
 
 const corsOriginHandler = (origin, callback) => {
-  if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes('*') || allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
+  if (isOriginAllowed(origin)) {
     return callback(null, true);
   }
-  return callback(new Error('Not allowed by CORS'));
+  return callback(null, false);
 };
 
 const app = express();
@@ -39,16 +48,17 @@ app.set('trust proxy', 1);
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: corsOriginHandler,
+    origin: (origin, callback) => callback(null, isOriginAllowed(origin)),
     methods: ['GET', 'POST'],
     credentials: true
-  }
+  },
+  transports: ['websocket', 'polling']
 });
 
 // Security & perf middleware
 app.use(helmet({ crossOriginEmbedderPolicy: false, crossOriginResourcePolicy: { policy: "cross-origin" }, contentSecurityPolicy: false }));
 app.use(compression());
-app.use(cors({ origin: corsOriginHandler, credentials: true, methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] }));
+app.use(cors({ origin: corsOriginHandler, credentials: true, methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'] }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 

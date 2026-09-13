@@ -67,13 +67,14 @@ const emitViewerCount = async (io, sessionId) => {
 module.exports = (io) => {
     io.use((socket, next) => {
         try {
-            const token = socket.handshake.auth?.token;
-            if (!token) return next(new Error('Authentication required'));
-            socket.data.user = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
-            return next();
+            const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+            if (token && token !== 'mock-access-token') {
+                socket.data.user = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
+            }
         } catch (_error) {
-            return next(new Error('Invalid or expired authentication'));
+            // Guest or expired connection allowed for viewing public streams/chats
         }
+        return next();
     });
     io.on('connection', (socket) => {
 
