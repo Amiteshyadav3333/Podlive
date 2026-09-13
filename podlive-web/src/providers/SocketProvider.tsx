@@ -3,7 +3,7 @@
 import { useEffect, useState, createContext, useContext } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useRouter } from 'next/navigation';
-import { getSocketUrl } from '@/lib/api';
+import { getSocketUrl, buildApiUrl } from '@/lib/api';
 import axios from 'axios';
 
 interface SocketContextData {
@@ -28,18 +28,50 @@ export default function SocketProvider({ children }: { children: React.ReactNode
             }
         }
 
+        const attemptTokenRefresh = async (): Promise<boolean> => {
+            const refreshToken = localStorage.getItem('refreshToken');
+            if (!refreshToken) return false;
+            try {
+                const refreshRes = await originalFetch(`${getSocketUrl()}/api/auth/refresh`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ refreshToken })
+                });
+                if (!refreshRes.ok) return false;
+                const data = await refreshRes.json();
+                if (data.accessToken) {
+                    localStorage.setItem('accessToken', data.accessToken);
+                    if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken);
+                    if (data.user) localStorage.setItem('user', JSON.stringify(data.user));
+                    return true;
+                }
+                return false;
+            } catch {
+                return false;
+            }
+        };
+
+        const handleAuthExpired = () => {
+            const currentPath = window.location.pathname;
+            if (!currentPath.includes('/login') && !currentPath.includes('/register')) {
+                localStorage.removeItem('accessToken');
+                localStorage.removeItem('refreshToken');
+                localStorage.removeItem('user');
+                window.location.href = '/login?expired=true';
+            }
+        };
+
         // Intercept native fetch
         const originalFetch = window.fetch;
         window.fetch = async (...args) => {
             const res = await originalFetch(...args);
             if (res.status === 401) {
-                const currentPath = window.location.pathname;
-                if (!currentPath.includes('/login') && !currentPath.includes('/register')) {
-                    localStorage.removeItem('accessToken');
-                    localStorage.removeItem('refreshToken');
-                    localStorage.removeItem('user');
-                    window.location.href = '/login?expired=true';
+                const refreshed = await attemptTokenRefresh();
+                if (refreshed) {
+                    // Retry with new token if authorization header was present
+                    return originalFetch(...args);
                 }
+                handleAuthExpired();
             }
             return res;
         };
@@ -47,15 +79,15 @@ export default function SocketProvider({ children }: { children: React.ReactNode
         // Intercept Axios
         const axiosInterceptor = axios.interceptors.response.use(
             response => response,
-            error => {
+            async error => {
                 if (error.response && error.response.status === 401) {
-                    const currentPath = window.location.pathname;
-                    if (!currentPath.includes('/login') && !currentPath.includes('/register')) {
-                        localStorage.removeItem('accessToken');
-                        localStorage.removeItem('refreshToken');
-                        localStorage.removeItem('user');
-                        window.location.href = '/login?expired=true';
+                    const refreshed = await attemptTokenRefresh();
+                    if (refreshed && error.config) {
+                        const newToken = localStorage.getItem('accessToken');
+                        error.config.headers['Authorization'] = `Bearer ${newToken}`;
+                        return axios(error.config);
                     }
+                    handleAuthExpired();
                 }
                 return Promise.reject(error);
             }
@@ -66,13 +98,7 @@ export default function SocketProvider({ children }: { children: React.ReactNode
         XMLHttpRequest.prototype.send = function(...args) {
             this.addEventListener('load', () => {
                 if (this.status === 401) {
-                    const currentPath = window.location.pathname;
-                    if (!currentPath.includes('/login') && !currentPath.includes('/register')) {
-                        localStorage.removeItem('accessToken');
-                        localStorage.removeItem('refreshToken');
-                        localStorage.removeItem('user');
-                        window.location.href = '/login?expired=true';
-                    }
+                    handleAuthExpired();
                 }
             });
             return originalSend.apply(this, args);
@@ -122,25 +148,35 @@ export default function SocketProvider({ children }: { children: React.ReactNode
     const handleAccept = async () => {
         try {
             const token = localStorage.getItem("accessToken");
-            // Hit backend REST API to accept if needed, but for now we'll just emit via socket and navigate
-            if (socket && inviteData) {
+            if (inviteData) {
                 const userData = localStorage.getItem('user');
                 const user = userData ? JSON.parse(userData) : null;
 
-                socket.emit('accept_invite', {
-                    sessionId: inviteData.sessionId,
-                    hostId: inviteData.host.id,
-                    inviteeHandle: user?.unique_handle
-                });
+                // 1. Confirm acceptance via REST so database and LiveKit role are updated
+                const inviteId = inviteData.invite?.id || inviteData.inviteId;
+                if (inviteId && token) {
+                    await axios.post(
+                        buildApiUrl(`/api/stage/invite/${inviteId}/accept`),
+                        {},
+                        { headers: { Authorization: `Bearer ${token}` } }
+                    ).catch((err) => console.warn("[Stage] REST acceptance warning:", err.message));
+                }
 
-                // Also notify REST to create DB entry as accepted
-                // (Assuming the backend might need a route for this, or just proceed)
+                // 2. Emit socket event
+                if (socket) {
+                    socket.emit('accept_invite', {
+                        sessionId: inviteData.sessionId,
+                        hostId: inviteData.host.id,
+                        inviteeHandle: user?.unique_handle
+                    });
+                }
 
+                // 3. Navigate to live room
                 router.push(`/live/${inviteData.sessionId}`);
                 setInviteData(null);
             }
         } catch (err) {
-            console.error(err);
+            console.error('[Stage] Accept invite error:', err);
         }
     };
 

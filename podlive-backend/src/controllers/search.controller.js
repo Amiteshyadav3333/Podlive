@@ -14,8 +14,8 @@ exports.searchAll = async (req, res) => {
         const users = await prisma.user.findMany({
             where: {
                 OR: [
-                    { display_name: { contains: searchQuery } },
-                    { unique_handle: { contains: searchQuery } }
+                    { display_name: { contains: searchQuery, mode: 'insensitive' } },
+                    { unique_handle: { contains: searchQuery, mode: 'insensitive' } }
                 ]
             },
             select: {
@@ -33,9 +33,9 @@ exports.searchAll = async (req, res) => {
         const sessions = await prisma.liveSession.findMany({
             where: {
                 OR: [
-                    { title: { contains: searchQuery } },
-                    { description: { contains: searchQuery } },
-                    { category: { contains: searchQuery } }
+                    { title: { contains: searchQuery, mode: 'insensitive' } },
+                    { description: { contains: searchQuery, mode: 'insensitive' } },
+                    { category: { contains: searchQuery, mode: 'insensitive' } }
                 ]
             },
             include: {
@@ -58,10 +58,10 @@ exports.searchAll = async (req, res) => {
             where: {
                 visibility: 'public',
                 OR: [
-                    { title: { contains: searchQuery } },
-                    { description: { contains: searchQuery } },
+                    { title: { contains: searchQuery, mode: 'insensitive' } },
+                    { description: { contains: searchQuery, mode: 'insensitive' } },
                     { tags: { has: searchQuery } },
-                    { category: { name: { contains: searchQuery } } }
+                    { category: { name: { contains: searchQuery, mode: 'insensitive' } } }
                 ]
             },
             include: {

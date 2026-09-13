@@ -5,8 +5,8 @@ const jwt = require('jsonwebtoken');
 
 // In-memory store — works for single-instance.
 // For multi-instance scale, replace with Redis adapter: socket.io/redis-adapter
-const activeUsers = new Map();    // userId -> socketId
-const socketUsers = new Map();    // socketId -> userId
+const userSockets = new Map();     // userId -> Set(socketId)
+const socketUsers = new Map();     // socketId -> userId
 const pendingDisconnects = new Map(); // userId -> timeoutId
 const liveRoomViewers = new Map(); // sessionId -> Set(socketId)
 
@@ -43,25 +43,21 @@ const findUserByHandle = async (handleOrId) => {
 const emitViewerCount = async (io, sessionId) => {
     const count = liveRoomViewers.get(sessionId)?.size || 0;
     try {
-        const session = await prisma.liveSession.update({
+        const session = await prisma.liveSession.findUnique({ where: { id: sessionId } });
+        if (!session) return;
+        const newPeak = Math.max(session.viewer_count_peak || 0, count);
+        await prisma.liveSession.update({
             where: { id: sessionId },
             data: {
                 viewer_count: count,
-                viewer_count_peak: { increment: 0 }
+                viewer_count_peak: newPeak
             }
         });
-
-        if (count > session.viewer_count_peak) {
-            await prisma.liveSession.update({
-                where: { id: sessionId },
-                data: { viewer_count_peak: count }
-            });
-        }
 
         io.to(sessionId).emit('viewer_count_update', {
             sessionId,
             viewerCount: count,
-            viewerCountPeak: Math.max(count, session.viewer_count_peak)
+            viewerCountPeak: newPeak
         });
     } catch (err) {
         console.error('[Socket] Viewer count update error:', err.message);
@@ -85,7 +81,10 @@ module.exports = (io) => {
         socket.on('register_user', () => {
             const userId = socket.data.user?.id;
             if (!userId) return;
-            activeUsers.set(userId, socket.id);
+            if (!userSockets.has(userId)) {
+                userSockets.set(userId, new Set());
+            }
+            userSockets.get(userId).add(socket.id);
             socketUsers.set(socket.id, userId);
             socket.join(userId);
 
@@ -170,7 +169,7 @@ module.exports = (io) => {
                 });
                 io.to(sessionId).emit('stage_invite_sent', { invite, invitee });
 
-                if (activeUsers.get(invitee.id)) {
+                if (userSockets.has(invitee.id) && userSockets.get(invitee.id).size > 0) {
                     socket.emit('invite_status', { success: true, message: `Invite sent to ${invitee.unique_handle}!`, invite });
                 } else {
                     socket.emit('invite_status', { success: true, message: `Invite saved. ${invitee.unique_handle} will see it when online.`, invite });
@@ -241,24 +240,38 @@ module.exports = (io) => {
         });
 
         socket.on('reject_invite', ({ sessionId, hostId, inviteeHandle }) => {
-            const hostSocket = activeUsers.get(hostId);
-            if (hostSocket) io.to(hostSocket).emit('invite_rejected', { sessionId, inviteeHandle });
+            if (hostId) io.to(hostId).emit('invite_rejected', { sessionId, inviteeHandle });
         });
 
         // ── Host controls (mic / camera / kick) ────────────────
-        socket.on('mute_guest', ({ guestId }) => {
-            const guestSocket = activeUsers.get(guestId);
-            if (guestSocket) io.to(guestSocket).emit('guest_muted');
+        socket.on('mute_guest', async ({ sessionId, guestId }) => {
+            const hostUserId = socket.data?.user?.id || socketUsers.get(socket.id);
+            if (!guestId || !hostUserId) return;
+            if (sessionId) {
+                const session = await prisma.liveSession.findUnique({ where: { id: sessionId } }).catch(() => null);
+                if (session && session.host_user_id !== hostUserId) return;
+            }
+            io.to(guestId).emit('guest_muted');
         });
 
-        socket.on('disable_camera_guest', ({ guestId }) => {
-            const guestSocket = activeUsers.get(guestId);
-            if (guestSocket) io.to(guestSocket).emit('guest_camera_disabled');
+        socket.on('disable_camera_guest', async ({ sessionId, guestId }) => {
+            const hostUserId = socket.data?.user?.id || socketUsers.get(socket.id);
+            if (!guestId || !hostUserId) return;
+            if (sessionId) {
+                const session = await prisma.liveSession.findUnique({ where: { id: sessionId } }).catch(() => null);
+                if (session && session.host_user_id !== hostUserId) return;
+            }
+            io.to(guestId).emit('guest_camera_disabled');
         });
 
-        socket.on('remove_guest', ({ guestId }) => {
-            const guestSocket = activeUsers.get(guestId);
-            if (guestSocket) io.to(guestSocket).emit('guest_removed');
+        socket.on('remove_guest', async ({ sessionId, guestId }) => {
+            const hostUserId = socket.data?.user?.id || socketUsers.get(socket.id);
+            if (!guestId || !hostUserId) return;
+            if (sessionId) {
+                const session = await prisma.liveSession.findUnique({ where: { id: sessionId } }).catch(() => null);
+                if (session && session.host_user_id !== hostUserId) return;
+            }
+            io.to(guestId).emit('guest_removed');
         });
 
         // ── Live chat ──────────────────────────────────────────
@@ -323,7 +336,6 @@ module.exports = (io) => {
 
         // ── Disconnect ─────────────────────────────────────────
         socket.on('disconnect', async () => {
-            let disconnectedUserId = null;
             const affectedRooms = [];
 
             for (const [sessionId, viewers] of liveRoomViewers.entries()) {
@@ -337,27 +349,38 @@ module.exports = (io) => {
 
             affectedRooms.forEach((sessionId) => emitViewerCount(io, sessionId));
 
-            for (const [userId, socketId] of activeUsers.entries()) {
-                if (socketId === socket.id) {
-                    disconnectedUserId = userId;
-                    activeUsers.delete(userId);
-                    break;
-                }
-            }
+            const disconnectedUserId = socketUsers.get(socket.id) || socket.data?.user?.id;
             socketUsers.delete(socket.id);
 
-            if (!disconnectedUserId) return;
+            if (disconnectedUserId && userSockets.has(disconnectedUserId)) {
+                const userSocketSet = userSockets.get(disconnectedUserId);
+                userSocketSet.delete(socket.id);
+                if (userSocketSet.size === 0) {
+                    userSockets.delete(disconnectedUserId);
+                }
+            }
 
-            // Auto-end session if host disconnects and doesn't reconnect in 20s
+            // Only consider host auto-end if the user has NO remaining active sockets
+            if (!disconnectedUserId || (userSockets.has(disconnectedUserId) && userSockets.get(disconnectedUserId).size > 0)) {
+                return;
+            }
+
+            // Auto-end session if host disconnects from all devices and doesn't reconnect in 60s
             try {
                 const activeSessions = await prisma.liveSession.findMany({
                     where: { host_user_id: disconnectedUserId, status: 'live' }
                 });
 
                 if (activeSessions.length > 0) {
-                    console.log(`[Socket] Host ${disconnectedUserId} disconnected — 20s grace timer started`);
+                    console.log(`[Socket] Host ${disconnectedUserId} disconnected completely — 60s grace timer started`);
 
                     const timeoutId = setTimeout(async () => {
+                        // Check again if host reconnected in between
+                        if (userSockets.has(disconnectedUserId) && userSockets.get(disconnectedUserId).size > 0) {
+                            pendingDisconnects.delete(disconnectedUserId);
+                            return;
+                        }
+
                         for (const session of activeSessions) {
                             try {
                                 if (session.livekit_ingress_id) {
@@ -389,7 +412,7 @@ module.exports = (io) => {
                             }
                         }
                         pendingDisconnects.delete(disconnectedUserId);
-                    }, 20000);
+                    }, 60000);
 
                     pendingDisconnects.set(disconnectedUserId, timeoutId);
                 }

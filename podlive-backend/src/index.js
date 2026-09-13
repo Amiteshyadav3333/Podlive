@@ -21,22 +21,34 @@ if (missingEnvVars.length > 0) {
   throw new Error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
 }
 
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim())
+  : [process.env.FRONTEND_URL, 'http://localhost:3000', 'http://localhost:3001'].filter(Boolean);
+
+const corsOriginHandler = (origin, callback) => {
+  if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes('*') || allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
+    return callback(null, true);
+  }
+  return callback(new Error('Not allowed by CORS'));
+};
+
 const app = express();
 
-// Trust Render's reverse proxy (required for express-rate-limit to work correctly)
+// Trust reverse proxy (required for express-rate-limit behind proxies like Render/Cloudflare)
 app.set('trust proxy', 1);
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: '*',
-    methods: ['GET', 'POST']
+    origin: corsOriginHandler,
+    methods: ['GET', 'POST'],
+    credentials: true
   }
 });
 
 // Security & perf middleware
 app.use(helmet({ crossOriginEmbedderPolicy: false, crossOriginResourcePolicy: { policy: "cross-origin" }, contentSecurityPolicy: false }));
 app.use(compression());
-app.use(cors({ origin: '*', methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] }));
+app.use(cors({ origin: corsOriginHandler, credentials: true, methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'] }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
@@ -96,30 +108,6 @@ app.use('/uploads', (req, res) => {
 
 app.get('/', (req, res) => {
   res.send({ message: 'PodLive Server is running' });
-});
-
-// Alias for LiveKit token if called directly via /get-token
-const { AccessToken } = require('livekit-server-sdk');
-app.get('/get-token', async (req, res) => {
-  try {
-    const { room, participant } = req.query;
-    if (!room || !participant) {
-      return res.status(400).json({ error: 'room and participant are required' });
-    }
-
-    const apiKey = process.env.LIVEKIT_API_KEY;
-    const apiSecret = process.env.LIVEKIT_API_SECRET;
-
-    const at = new AccessToken(apiKey, apiSecret, {
-      identity: participant,
-    });
-    at.addGrant({ roomJoin: true, room: room, canPublish: true, canSubscribe: true });
-
-    const token = await at.toJwt();
-    res.json({ token });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
 });
 
 // Routes

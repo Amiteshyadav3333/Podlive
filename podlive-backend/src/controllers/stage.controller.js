@@ -1,9 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
-const { AccessToken, RoomServiceClient } = require('livekit-server-sdk');
-
-const livekitHost = process.env.LIVEKIT_URL || 'http://127.0.0.1:7880';
-const roomService = new RoomServiceClient(livekitHost, process.env.LIVEKIT_API_KEY, process.env.LIVEKIT_API_SECRET);
+const { AccessToken } = require('livekit-server-sdk');
+const livekitRoomService = require('../services/livekit-room.service');
 
 const publicUserSelect = {
     id: true,
@@ -64,14 +62,14 @@ const ensureHostSession = async (sessionId, hostId) => {
 const getTrackSource = (track) => String(track.source || track.sourceName || '').toLowerCase();
 
 const muteTracksBySource = async (roomName, identity, sourceNeedle) => {
-    const participant = await roomService.getParticipant(roomName, identity);
+    const participant = await livekitRoomService.getParticipant(roomName, identity);
     const tracks = participant?.tracks || [];
     const mutedTrackIds = [];
 
     for (const track of tracks) {
         const source = getTrackSource(track);
         if (source.includes(sourceNeedle)) {
-            await roomService.mutePublishedTrack(roomName, identity, track.sid, true);
+            await livekitRoomService.mutePublishedTrack(roomName, identity, track.sid, true);
             mutedTrackIds.push(track.sid);
         }
     }
@@ -203,8 +201,10 @@ exports.acceptInvite = async (req, res) => {
         const token = await createToken(invite.session.livekit_room_name, invite.invitee.unique_handle);
 
         try {
-            await roomService.updateParticipant(invite.session.livekit_room_name, invite.invitee.unique_handle, {
-                permission: { canPublish: true, canSubscribe: true, canPublishData: true }
+            await livekitRoomService.updateParticipantPermissions(invite.session.livekit_room_name, invite.invitee.unique_handle, {
+                canPublish: true,
+                canSubscribe: true,
+                canPublishData: true
             });
         } catch (e) {
             console.log('[Stage] Participant permission update skipped:', e.message);
@@ -289,7 +289,7 @@ exports.removeGuest = async (req, res) => {
         }
 
         try {
-            await roomService.removeParticipant(session.livekit_room_name, guestUser.unique_handle);
+            await livekitRoomService.removeParticipant(session.livekit_room_name, guestUser.unique_handle);
         } catch (e) {
             console.log("Error removing from LiveKit room (maybe already left):", e.message);
         }
@@ -404,8 +404,10 @@ exports.updateGuestPermissions = async (req, res) => {
         }
 
         try {
-            await roomService.updateParticipant(session.livekit_room_name, guestUser.unique_handle, {
-                permission: { canPublish, canSubscribe, canPublishData }
+            await livekitRoomService.updateParticipantPermissions(session.livekit_room_name, guestUser.unique_handle, {
+                canPublish,
+                canSubscribe,
+                canPublishData
             });
         } catch (e) {
             console.log('[Stage] Permission update skipped:', e.message);

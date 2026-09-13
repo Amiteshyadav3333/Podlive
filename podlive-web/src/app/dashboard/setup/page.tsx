@@ -22,8 +22,15 @@ export default function SetupPage() {
     if (!token) { router.replace("/login?next=/dashboard/setup"); return; }
     fetch(buildApiUrl("/api/plans/status"), { headers: { Authorization: `Bearer ${token}` } })
       .then(response => response.ok ? response.json() : null)
-      .then(data => setLiveAllowed(Boolean(data?.entitlements?.active && data?.entitlements?.podcastLimit !== 0)))
-      .catch(() => setLiveAllowed(false));
+      .then(data => {
+        if (data?.entitlements?.active) {
+          setLiveAllowed(data.entitlements.podcastLimit !== 0);
+        } else {
+          // Free users get 1-hour free trial
+          setLiveAllowed(true);
+        }
+      })
+      .catch(() => setLiveAllowed(true));
   }, [router]);
 
   const handleGoLive = async () => {

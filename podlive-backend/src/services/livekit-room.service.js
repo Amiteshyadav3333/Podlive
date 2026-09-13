@@ -39,9 +39,22 @@ const updateParticipantPermissions = async (roomName, identity, permission) => {
     });
 };
 
+const getParticipant = async (roomName, identity) => {
+    const client = getRoomClient();
+    return client.getParticipant(roomName, identity);
+};
+
+const mutePublishedTrack = async (roomName, identity, trackSid, muted = true) => {
+    const client = getRoomClient();
+    return client.mutePublishedTrack(roomName, identity, trackSid, muted);
+};
+
 module.exports = {
     hasLiveKitConfig,
+    getRoomClient,
     listParticipants,
+    getParticipant,
     removeParticipant,
-    updateParticipantPermissions
+    updateParticipantPermissions,
+    mutePublishedTrack
 };

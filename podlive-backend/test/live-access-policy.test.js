@@ -136,7 +136,7 @@ test('live creation validates visibility and creates realtime-only sessions', as
     assert.equal(created.body.hlsEnabled, false);
 });
 
-test('free users receive a five-minute live room, not an unlimited trial', async () => {
+test('free users receive a 1-hour live room trial, not an unlimited trial', async () => {
     reset();
     state.platformSubscription = null;
     const res = response();
@@ -144,6 +144,8 @@ test('free users receive a five-minute live room, not an unlimited trial', async
     assert.equal(res.statusCode, 201);
     assert.equal(res.body.subscription.fullAccess, false);
     assert.ok(res.body.subscription.freeLiveEndsAt);
+    const diff = Math.round((new Date(res.body.subscription.freeLiveEndsAt).getTime() - Date.now()) / 1000);
+    assert.ok(diff >= 3590 && diff <= 3610);
 });
 
 test('private live rejects anonymous guests and viewers without an invite', async () => {

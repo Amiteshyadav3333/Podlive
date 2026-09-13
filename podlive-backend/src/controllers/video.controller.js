@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const { buildPlayerConfig } = require('../services/player-config.service');
 const { calculateViewProgress } = require('../services/view-metrics.service');
+const bunnyService = require('../services/bunny.service');
 
 const prisma = new PrismaClient();
 const publicUserSelect = { id: true, unique_handle: true, display_name: true, avatar_url: true, is_verified: true };
@@ -258,11 +259,51 @@ exports.updateVideo = async (req, res) => {
 
 exports.deleteVideo = async (req, res) => {
     try {
-        const video = await prisma.video.findUnique({ where: { id: req.params.id } });
+        const video = await prisma.video.findUnique({
+            where: { id: req.params.id },
+            include: { subtitles: true, thumbnails: true }
+        });
         if (!video || video.owner_id !== req.user.id) {
             return res.status(404).json({ error: 'Video not found' });
         }
 
+        // 1. Delete from Bunny Stream if applicable
+        if (video.hls_master_url || video.source_url) {
+            try {
+                const targetUrl = video.hls_master_url || video.source_url;
+                const pathname = new URL(targetUrl).pathname;
+                const bunnyVideoId = pathname.split('/').filter(Boolean)[0];
+                if (bunnyVideoId && !bunnyVideoId.includes('uploads')) {
+                    await bunnyService.deleteVideo(bunnyVideoId).catch(() => {});
+                }
+            } catch (e) {
+                console.warn('[Videos] Bunny cleanup skipped:', e.message);
+            }
+        }
+
+        // 2. Delete local subtitles if any
+        if (video.subtitles && video.subtitles.length > 0) {
+            for (const sub of video.subtitles) {
+                if (sub.vtt_url && sub.vtt_url.includes('/uploads/')) {
+                    try {
+                        const fileName = path.basename(new URL(sub.vtt_url).pathname);
+                        const filePath = path.join(__dirname, '../../uploads', fileName);
+                        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+                    } catch (e) {}
+                }
+            }
+        }
+
+        // 3. Delete local thumbnail if any
+        if (video.thumbnail && video.thumbnail.includes('/uploads/')) {
+            try {
+                const fileName = path.basename(new URL(video.thumbnail).pathname);
+                const filePath = path.join(__dirname, '../../uploads', fileName);
+                if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+            } catch (e) {}
+        }
+
+        // 4. Delete DB record
         await prisma.video.delete({ where: { id: video.id } });
         res.json({ message: 'Video deleted' });
     } catch (error) {

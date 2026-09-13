@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 
 import { useParams, useRouter } from "next/navigation";
-import { Mic, MicOff, VideoIcon, VideoOff, PhoneOff, Users, MessageSquare, Loader2, Share2, Circle, UserX, Maximize, Eye, EyeOff, ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { Mic, MicOff, VideoIcon, VideoOff, PhoneOff, Users, MessageSquare, Loader2, Share2, Circle, UserX, Maximize, Eye, EyeOff, ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen, Clock, Sparkles, AlertTriangle } from "lucide-react";
 import {
     LiveKitRoom,
     RoomAudioRenderer,
@@ -33,15 +33,48 @@ function RoomHeader({
     roomName,
     isHost,
     id,
+    freeAccessEndsAt,
+    onTrialExpired,
 }: {
     roomName: string;
     isHost: boolean;
     id: string;
+    freeAccessEndsAt?: string | null;
+    onTrialExpired?: () => void;
 }) {
     const router = useRouter();
     const participants = useParticipants();
     const viewerCount = Math.max(0, participants.length - 1);
     const [isSaving, setIsSaving] = useState(false);
+    const [secondsLeft, setSecondsLeft] = useState<number | null>(() => {
+        if (!freeAccessEndsAt) return null;
+        return Math.max(0, Math.floor((new Date(freeAccessEndsAt).getTime() - Date.now()) / 1000));
+    });
+
+    useEffect(() => {
+        if (!freeAccessEndsAt) {
+            setSecondsLeft(null);
+            return;
+        }
+
+        const checkTime = () => {
+            const diff = Math.max(0, Math.floor((new Date(freeAccessEndsAt).getTime() - Date.now()) / 1000));
+            setSecondsLeft(diff);
+            if (diff <= 0) {
+                onTrialExpired?.();
+            }
+        };
+
+        checkTime();
+        const interval = setInterval(checkTime, 1000);
+        return () => clearInterval(interval);
+    }, [freeAccessEndsAt, onTrialExpired]);
+
+    const formatRemaining = (sec: number) => {
+        const mins = Math.floor(sec / 60);
+        const secs = sec % 60;
+        return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+    };
 
     const handleShare = async () => {
         const shareData = {
@@ -69,7 +102,7 @@ function RoomHeader({
         }
     };
 
-        const handleEndStream = async () => {
+    const handleEndStream = async () => {
         if (!isHost) {
             router.push("/dashboard");
             return;
@@ -99,12 +132,24 @@ function RoomHeader({
                     <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-red-500 animate-pulse"></span>
                     LIVE
                 </div>
+
+                {isHost && secondsLeft !== null && (
+                    <div
+                        className={`flex items-center gap-1.5 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-lg text-xs sm:text-sm font-bold shrink-0 border ${
+                            secondsLeft < 300
+                                ? "bg-red-500/20 text-red-400 border-red-500/40 animate-pulse"
+                                : "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                        }`}
+                        title="Free 1-Hour Live Streaming Trial Remaining"
+                    >
+                        <Clock className="w-3.5 h-3.5" />
+                        <span>Trial: {formatRemaining(secondsLeft)}</span>
+                    </div>
+                )}
+
                 <span className="font-semibold px-2 sm:px-4 border-l border-white/10 text-zinc-300 text-xs sm:text-sm truncate max-w-[100px] sm:max-w-[200px] md:max-w-none">
                     {roomName || id}
                 </span>
-
-
-
             </div>
 
             <div className="flex items-center gap-2 sm:gap-4 md:gap-6 shrink-0">
@@ -632,7 +677,7 @@ function GuestManager({ sessionId, isHost, socket }: { sessionId: string; isHost
             await axios.post(buildApiUrl(`/api/stage/guest/${sessionId}/${g.invitee_id}/mute`), {}, {
                 headers: { Authorization: `Bearer ${token}` },
             });
-            socket?.emit("mute_guest", { guestId: g.invitee_id });
+            socket?.emit("mute_guest", { sessionId, guestId: g.invitee_id });
             showToast(`🔇 Muted @${g.invitee?.unique_handle?.replace("@","")}`);
         } catch { showToast("Failed to mute"); }
         finally { setBusy(p => { const n = {...p}; delete n[g.invitee_id]; return n; }); }
@@ -645,7 +690,7 @@ function GuestManager({ sessionId, isHost, socket }: { sessionId: string; isHost
             await axios.post(buildApiUrl(`/api/stage/guest/${sessionId}/${g.invitee_id}/disable-camera`), {}, {
                 headers: { Authorization: `Bearer ${token}` },
             });
-            socket?.emit("disable_camera_guest", { guestId: g.invitee_id });
+            socket?.emit("disable_camera_guest", { sessionId, guestId: g.invitee_id });
             showToast(`📷 Camera off for @${g.invitee?.unique_handle?.replace("@","")}`);
         } catch { showToast("Failed to disable camera"); }
         finally { setBusy(p => { const n = {...p}; delete n[g.invitee_id]; return n; }); }
@@ -658,7 +703,7 @@ function GuestManager({ sessionId, isHost, socket }: { sessionId: string; isHost
             await axios.delete(buildApiUrl(`/api/stage/guest/${sessionId}/${g.invitee_id}`), {
                 headers: { Authorization: `Bearer ${token}` },
             });
-            socket?.emit("remove_guest", { guestId: g.invitee_id });
+            socket?.emit("remove_guest", { sessionId, guestId: g.invitee_id });
             showToast(`❌ Removed @${g.invitee?.unique_handle?.replace("@","")}`);
             fetchGuests();
         } catch { showToast("Failed to remove"); }
@@ -1155,7 +1200,9 @@ function LiveRoomContent({
     socket,
     inviteHandle,
     setInviteHandle,
-    handleSendInvite
+    handleSendInvite,
+    freeAccessEndsAt,
+    onTrialExpired
 }: {
     id: string;
     roomName: string;
@@ -1165,6 +1212,8 @@ function LiveRoomContent({
     inviteHandle: string;
     setInviteHandle: React.Dispatch<React.SetStateAction<string>>;
     handleSendInvite: () => void;
+    freeAccessEndsAt?: string | null;
+    onTrialExpired?: () => void;
 }) {
     const [hiddenTracks, setHiddenTracks] = useState<string[]>([]);
     const [focusedTrackId, setFocusedTrackId] = useState<string | null>(null);
@@ -1206,6 +1255,8 @@ function LiveRoomContent({
                 roomName={roomName}
                 isHost={isHost}
                 id={id}
+                freeAccessEndsAt={freeAccessEndsAt}
+                onTrialExpired={onTrialExpired}
             />
 
             <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
@@ -1318,6 +1369,10 @@ export default function LiveRoom() {
     const [liveKitServerUrl, setLiveKitServerUrl] = useState("");
     const [connectError, setConnectError] = useState<string | null>(null);
 
+    // Free trial & subscription state
+    const [freeAccessEndsAt, setFreeAccessEndsAt] = useState<string | null>(null);
+    const [trialExpired, setTrialExpired] = useState(false);
+
     // Stage invite state
     const [inviteHandle, setInviteHandle] = useState("");
     const [receivedInvite, setReceivedInvite] = useState<any>(null);
@@ -1348,9 +1403,17 @@ export default function LiveRoom() {
                     const isUserStage = !!tokenAttempt.data.isStage;
                     setIsHost(isUserHost);
                     setOnStage(isUserStage);
+                    if (tokenAttempt.data.freeAccessEndsAt) {
+                        setFreeAccessEndsAt(tokenAttempt.data.freeAccessEndsAt);
+                    }
                     setPreJoinComplete(!isUserHost && !isUserStage); // viewers skip prejoin
                     tokenLoaded = true;
                 } catch (userTokenErr: any) {
+                    if (userTokenErr?.response?.status === 402 || userTokenErr?.response?.data?.code === 'payment_required') {
+                        setTrialExpired(true);
+                        setLoading(false);
+                        return;
+                    }
                     console.warn("[Live] Authenticated token attempt failed, attempting guest fallback:", userTokenErr?.response?.data || userTokenErr.message);
                 }
             }
@@ -1366,6 +1429,11 @@ export default function LiveRoom() {
                     setPreJoinComplete(true); // viewers skip prejoin
                     tokenLoaded = true;
                 } catch (guestErr: any) {
+                    if (guestErr?.response?.status === 402 || guestErr?.response?.data?.code === 'payment_required') {
+                        setTrialExpired(true);
+                        setLoading(false);
+                        return;
+                    }
                     if (guestErr.response?.status === 404) {
                         try {
                             const stats = await axios.get(buildApiUrl(`/api/live/${id}/stats`));
@@ -1468,6 +1536,36 @@ export default function LiveRoom() {
             <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center text-white">
                 <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mb-4"></div>
                 <p className="text-zinc-400">Connecting to PodLive Server...</p>
+            </div>
+        );
+    }
+
+    if (trialExpired) {
+        return (
+            <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center text-white px-6 text-center">
+                <div className="bg-zinc-900 border border-amber-500/30 p-8 rounded-3xl max-w-md w-full shadow-2xl relative overflow-hidden">
+                    <div className="w-16 h-16 bg-amber-500/20 text-amber-400 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-lg border border-amber-500/30">
+                        <Clock className="w-8 h-8" />
+                    </div>
+                    <h2 className="text-2xl font-black text-white mb-2">1-Hour Free Trial Ended</h2>
+                    <p className="text-zinc-400 text-sm leading-relaxed mb-6">
+                        Aapka 1 ghante ka free live streaming trial complete ho gaya hai. Live stream continue karne ke liye PodLive Plus ya Max plan subscribe karein.
+                    </p>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                        <button
+                            onClick={() => router.push("/dashboard")}
+                            className="flex-1 px-4 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-semibold text-sm transition"
+                        >
+                            Dashboard
+                        </button>
+                        <button
+                            onClick={() => router.push("/subscribe")}
+                            className="flex-1 px-4 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-sm shadow-lg transition"
+                        >
+                            Subscribe Plan ✨
+                        </button>
+                    </div>
+                </div>
             </div>
         );
     }
@@ -1579,6 +1677,35 @@ export default function LiveRoom() {
                 </div>
             )}
 
+            {/* In-stream Trial Expiry Popup */}
+            {trialExpired && (
+                <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[120] flex items-center justify-center p-4">
+                    <div className="bg-zinc-900 border border-amber-500/30 p-8 rounded-3xl max-w-md w-full text-center shadow-2xl">
+                        <div className="w-16 h-16 bg-amber-500/20 text-amber-400 rounded-2xl flex items-center justify-center mx-auto mb-5 shadow-lg border border-amber-500/30">
+                            <Clock className="w-8 h-8" />
+                        </div>
+                        <h2 className="text-2xl font-black text-white mb-2">1-Hour Free Trial Ended</h2>
+                        <p className="text-zinc-400 text-sm leading-relaxed mb-6">
+                            Aapka 1-hour free trial khatam ho chuka hai. Stream continue karne ke liye apna subscription plan select karein.
+                        </p>
+                        <div className="flex flex-col sm:flex-row gap-3">
+                            <button
+                                onClick={() => router.push("/dashboard")}
+                                className="flex-1 px-4 py-3 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-semibold text-sm transition"
+                            >
+                                Dashboard
+                            </button>
+                            <button
+                                onClick={() => router.push("/subscribe")}
+                                className="flex-1 px-4 py-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-sm shadow-lg transition"
+                            >
+                                Subscribe Plan ✨
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <LiveKitRoom
                 video={videoEnabled}
                 audio={audioEnabled}
@@ -1601,6 +1728,8 @@ export default function LiveRoom() {
                     inviteHandle={inviteHandle}
                     setInviteHandle={setInviteHandle}
                     handleSendInvite={handleSendInvite}
+                    freeAccessEndsAt={freeAccessEndsAt}
+                    onTrialExpired={() => setTrialExpired(true)}
                 />
             </LiveKitRoom>
         </>

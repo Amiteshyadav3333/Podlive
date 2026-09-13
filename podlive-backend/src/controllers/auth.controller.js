@@ -236,3 +236,45 @@ exports.cheetchatSso = async (req, res) => {
         return res.status(502).json({ error: 'Could not complete secure single sign-on.' });
     }
 };
+
+exports.refreshToken = async (req, res) => {
+    try {
+        const { refreshToken } = req.body;
+        if (!refreshToken) {
+            return res.status(400).json({ error: 'Refresh token is required' });
+        }
+
+        let decoded;
+        try {
+            decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
+        } catch (err) {
+            return res.status(401).json({ error: 'Invalid or expired refresh token' });
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { id: decoded.id },
+            select: {
+                id: true,
+                unique_handle: true,
+                email: true,
+                display_name: true,
+                avatar_url: true,
+                is_verified: true
+            }
+        });
+
+        if (!user) {
+            return res.status(404).json({ error: 'User not found' });
+        }
+
+        const tokens = generateTokens(user.id);
+        return res.json({
+            user,
+            ...tokens
+        });
+    } catch (error) {
+        console.error('Refresh Token Error:', error);
+        return res.status(500).json({ error: 'Failed to refresh token' });
+    }
+};
+

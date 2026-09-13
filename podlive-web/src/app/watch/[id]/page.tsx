@@ -38,6 +38,7 @@ import {
     Timer
 } from "lucide-react";
 import Hls from "hls.js";
+import HomePage from "../../page";
 import { buildApiUrl } from "@/lib/api";
 
 interface SubtitleTrack {
@@ -103,7 +104,7 @@ interface RecommendedVideo {
 interface CurrentUser { id: string; display_name?: string }
 
 // Custom HLS player component with familiar video controls
-function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, onViewUpdate, hasNext, hasPrev }: {
+function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, onViewUpdate, onCompactChange, hasNext, hasPrev }: {
     videoId?: string,
     url: string,
     poster: string,
@@ -112,6 +113,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
     onPrev?: () => void,
     onEnded?: () => void,
     onViewUpdate?: (views: string) => void,
+    onCompactChange?: (compact: boolean) => void,
     hasNext?: boolean,
     hasPrev?: boolean
 }) {
@@ -195,17 +197,6 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
         video.currentTime = Math.max(0, Math.min(video.duration || Infinity, video.currentTime + seconds));
         showSkipOverlay(`${seconds > 0 ? '+' : ''}${seconds}s`);
     }, []);
-
-    const togglePictureInPicture = async () => {
-        const video = videoRef.current;
-        if (!video || !("pictureInPictureEnabled" in document)) return;
-        try {
-            if (document.pictureInPictureElement) await document.exitPictureInPicture();
-            else if (video.readyState >= 1) await video.requestPictureInPicture();
-        } catch (error) {
-            console.error("Picture-in-picture failed:", error);
-        }
-    };
 
     const setSleepTimer = (minutes: number | null) => {
         if (sleepTimerRef.current) clearTimeout(sleepTimerRef.current);
@@ -437,16 +428,20 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
     };
 
     // Draggable Custom Miniplayer Mode (Floating & Positionable on Screen)
-    const handleToggleMini = () => {
+    const handleToggleMini = React.useCallback(() => {
         if (!isMini) {
-            const initialX = window.innerWidth - 360; // 340px width + 20px offset
-            const initialY = window.innerHeight - 220; // 191px height + 20px offset
+            const miniWidth = Math.min(340, window.innerWidth - 24);
+            const miniHeight = miniWidth * 9 / 16;
+            const initialX = Math.max(12, window.innerWidth - miniWidth - 12);
+            const initialY = Math.max(12, window.innerHeight - miniHeight - 12);
             setMiniPosition({ x: initialX, y: initialY });
             setIsMini(true);
+            onCompactChange?.(true);
         } else {
             setIsMini(false);
+            onCompactChange?.(false);
         }
-    };
+    }, [isMini, onCompactChange]);
 
     const handleMiniDragStart = (e: React.MouseEvent | React.TouchEvent) => {
         if (!isMini) return;
@@ -479,12 +474,13 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
         const newY = clientY - dragStartRef.current.y;
         
         // Restrict within screen bounds
-        const maxX = window.innerWidth - 340;
-        const maxY = window.innerHeight - 191;
+        const bounds = containerRef.current?.getBoundingClientRect();
+        const maxX = window.innerWidth - (bounds?.width || Math.min(340, window.innerWidth - 24));
+        const maxY = window.innerHeight - (bounds?.height || 191);
         
         setMiniPosition({
-            x: Math.max(0, Math.min(maxX, newX)),
-            y: Math.max(0, Math.min(maxY, newY))
+            x: Math.max(0, Math.min(Math.max(0, maxX), newX)),
+            y: Math.max(0, Math.min(Math.max(0, maxY), newY))
         });
     };
 
@@ -812,7 +808,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
                 case 'arrowdown': video.volume = Math.max(0, video.volume - 0.05); e.preventDefault(); break;
                 case 'm': handleToggleMute(); break;
                 case 'f': handleToggleFullscreen(); break;
-                case 'i': void togglePictureInPicture(); break;
+                case 'i': handleToggleMini(); break;
                 case 'c': handleToggleSubtitles(); break;
                 case 'r': setIsLooping((value) => !value); break;
                 case '[': setLoopRange((range) => ({ ...range, start: video.currentTime })); showSkipOverlay('Loop start set'); break;
@@ -831,7 +827,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [duration, playbackRate, seekBy, handleToggleMute, handleToggleSubtitles]);
+    }, [duration, playbackRate, seekBy, handleToggleMute, handleToggleSubtitles, handleToggleMini]);
 
     const handleQualityChange = (levelIndex: number) => {
         const hls = hlsInstanceRef.current;
@@ -886,8 +882,8 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
                 position: 'fixed',
                 left: `${miniPosition.x}px`,
                 top: `${miniPosition.y}px`,
-                width: '340px',
-                height: '191px',
+                width: 'min(340px, calc(100vw - 24px))',
+                height: 'auto',
                 zIndex: 9999,
                 cursor: 'grab'
             } : undefined}
@@ -903,6 +899,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
                         onClick={(e) => {
                             e.stopPropagation();
                             setIsMini(false);
+                            onCompactChange?.(false);
                         }}
                         className="p-1 hover:bg-white/10 rounded text-zinc-300 hover:text-white transition-colors"
                         title="Restore"
@@ -914,6 +911,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
                             e.stopPropagation();
                             setIsMini(false);
                             videoRef.current?.pause();
+                            onCompactChange?.(false);
                         }}
                         className="p-1 hover:bg-red-500/20 rounded text-zinc-300 hover:text-red-500 transition-colors"
                         title="Close"
@@ -1006,7 +1004,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
                     <div className="max-h-[85%] w-full max-w-xl overflow-auto rounded-2xl border border-white/10 bg-zinc-950 p-5" onClick={(e) => e.stopPropagation()}>
                         <div className="mb-4 flex items-center justify-between"><h3 className="font-bold">Keyboard shortcuts</h3><button onClick={() => setShowShortcuts(false)}>✕</button></div>
                         <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-                            {[['Space / K','Play or pause'],['J / L','Back or forward 10s'],['← / →','Back or forward 5s'],['↑ / ↓','Volume'],['M','Mute'],['F','Fullscreen'],['I','Picture in picture'],['C','Captions'],['< / >','Playback speed'],['0–9','Jump to percentage'],[', / .','Frame step while paused'],['R','Loop video'],['[ / ]','Set loop range'],['?','Shortcut help']].map(([key, action]) => <div key={key} className="flex justify-between gap-3 rounded-lg bg-white/5 px-3 py-2"><kbd className="font-mono text-red-400">{key}</kbd><span className="text-zinc-300">{action}</span></div>)}
+                            {[['Space / K','Play or pause'],['J / L','Back or forward 10s'],['← / →','Back or forward 5s'],['↑ / ↓','Volume'],['M','Mute'],['F','Fullscreen'],['I','Compact player'],['C','Captions'],['< / >','Playback speed'],['0–9','Jump to percentage'],[', / .','Frame step while paused'],['R','Loop video'],['[ / ]','Set loop range'],['?','Shortcut help']].map(([key, action]) => <div key={key} className="flex justify-between gap-3 rounded-lg bg-white/5 px-3 py-2"><kbd className="font-mono text-red-400">{key}</kbd><span className="text-zinc-300">{action}</span></div>)}
                         </div>
                     </div>
                 </div>
@@ -1132,11 +1130,12 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
                         </button>
 
                         <button
-                            onClick={(event) => event.shiftKey ? handleToggleMini() : void togglePictureInPicture()}
-                            className={`hidden size-8 place-items-center rounded-full text-white transition-colors hover:bg-white/10 hover:text-red-500 md:grid ${
+                            onClick={handleToggleMini}
+                            className={`grid size-8 place-items-center rounded-full text-white transition-colors hover:bg-white/10 hover:text-red-500 ${
                                 isMini ? "text-red-500 animate-pulse" : ""
                             }`}
-                            title="Picture in picture"
+                            title="Compact player"
+                            aria-label="Open compact player and browse"
                         >
                             <PictureInPicture2 className="w-5 h-5" />
                         </button>
@@ -1306,6 +1305,7 @@ export default function WatchPage() {
     const [recommendedFilter, setRecommendedFilter] = useState<'all' | 'creator' | 'related'>('all');
     const [autoPlayEnabled, setAutoPlayEnabled] = useState(true);
     const [videoSubtitles, setVideoSubtitles] = useState<SubtitleTrack[]>([]);
+    const [isCompactBrowsing, setIsCompactBrowsing] = useState(false);
 
     useEffect(() => {
         if (typeof window !== "undefined") {
@@ -1895,6 +1895,10 @@ export default function WatchPage() {
     return (
         <div className="min-h-screen bg-[#0a0a0a] text-white selection:bg-indigo-500/30 font-sans pb-20">
 
+            <div className={isCompactBrowsing ? "fixed inset-0 z-40 overflow-y-auto bg-[#080808]" : "hidden"}>
+                <HomePage />
+            </div>
+
             <main className="mx-auto max-w-[1800px] px-4 pt-0 sm:pt-4 md:px-6 md:pt-6 xl:px-8">
                 <div className="flex flex-col gap-6 lg:flex-row xl:gap-8">
 
@@ -1924,6 +1928,7 @@ export default function WatchPage() {
                                 onPrev={handlePrevVideo}
                                 onEnded={handleVideoEnded}
                                 onViewUpdate={handleViewUpdate}
+                                onCompactChange={setIsCompactBrowsing}
                                 hasNext={hasNextVideo}
                                 hasPrev={hasPrevVideo}
                             />

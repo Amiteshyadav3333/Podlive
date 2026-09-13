@@ -26,7 +26,7 @@ const createToken = async (roomName, participantName, canPublish = false, role =
     return await at.toJwt();
 };
 
-const FREE_LIVE_SECONDS = 5 * 60;
+const FREE_LIVE_SECONDS = 60 * 60; // 1 Hour free streaming trial
 const remainingFreeLiveSeconds = (session, now = new Date()) => {
     if (!session?.free_access_ends_at) return null;
     return Math.floor((new Date(session.free_access_ends_at).getTime() - now.getTime()) / 1000);
@@ -42,7 +42,7 @@ const rejectExpiredFreeLive = async (session, res) => {
         });
     }
     res.status(402).json({
-        error: 'Your free 5-minute live limit has ended. Approve a paid plan to continue.',
+        error: 'Your free 1-hour live streaming trial has ended. Subscribe to a plan to continue streaming.',
         code: 'payment_required'
     });
     return true;
@@ -487,6 +487,7 @@ exports.getViewerToken = async (req, res) => {
             isHost,
             isStage: Boolean(stageInvite),
             role,
+            freeAccessEndsAt: session.free_access_ends_at,
             permissions: {
                 canPublish,
                 canSubscribe: true,
@@ -674,7 +675,7 @@ exports.getRecordingDetails = async (req, res) => {
         }
 
         const { host, video, ...sessionData } = session;
-        const { password_hash, total_views, total_likes, ...publicHost } = host;
+        const { password_hash, email, cheetchat_user_id, total_views, total_likes, ...publicHost } = host;
 
         res.json({
             ...sessionData,
@@ -1183,11 +1184,12 @@ exports.viewerHeartbeat = async (req, res) => {
         }
 
         const viewerCount = Math.max(0, safeNumber(req.body.viewerCount, session.viewer_count));
+        const newPeak = Math.max(session.viewer_count_peak || 0, viewerCount);
         const updated = await prisma.liveSession.update({
             where: { id },
             data: {
                 viewer_count: viewerCount,
-                viewer_count_peak: { increment: viewerCount > session.viewer_count_peak ? viewerCount - session.viewer_count_peak : 0 }
+                viewer_count_peak: newPeak
             }
         });
 
@@ -1298,12 +1300,16 @@ exports.deleteRecording = async (req, res) => {
             }
         } catch (fileError) {
             console.error('Error deleting files associated with recording:', fileError);
-            // We can choose to softly ignore file deletion errors to still clean up DB
         }
 
-        // We must also delete nested relations manually or use cascade deletes, 
-        // since sqlite in prisma might require explicit cascades or manual deletion.
-        // Let's manually delete likes, comments, subtitles, and invites related to this session to avoid foreign key constraints
+        // Unlink Video records referencing this session to prevent Foreign Key constraint violation
+        await prisma.video.updateMany({
+            where: { live_session_id: id },
+            data: { live_session_id: null }
+        });
+
+        // Delete related relations before deleting session
+        await prisma.liveAccessInvite.deleteMany({ where: { session_id: id } });
         await prisma.subtitle.deleteMany({ where: { session_id: id } });
         await prisma.like.deleteMany({ where: { session_id: id } });
         await prisma.chatMessage.deleteMany({ where: { session_id: id } });

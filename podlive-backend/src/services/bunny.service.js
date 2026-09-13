@@ -274,6 +274,13 @@ const uploadVideoFile = async ({ filePath, title, contentType, collectionId, thu
     };
 };
 
+const deleteVideo = async (videoId) => {
+    const { libraryId } = assertConfigured();
+    return bunnyFetch(`/library/${libraryId}/videos/${videoId}`, {
+        method: 'DELETE'
+    });
+};
+
 module.exports = {
     assertConfigured,
     createVideo,
@@ -283,5 +290,6 @@ module.exports = {
     setThumbnail,
     uploadVideoBinary,
     uploadVideoChunks,
-    uploadVideoFile
+    uploadVideoFile,
+    deleteVideo
 };

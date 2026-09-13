@@ -40,7 +40,17 @@ exports.getChannel = async (req, res) => {
             prisma.liveSession.findMany({ where: { host_user_id: channel.owner_id, visibility: 'public', status: { in: ['live', 'scheduled'] } }, orderBy: { created_at: 'desc' }, take: 10 }),
             prisma.course.findMany({ where: { instructor_id: channel.owner_id, status: 'published', visibility: 'public' }, orderBy: { created_at: 'desc' }, take: 12 })
         ]);
-        res.json({ channel, videos: videos.map(v => ({ ...v, filesize: v.filesize.toString(), views: v.views.toString(), watch_time: v.watch_time.toString() })), live, courses });
+        res.json({
+            channel,
+            videos: videos.map(v => ({
+                ...v,
+                filesize: v.filesize?.toString?.() || v.filesize || "0",
+                views: v.views?.toString?.() || v.views || "0",
+                watch_time: v.watch_time?.toString?.() || v.watch_time || "0"
+            })),
+            live,
+            courses
+        });
     } catch (error) {
         console.error('[Channel] get error:', error);
         res.status(500).json({ error: 'Failed to fetch channel' });

@@ -21,6 +21,34 @@ const directUploadMaxSizeBytes = Number.isFinite(configuredDirectUploadMaxSizeBy
     : DEFAULT_MAX_UPLOAD_SIZE_BYTES;
 const chunkRoot = path.join(os.tmpdir(), 'podlive-chunk-uploads');
 
+// Periodic cleanup of stale chunk uploads (> 24 hours old) to prevent disk space leakage
+const cleanupStaleChunks = () => {
+    try {
+        if (!fs.existsSync(chunkRoot)) return;
+        const now = Date.now();
+        const MAX_AGE_MS = 24 * 60 * 60 * 1000;
+        const dirs = fs.readdirSync(chunkRoot);
+        for (const dirName of dirs) {
+            const fullPath = path.join(chunkRoot, dirName);
+            try {
+                const stats = fs.statSync(fullPath);
+                if (stats.isDirectory() && now - stats.mtimeMs > MAX_AGE_MS) {
+                    fs.rmSync(fullPath, { recursive: true, force: true });
+                    console.log(`[Upload] Cleaned up stale chunk directory: ${dirName}`);
+                }
+            } catch (statErr) {}
+        }
+    } catch (err) {
+        console.warn('[Upload] Stale chunk cleanup warning:', err.message);
+    }
+};
+
+// Run cleanup periodically (unreferenced so it doesn't block process exit in tests)
+if (process.env.NODE_ENV !== 'test') {
+    setInterval(cleanupStaleChunks, 6 * 60 * 60 * 1000).unref();
+    setTimeout(cleanupStaleChunks, 5000).unref();
+}
+
 const ensureDir = (dir) => {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 };

@@ -299,9 +299,10 @@ exports.getCreatorProfile = async (req, res) => {
         const totalViews = creator.hosted_sessions.reduce((acc, curr) => acc + curr.viewer_count_peak, 0);
         const recordings = creator.hosted_sessions.filter(s => s.status === 'ended');
 
-        // We don't want to expose the password hash
+        // Never expose sensitive fields (password hash, private email, cheetchat ID)
+        const { password_hash, email, cheetchat_user_id, ...safeCreator } = serializeUser(creator);
         res.json({
-            ...serializeUser(creator),
+            ...safeCreator,
             totalLives,
             totalViews,
             recordings
