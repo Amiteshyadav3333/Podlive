@@ -113,13 +113,19 @@ const uploadVideo = async ({ filePath, fileName, title }) => {
 
 /**
  * Get direct file stream URL from Telegram fileId
+ * NOTE: Telegram Bot API only provides direct download URLs for files <= 20MB.
+ * Larger files will return an error from Telegram (400 Bad Request with "file is too big").
  */
 const getFileUrl = async (fileId) => {
     const { token } = assertTelegramConfigured();
     const res = await fetch(`https://api.telegram.org/bot${token}/getFile?file_id=${encodeURIComponent(fileId)}`);
     const data = await res.json();
     if (!res.ok || !data.ok || !data.result?.file_path) {
-        throw new Error(`Failed to retrieve file from Telegram: ${data.description || 'Unknown error'}`);
+        const desc = data.description || 'Unknown error';
+        if (desc.toLowerCase().includes('file is too big') || desc.toLowerCase().includes('too large')) {
+            throw new Error('Video file is too large to stream directly from Telegram (>20MB). Please use Bunny.net storage for large video files.');
+        }
+        throw new Error(`Failed to retrieve file from Telegram: ${desc}`);
     }
     return `https://api.telegram.org/file/bot${token}/${data.result.file_path}`;
 };

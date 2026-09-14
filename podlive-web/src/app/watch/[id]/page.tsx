@@ -497,7 +497,13 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
         let directMetadataHandler: (() => void) | undefined;
         let disposed = false;
 
-        if (Hls.isSupported() && url.includes('.m3u8')) {
+        // Determine stream type:
+        // - HLS (.m3u8) → use hls.js
+        // - Telegram proxy or any other direct URL → set as direct video src
+        const isTelegramStream = url.includes('stream-telegram') || url.includes('/api/videos/');
+        const isHlsUrl = url.includes('.m3u8');
+
+        if (Hls.isSupported() && isHlsUrl && !isTelegramStream) {
             hls = new Hls({
                 maxBufferLength: 30,
                 maxMaxBufferLength: 60,
@@ -536,9 +542,11 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
             });
 
             hlsInstanceRef.current = hls;
-        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        } else if (!isTelegramStream && video.canPlayType('application/vnd.apple.mpegurl')) {
+            // Safari native HLS
             video.src = url;
         } else {
+            // Direct MP4 / Telegram stream proxy — set src directly
             video.src = url;
             directMetadataHandler = () => setQualities([{ height: 'Original (MP4)' }]);
             video.addEventListener('loadedmetadata', directMetadataHandler, { once: true });

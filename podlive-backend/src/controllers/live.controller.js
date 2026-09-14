@@ -88,7 +88,11 @@ const refreshBunnyVideoStatus = async (session) => {
     if (!session?.video || !['queued', 'processing'].includes(session.video.processing_status)) return session;
 
     try {
-        const pathname = new URL(session.recording_url).pathname;
+        const recUrl = session.recording_url || '';
+        // Skip Bunny refresh for Telegram-stored or non-absolute URLs
+        if (!recUrl || recUrl.startsWith('/') || recUrl.includes('stream-telegram')) return session;
+
+        const pathname = new URL(recUrl).pathname;
         const bunnyVideoId = pathname.split('/').filter(Boolean)[0];
         if (!bunnyVideoId) return session;
 
@@ -677,8 +681,17 @@ exports.getRecordingDetails = async (req, res) => {
         const { host, video, ...sessionData } = session;
         const { password_hash, email, cheetchat_user_id, total_views, total_likes, ...publicHost } = host;
 
+        // Convert relative Telegram stream URLs to absolute URLs for the browser
+        const baseUrl = `${req.protocol}://${req.get('host')}`;
+        const resolveStreamUrl = (url) => {
+            if (!url) return url;
+            if (url.startsWith('/')) return `${baseUrl}${url}`;
+            return url;
+        };
+
         res.json({
             ...sessionData,
+            recording_url: resolveStreamUrl(sessionData.recording_url),
             views: video?.views?.toString?.() || sessionData.views,
             video: serializeVideo(video),
             realtimeOnly: true,
