@@ -31,13 +31,16 @@ const storage = multer.diskStorage({
 
 const upload = multer({
     storage,
-    limits: { fileSize: maxUploadSizeBytes },
+    limits: { fileSize: maxUploadSizeBytes }, // Up to 5 GB (set via MAX_UPLOAD_SIZE_BYTES env)
     fileFilter: (req, file, cb) => {
         if (file.fieldname === 'video') {
-            const allowed = ['video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo', 'application/octet-stream'];
-            // Accept if mimetype matches OR extension is video
+            const allowed = [
+                'video/mp4', 'video/webm', 'video/quicktime', 'video/x-msvideo',
+                'video/x-matroska', 'video/mpeg', 'video/ogg', 'video/3gpp',
+                'video/3gpp2', 'video/x-flv', 'video/x-ms-wmv', 'application/octet-stream'
+            ];
             const ext = path.extname(file.originalname).toLowerCase();
-            const validExt = ['.mp4', '.webm', '.mov', '.avi', '.mkv'].includes(ext);
+            const validExt = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.mpeg', '.mpg', '.ogv', '.3gp', '.flv', '.wmv', '.ts'].includes(ext);
             if (allowed.includes(file.mimetype) || validExt) return cb(null, true);
             return cb(new Error('Only video files are allowed'));
         }
@@ -48,6 +51,7 @@ const upload = multer({
         cb(null, true);
     }
 });
+
 
 const formatBytes = (bytes) => `${Math.round(bytes / 1024 / 1024)}MB`;
 

@@ -164,6 +164,8 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
     const longPressActiveRef = React.useRef(false);
     const previousPlaybackRateRef = React.useRef(1);
     const [isHoldBoostActive, setIsHoldBoostActive] = useState(false);
+    const [videoError, setVideoError] = useState<string | null>(null);
+
 
     // Skip overlay state
     const [skipOverlay, setSkipOverlay] = useState<string | null>(null);
@@ -491,6 +493,9 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
     useEffect(() => {
         const video = videoRef.current;
         if (!video || !url) return;
+
+        // Clear any previous error when a new source is being loaded
+        setVideoError(null);
 
         let hls: Hls;
         let retryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -937,7 +942,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
                 poster={poster}
                 onClick={handleTogglePlay}
                 onDoubleClick={handleToggleFullscreen}
-                onPlay={() => setIsPlaying(true)}
+                onPlay={() => { setIsPlaying(true); setVideoError(null); }}
                 onPause={() => setIsPlaying(false)}
                 onTimeUpdate={() => {
                     const video = videoRef.current;
@@ -963,7 +968,24 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
                         videoRef.current.play().catch(() => undefined);
                     } else if (onEnded) onEnded();
                 }}
+                onError={(e) => {
+                    const video = e.currentTarget;
+                    const isTelegramSrc = video.src && (video.src.includes('stream-telegram') || video.src.includes('/api/videos/'));
+                    // MEDIA_ERR_SRC_NOT_SUPPORTED (code 4) — no usable source
+                    if (video.error?.code === 4 || !video.src) {
+                        if (isTelegramSrc) {
+                            setVideoError('This video is currently unavailable for streaming. It was stored using Telegram (max 20 MB limit). Please ask the creator to re-upload it — new uploads support files up to 5 GB via Bunny Stream CDN.');
+                        } else {
+                            setVideoError('Video playback failed. The stream source is not available or not supported by your browser.');
+                        }
+                    } else if (video.error?.code === 2) {
+                        // MEDIA_ERR_NETWORK
+                        setVideoError('Network error while loading video. Please check your connection and try refreshing.');
+                    }
+                    console.error('[Player] Video element error:', video.error?.message, 'src:', video.src);
+                }}
             >
+
                 {subtitles && subtitles.map((sub, idx: number) => (
                     <track
                         key={sub.id}
@@ -975,6 +997,28 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
                     />
                 ))}
             </video>
+
+            {/* Video Error Overlay — shown when stream fails (e.g., Telegram 20MB limit) */}
+            {videoError && (
+                <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/90 px-6 text-center">
+                    <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-red-500/20 text-red-400">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M10.293 4.293a1 1 0 011.414 0L21 13.586V19a2 2 0 01-2 2H5a2 2 0 01-2-2v-5.414l9.293-9.293z" />
+                            <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="1.5" fill="none" />
+                            <line x1="12" y1="8" x2="12" y2="12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                            <circle cx="12" cy="16" r="0.5" fill="currentColor" stroke="currentColor" strokeWidth="1.5" />
+                        </svg>
+                    </div>
+                    <h3 className="mb-2 text-lg font-bold text-white">Video Unavailable</h3>
+                    <p className="max-w-sm text-sm text-zinc-400 leading-relaxed">{videoError}</p>
+                    <button
+                        onClick={() => { setVideoError(null); window.location.reload(); }}
+                        className="mt-5 rounded-lg bg-indigo-600 px-5 py-2 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors"
+                    >
+                        Refresh Page
+                    </button>
+                </div>
+            )}
 
             {/* Custom Play/Pause Large Center Icon Overlay */}
             <div

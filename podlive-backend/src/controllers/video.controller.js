@@ -1238,13 +1238,24 @@ exports.deleteSubtitle = async (req, res) => {
 exports.streamTelegramVideo = async (req, res) => {
     try {
         const { fileId } = req.params;
-        if (!fileId) return res.status(400).send('File ID is required');
+        if (!fileId) return res.status(400).json({ error: 'File ID is required' });
+
+        // Guard: if Telegram is not configured, return 503 immediately
+        if (!telegramService.isTelegramConfigured()) {
+            return res.status(503).json({
+                error: 'Video streaming via Telegram is not available on this server.',
+                hint: 'Please re-upload this video to enable streaming. New uploads use Bunny Stream CDN which supports files up to 5 GB.',
+                code: 'TELEGRAM_NOT_CONFIGURED'
+            });
+        }
+
         await telegramService.streamVideo(fileId, req, res);
     } catch (error) {
         console.error('[Videos] streamTelegramVideo error:', error);
-        if (!res.headersSent) res.status(500).send('Streaming error');
+        if (!res.headersSent) res.status(500).json({ error: 'Streaming error', message: error.message });
     }
 };
+
 
 exports.streamVideoById = async (req, res) => {
     try {
@@ -1253,14 +1264,24 @@ exports.streamVideoById = async (req, res) => {
             where: { id },
             select: { id: true, hls_master_url: true, source_url: true, visibility: true, owner_id: true }
         });
-        if (!video) return res.status(404).send('Video not found');
+        if (!video) return res.status(404).json({ error: 'Video not found' });
 
         const canAccess = await canAccessVideo(video, req.user?.id);
-        if (!canAccess) return res.status(403).send('Access denied');
+        if (!canAccess) return res.status(403).json({ error: 'Access denied' });
 
         const url = video.hls_master_url || video.source_url;
         if (url && url.includes('/api/videos/stream-telegram/')) {
             const fileId = url.split('/api/videos/stream-telegram/')[1];
+
+            // Guard: Telegram is not configured on this server
+            if (!telegramService.isTelegramConfigured()) {
+                return res.status(503).json({
+                    error: 'This video was stored via Telegram, but Telegram streaming is not available on this server.',
+                    hint: 'Please re-upload this video. New uploads use Bunny Stream CDN with full 3-5 GB support.',
+                    code: 'TELEGRAM_NOT_CONFIGURED'
+                });
+            }
+
             return await telegramService.streamVideo(fileId, req, res);
         }
 
@@ -1268,9 +1289,10 @@ exports.streamVideoById = async (req, res) => {
             return res.redirect(url);
         }
 
-        return res.status(404).send('Video stream not available');
+        return res.status(404).json({ error: 'Video stream not available. The video may still be processing or needs to be re-uploaded.' });
     } catch (err) {
         console.error('[Videos] streamVideoById error:', err);
-        return res.status(500).send('Internal server error');
+        return res.status(500).json({ error: 'Internal server error', message: err.message });
     }
 };
+
