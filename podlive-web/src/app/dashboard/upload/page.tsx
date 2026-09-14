@@ -40,40 +40,76 @@ export default function UploadPage() {
       const init = await initRes.json();
       if (!initRes.ok) throw new Error(init.error || init.details || "Could not prepare upload");
 
-      await new Promise<void>(async (resolve, reject) => {
-        const upload = new tus.Upload(videoFile, {
-          endpoint: init.bunny.endpoint,
-          retryDelays: [0, 3000, 5000, 10000, 20000, 60000],
-          chunkSize: init.bunny.chunkSize || 16 * 1024 * 1024,
-          removeFingerprintOnSuccess: true,
-          headers: {
-            AuthorizationSignature: init.bunny.signature,
-            AuthorizationExpire: String(init.bunny.expirationTime),
-            VideoId: init.bunny.videoId,
-            LibraryId: String(init.bunny.libraryId)
-          },
-          metadata: {
-            filetype: videoFile.type || "application/octet-stream",
-            title: formData.title
-          },
-          onProgress: (uploaded, total) => setUploadProgress(Math.round((uploaded / total) * 100)),
-          onError: (uploadError) => reject(new Error(uploadError.message || "Resumable upload failed")),
-          onSuccess: async () => {
-            try {
-              const completeRes = await fetch(buildApiUrl(`/api/upload/direct/${init.uploadId}/complete`), {
-                method: "POST",
-                headers: { Authorization: `Bearer ${token}` }
-              });
-              const complete = await completeRes.json();
-              if (!completeRes.ok) throw new Error(complete.error || "Could not finalize upload");
+      if (init.uploadMode === "multipart" || !init.bunny?.endpoint) {
+        // Direct Multipart Upload to Backend (Telegram / Fallback Storage)
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open("POST", buildApiUrl("/api/upload"));
+          xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+          xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+              setUploadProgress(Math.round((e.loaded / e.total) * 100));
+            }
+          };
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
               resolve();
-            } catch (completeError) { reject(completeError); }
-          }
+            } else {
+              let msg = "Upload failed";
+              try {
+                const resData = JSON.parse(xhr.responseText);
+                msg = resData.error || resData.details || msg;
+              } catch {}
+              reject(new Error(msg));
+            }
+          };
+          xhr.onerror = () => reject(new Error("Network error during video upload"));
+
+          const body = new FormData();
+          body.append("title", formData.title);
+          body.append("description", formData.description);
+          body.append("category", formData.category === "Other (Custom)" ? customCategory : formData.category);
+          body.append("visibility", formData.visibility);
+          body.append("video", videoFile);
+          xhr.send(body);
         });
-        const previous = await upload.findPreviousUploads();
-        if (previous.length) upload.resumeFromPreviousUpload(previous[0]);
-        upload.start();
-      });
+      } else {
+        // TUS Direct Upload to Bunny Stream
+        await new Promise<void>(async (resolve, reject) => {
+          const upload = new tus.Upload(videoFile, {
+            endpoint: init.bunny.endpoint,
+            retryDelays: [0, 3000, 5000, 10000, 20000, 60000],
+            chunkSize: init.bunny.chunkSize || 16 * 1024 * 1024,
+            removeFingerprintOnSuccess: true,
+            headers: {
+              AuthorizationSignature: init.bunny.signature,
+              AuthorizationExpire: String(init.bunny.expirationTime),
+              VideoId: init.bunny.videoId,
+              LibraryId: String(init.bunny.libraryId)
+            },
+            metadata: {
+              filetype: videoFile.type || "application/octet-stream",
+              title: formData.title
+            },
+            onProgress: (uploaded, total) => setUploadProgress(Math.round((uploaded / total) * 100)),
+            onError: (uploadError) => reject(new Error(uploadError.message || "Resumable upload failed")),
+            onSuccess: async () => {
+              try {
+                const completeRes = await fetch(buildApiUrl(`/api/upload/direct/${init.uploadId}/complete`), {
+                  method: "POST",
+                  headers: { Authorization: `Bearer ${token}` }
+                });
+                const complete = await completeRes.json();
+                if (!completeRes.ok) throw new Error(complete.error || "Could not finalize upload");
+                resolve();
+              } catch (completeError) { reject(completeError); }
+            }
+          });
+          const previous = await upload.findPreviousUploads();
+          if (previous.length) upload.resumeFromPreviousUpload(previous[0]);
+          upload.start();
+        });
+      }
 
       setSuccess(true);
       setTimeout(() => router.push("/dashboard/recordings"), 2000);

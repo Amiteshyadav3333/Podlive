@@ -148,107 +148,126 @@ exports.initDirectUpload = async (req, res) => {
         }
         if (!['public', 'private', 'unlisted'].includes(visibility)) return res.status(400).json({ error: 'Invalid visibility' });
 
-        const config = bunnyService.assertConfigured();
-        const bunnyVideo = await bunnyService.createVideo({ title: String(title).trim() });
-        const bunnyVideoId = bunnyVideo.guid;
-        if (!bunnyVideoId) throw new Error('Bunny Stream did not return a video ID');
-        const playback = bunnyService.getPlaybackUrls(bunnyVideoId);
-
-        let categoryId = null;
-        if (category) {
-            const slug = String(category).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'general';
-            const cat = await prisma.category.upsert({ where: { slug }, update: {}, create: { name: category, slug } });
-            categoryId = cat.id;
+        const provider = storageService.getProvider();
+        let isBunnyReady = false;
+        let config = null;
+        if (provider === 'bunny') {
+            try {
+                config = bunnyService.assertConfigured();
+                isBunnyReady = true;
+            } catch (err) {
+                console.warn('[DirectUpload] Bunny not configured, falling back to multipart/Telegram mode:', err.message);
+            }
         }
 
-        const result = await prisma.$transaction(async (tx) => {
-            const session = await tx.liveSession.create({
-                data: {
-                    host_user_id: req.user.id,
-                    title: String(title).trim(),
-                    description: description?.trim() || null,
-                    category: category || 'General',
-                    visibility,
-                    status: 'ended',
-                    recording_url: playback.hlsUrl,
-                    thumbnail_url: playback.thumbnailUrl,
-                    started_at: new Date(),
-                    ended_at: new Date(),
-                    chat_enabled: true,
-                    dvr_enabled: false,
-                    replay_enabled: false
-                }
-            });
-            const video = await tx.video.create({
-                data: {
-                    owner_id: req.user.id,
-                    live_session_id: session.id,
-                    title: String(title).trim(),
-                    description: description?.trim() || null,
-                    tags: parseTags(tags),
-                    thumbnail: playback.thumbnailUrl,
-                    filesize: BigInt(Math.round(size)),
-                    visibility,
-                    language: language || null,
-                    location: location || null,
-                    category_id: categoryId,
-                    hls_master_url: playback.hlsUrl,
-                    source_url: playback.hlsUrl,
-                    processing_status: 'queued'
-                }
-            });
-            const uploadSession = await tx.uploadSession.create({
-                data: {
-                    owner_id: req.user.id,
-                    original_name: fileName || `${title}.video`,
-                    content_type: contentType || 'application/octet-stream',
-                    total_size: BigInt(Math.round(size)),
-                    chunk_size: 0,
-                    total_chunks: 0,
-                    status: 'active',
-                    metadata: { videoId: video.id, sessionId: session.id },
-                    r2_key: `bunny:${bunnyVideoId}`
-                }
-            });
-            await tx.videoFile.create({ data: { video_id: video.id, quality: 'auto', url: playback.hlsUrl, playlist_url: playback.hlsUrl, container: 'hls' } });
-            return { session, video, uploadSession };
-        });
+        if (isBunnyReady && config) {
+            const bunnyVideo = await bunnyService.createVideo({ title: String(title).trim() });
+            const bunnyVideoId = bunnyVideo.guid;
+            if (!bunnyVideoId) throw new Error('Bunny Stream did not return a video ID');
+            const playback = bunnyService.getPlaybackUrls(bunnyVideoId);
 
-        const expirationTime = Math.floor(Date.now() / 1000) + Number(process.env.BUNNY_TUS_AUTH_SECONDS || 86400);
-        const signature = crypto.createHash('sha256')
-            .update(`${config.libraryId}${config.accessKey}${expirationTime}${bunnyVideoId}`)
-            .digest('hex');
+            let categoryId = null;
+            if (category) {
+                const slug = String(category).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'general';
+                const cat = await prisma.category.upsert({ where: { slug }, update: {}, create: { name: category, slug } });
+                categoryId = cat.id;
+            }
 
-        res.status(201).json({
-            uploadId: result.uploadSession.id,
-            sessionId: result.session.id,
-            video: serializeVideo(result.video),
-            bunny: {
-                endpoint: 'https://video.bunnycdn.com/tusupload',
-                videoId: bunnyVideoId,
-                libraryId: String(config.libraryId),
-                expirationTime,
-                signature,
-                // Ready-to-use TUS headers keep credentials out of the browser.
-                headers: {
-                    AuthorizationSignature: signature,
-                    AuthorizationExpire: String(expirationTime),
-                    VideoId: bunnyVideoId,
-                    LibraryId: String(config.libraryId)
+            const result = await prisma.$transaction(async (tx) => {
+                const session = await tx.liveSession.create({
+                    data: {
+                        host_user_id: req.user.id,
+                        title: String(title).trim(),
+                        description: description?.trim() || null,
+                        category: category || 'General',
+                        visibility,
+                        status: 'ended',
+                        recording_url: playback.hlsUrl,
+                        thumbnail_url: playback.thumbnailUrl,
+                        started_at: new Date(),
+                        ended_at: new Date(),
+                        chat_enabled: true,
+                        dvr_enabled: false,
+                        replay_enabled: false
+                    }
+                });
+                const video = await tx.video.create({
+                    data: {
+                        owner_id: req.user.id,
+                        live_session_id: session.id,
+                        title: String(title).trim(),
+                        description: description?.trim() || null,
+                        tags: parseTags(tags),
+                        thumbnail: playback.thumbnailUrl,
+                        filesize: BigInt(Math.round(size)),
+                        visibility,
+                        language: language || null,
+                        location: location || null,
+                        category_id: categoryId,
+                        hls_master_url: playback.hlsUrl,
+                        source_url: playback.hlsUrl,
+                        processing_status: 'queued'
+                    }
+                });
+                const uploadSession = await tx.uploadSession.create({
+                    data: {
+                        owner_id: req.user.id,
+                        original_name: fileName || `${title}.video`,
+                        content_type: contentType || 'application/octet-stream',
+                        total_size: BigInt(Math.round(size)),
+                        chunk_size: 0,
+                        total_chunks: 0,
+                        status: 'active',
+                        metadata: { videoId: video.id, sessionId: session.id },
+                        r2_key: `bunny:${bunnyVideoId}`
+                    }
+                });
+                await tx.videoFile.create({ data: { video_id: video.id, quality: 'auto', url: playback.hlsUrl, playlist_url: playback.hlsUrl, container: 'hls' } });
+                return { session, video, uploadSession };
+            });
+
+            const expirationTime = Math.floor(Date.now() / 1000) + Number(process.env.BUNNY_TUS_AUTH_SECONDS || 86400);
+            const signature = crypto.createHash('sha256')
+                .update(`${config.libraryId}${config.accessKey}${expirationTime}${bunnyVideoId}`)
+                .digest('hex');
+
+            return res.status(201).json({
+                uploadId: result.uploadSession.id,
+                sessionId: result.session.id,
+                video: serializeVideo(result.video),
+                bunny: {
+                    endpoint: 'https://video.bunnycdn.com/tusupload',
+                    videoId: bunnyVideoId,
+                    libraryId: String(config.libraryId),
+                    expirationTime,
+                    signature,
+                    headers: {
+                        AuthorizationSignature: signature,
+                        AuthorizationExpire: String(expirationTime),
+                        VideoId: bunnyVideoId,
+                        LibraryId: String(config.libraryId)
+                    },
+                    metadata: {
+                        filetype: contentType || 'application/octet-stream',
+                        title: String(title).trim()
+                    },
+                    chunkSize: Number(process.env.BUNNY_TUS_CHUNK_SIZE_BYTES || 32 * 1024 * 1024),
+                    retryDelays: [0, 3000, 5000, 10000, 20000, 60000]
                 },
-                metadata: {
-                    filetype: contentType || 'application/octet-stream',
-                    title: String(title).trim()
-                },
-                chunkSize: Number(process.env.BUNNY_TUS_CHUNK_SIZE_BYTES || 32 * 1024 * 1024),
-                retryDelays: [0, 3000, 5000, 10000, 20000, 60000]
-            },
-            uploadMode: 'direct-tus',
-            statusUrl: `/api/upload/direct/${result.uploadSession.id}/status`
+                uploadMode: 'direct-tus',
+                statusUrl: `/api/upload/direct/${result.uploadSession.id}/status`
+            });
+        }
+
+        // Telegram / Multipart Mode Fallback
+        res.status(200).json({
+            uploadMode: 'multipart',
+            uploadUrl: '/api/upload',
+            provider: 'telegram'
         });
     } catch (error) {
         console.error('[DirectUpload] init error:', error);
-        res.status(500).json({ error: 'Failed to prepare direct upload', details: error.message });
+        res.status(500).json({ error: 'Failed to prepare upload', details: error.message });
     }
 };
 
