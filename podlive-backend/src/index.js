@@ -21,15 +21,25 @@ if (missingEnvVars.length > 0) {
   throw new Error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
 }
 
+const defaultOrigins = [
+  'https://indiapodlive.vercel.app',
+  'https://chat.indiasearch.site',
+  'https://indiasearch.site',
+  'https://podlive.indiasearch.site',
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'http://localhost:5173'
+];
+
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim())
-  : [process.env.FRONTEND_URL, 'https://indiapodlive.vercel.app', 'http://localhost:3000', 'http://localhost:3001'].filter(Boolean);
+  : [process.env.FRONTEND_URL, ...defaultOrigins].filter(Boolean);
 
 const isOriginAllowed = (origin) => {
   if (!origin) return true; // Server-to-server or mobile requests
   if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) return true;
-  // Allow all vercel preview & production domains (*.vercel.app), render (*.onrender.com), and localhost
-  if (/^https:\/\/(?:[a-zA-Z0-9-]+\.)*(vercel\.app|onrender\.com)$/i.test(origin)) return true;
+  // Allow all vercel preview & production domains (*.vercel.app), render (*.onrender.com), indiasearch (*.indiasearch.site), and localhost
+  if (/^https:\/\/(?:[a-zA-Z0-9-]+\.)*(vercel\.app|onrender\.com|indiasearch\.site)$/i.test(origin)) return true;
   if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return true;
   return false;
 };
