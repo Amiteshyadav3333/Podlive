@@ -37,6 +37,7 @@ export default function Register() {
       localStorage.setItem("accessToken", data.accessToken);
       localStorage.setItem("refreshToken", data.refreshToken);
       localStorage.setItem("user", JSON.stringify(data.user));
+      window.dispatchEvent(new Event("podlive-auth-change"));
       router.push("/dashboard");
     } catch (err: unknown) {
       setError(err instanceof TypeError

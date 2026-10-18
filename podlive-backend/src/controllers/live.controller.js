@@ -1,5 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 const crypto = require('crypto');
 const { AccessToken } = require('livekit-server-sdk');
 const fs = require('fs');
@@ -635,7 +634,6 @@ exports.getSessionStats = async (req, res) => {
         res.json({
             viewer_count_peak: session.viewer_count_peak,
             viewer_count: session.viewer_count,
-            hls_url: session.hls_url,
             status: session.status,
             likes: session.like_count,
             gifts: session.gift_count,
@@ -747,9 +745,10 @@ exports.addComment = async (req, res) => {
         if (!['message', 'gift', 'super_chat'].includes(type)) {
             return res.status(400).json({ error: 'Unsupported live message type' });
         }
-        if (['gift', 'super_chat'].includes(type) && normalizedAmount < 0) {
-            return res.status(400).json({ error: 'amount must be a positive number' });
+        if (['gift', 'super_chat'].includes(type)) {
+            return res.status(503).json({ error: 'Paid live interactions are temporarily unavailable until payment verification is configured', code: 'PAYMENTS_NOT_CONFIGURED' });
         }
+        if (message.trim().length > 500) return res.status(400).json({ error: 'Comment must be 500 characters or fewer' });
 
         const newComment = await prisma.chatMessage.create({
             data: {
@@ -1189,36 +1188,7 @@ exports.updateParticipantPermissions = async (req, res) => {
 };
 
 exports.viewerHeartbeat = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const session = await prisma.liveSession.findUnique({ where: { id } });
-        if (!session || session.status !== 'live') {
-            return res.status(404).json({ error: 'Active live session not found' });
-        }
-
-        const viewerCount = Math.max(0, safeNumber(req.body.viewerCount, session.viewer_count));
-        const newPeak = Math.max(session.viewer_count_peak || 0, viewerCount);
-        const updated = await prisma.liveSession.update({
-            where: { id },
-            data: {
-                viewer_count: viewerCount,
-                viewer_count_peak: newPeak
-            }
-        });
-
-        if (req.io) {
-            req.io.to(id).emit('viewer_count_update', {
-                sessionId: id,
-                viewerCount: updated.viewer_count,
-                viewerCountPeak: updated.viewer_count_peak
-            });
-        }
-
-        res.json({ viewerCount: updated.viewer_count, viewerCountPeak: updated.viewer_count_peak });
-    } catch (error) {
-        console.error('Viewer Heartbeat Error:', error);
-        res.status(500).json({ error: 'Failed to update viewer count' });
-    }
+    res.status(410).json({ error: 'Client supplied viewer counts are no longer accepted', code: 'SERVER_COUNTED_PRESENCE_ONLY' });
 };
 
 exports.getLikeStatus = async (req, res) => {

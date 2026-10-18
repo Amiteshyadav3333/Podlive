@@ -12,8 +12,8 @@ const createViewerCountUpdater = ({
 
         const timer = setTimer(async () => {
             timers.delete(sessionId);
-            const count = getViewerCount(sessionId);
             try {
+                const count = await getViewerCount(sessionId);
                 const session = await prisma.liveSession.findUnique({
                     where: { id: sessionId },
                     select: { id: true, host_user_id: true, viewer_count_peak: true }

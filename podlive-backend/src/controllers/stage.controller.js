@@ -1,5 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 const { AccessToken } = require('livekit-server-sdk');
 const livekitRoomService = require('../services/livekit-room.service');
 

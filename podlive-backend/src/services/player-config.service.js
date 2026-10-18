@@ -28,12 +28,12 @@ const SHORTCUTS = Object.freeze([
     { keys: ['Escape'], action: 'close_overlay_or_fullscreen' }
 ]);
 
-const buildPlayerConfig = ({ video, history = null, entitlements = null }) => {
+const buildPlayerConfig = ({ video, history = null, entitlements = null, transformMediaUrl = (url) => url }) => {
     const access = entitlements || { planCode: 'free', active: false, adFree: false, maxVideoHeight: 720, personalizedFeed: false, podcastLimit: 2 };
     const files = [...(video.files || [])].sort((a, b) => (a.height || 0) - (b.height || 0));
     const adaptiveSource = video.hls_master_url ? {
         type: 'application/vnd.apple.mpegurl',
-        url: video.hls_master_url,
+        url: transformMediaUrl(video.hls_master_url),
         quality: 'auto'
     } : null;
 
@@ -49,26 +49,26 @@ const buildPlayerConfig = ({ video, history = null, entitlements = null }) => {
                 ...files.map((file) => ({
                     id: file.id,
                     quality: file.quality,
-                    url: file.playlist_url || file.url,
+                    url: transformMediaUrl(file.playlist_url || file.url),
                     width: file.width,
                     height: file.height,
                     bitrate: file.bitrate,
                     codec: file.codec,
                     container: file.container
                 })),
-                ...(!adaptiveSource && !files.length && video.source_url ? [{ quality: 'source', url: video.source_url }] : [])
+                ...(!adaptiveSource && !files.length && video.source_url ? [{ quality: 'source', url: transformMediaUrl(video.source_url) }] : [])
             ],
             textTracks: (video.subtitles || []).map((track, index) => ({
                 id: track.id,
                 kind: 'subtitles',
                 language: track.language,
                 label: track.label,
-                url: track.vtt_url,
+                url: transformMediaUrl(track.vtt_url),
                 default: index === 0 && track.language === video.language
             })),
             previews: (video.thumbnails || [])
                 .filter((item) => ['preview', 'gif', 'waveform'].includes(item.kind))
-                .map((item) => ({ kind: item.kind, url: item.url, width: item.width, height: item.height }))
+                .map((item) => ({ kind: item.kind, url: transformMediaUrl(item.url), width: item.width, height: item.height }))
         },
         resume: {
             positionSeconds: history?.completed ? 0 : (history?.position_seconds || 0),

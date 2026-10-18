@@ -1,15 +1,14 @@
 const crypto = require('crypto');
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 
 const slugify = (value) => String(value || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 const instructorSelect = { id: true, display_name: true, unique_handle: true, avatar_url: true, bio: true, is_verified: true };
 const courseInclude = { instructor: { select: instructorSelect }, sections: { orderBy: { position: 'asc' }, include: { lessons: { orderBy: { position: 'asc' } } } } };
 const isOwner = (course, userId) => course && course.instructor_id === userId;
 
-const serializeCourse = (course, unlocked = false) => ({
+const serializeCourse = (course, unlocked = false, canManage = false) => ({
     ...course,
-    sections: course.sections?.map((section) => ({ ...section, lessons: section.lessons.map((lesson) => unlocked || lesson.is_preview ? lesson : { id: lesson.id, section_id: lesson.section_id, title: lesson.title, description: lesson.description, kind: lesson.kind, duration_seconds: lesson.duration_seconds, position: lesson.position, is_preview: false, is_published: lesson.is_published, locked: true }) }))
+    sections: course.sections?.map((section) => ({ ...section, lessons: section.lessons.filter((lesson) => canManage || lesson.is_published).map((lesson) => unlocked || (lesson.is_preview && lesson.is_published) ? lesson : { id: lesson.id, section_id: lesson.section_id, title: lesson.title, description: lesson.description, kind: lesson.kind, duration_seconds: lesson.duration_seconds, position: lesson.position, is_preview: false, is_published: lesson.is_published, locked: true }) }))
 });
 
 exports.listCourses = async (req, res) => {
@@ -26,9 +25,11 @@ exports.getCourse = async (req, res) => {
         if (!course) return res.status(404).json({ error: 'Course not found' });
         const userId = req.user?.id;
         const enrollment = userId ? await prisma.courseEnrollment.findUnique({ where: { course_id_user_id: { course_id: course.id, user_id: userId } } }) : null;
-        const unlocked = isOwner(course, userId) || enrollment?.status === 'active';
+        const owner = isOwner(course, userId);
+        const unlocked = owner || enrollment?.status === 'active';
+        if (course.visibility !== 'public' && !owner && enrollment?.status !== 'active') return res.status(404).json({ error: 'Course not found' });
         if (course.status !== 'published' && !isOwner(course, userId)) return res.status(404).json({ error: 'Course not found' });
-        res.json({ course: serializeCourse(course, unlocked), enrollment, viewer: { enrolled: Boolean(enrollment?.status === 'active'), isInstructor: isOwner(course, userId) } });
+        res.json({ course: serializeCourse(course, unlocked, owner), enrollment, viewer: { enrolled: Boolean(enrollment?.status === 'active'), isInstructor: owner } });
     } catch (error) { console.error('[Courses] detail:', error); res.status(500).json({ error: 'Failed to fetch course' }); }
 };
 
@@ -92,41 +93,39 @@ exports.updateLesson = async (req, res) => {
 exports.createOrder = async (req, res) => {
     try {
         const course = await prisma.course.findUnique({ where: { id: req.params.id } });
-        if (!course || course.status !== 'published') return res.status(404).json({ error: 'Course not available' });
+        if (!course || course.status !== 'published' || course.visibility !== 'public') return res.status(404).json({ error: 'Course not available' });
         if (course.instructor_id === req.user.id) return res.status(400).json({ error: 'Instructor already has access' });
         if (course.price_amount === 0) {
-            const existing = await prisma.courseEnrollment.findUnique({ where: { course_id_user_id: { course_id: course.id, user_id: req.user.id } } });
-            const enrollment = await prisma.courseEnrollment.upsert({ where: { course_id_user_id: { course_id: course.id, user_id: req.user.id } }, create: { course_id: course.id, user_id: req.user.id }, update: { status: 'active' } });
-            if (!existing) await prisma.course.update({ where: { id: course.id }, data: { enrollment_count: { increment: 1 } } });
+            const key = { course_id: course.id, user_id: req.user.id };
+            const existing = await prisma.courseEnrollment.findUnique({ where: { course_id_user_id: key } });
+            if (existing) {
+                await prisma.courseEnrollment.update({ where: { id: existing.id }, data: { status: 'active' } });
+            } else {
+                const created = await prisma.courseEnrollment.createMany({ data: [key], skipDuplicates: true });
+                if (created.count) await prisma.course.update({ where: { id: course.id }, data: { enrollment_count: { increment: 1 } } });
+            }
+            const enrollment = await prisma.courseEnrollment.findUnique({ where: { course_id_user_id: key } });
             return res.status(201).json({ free: true, enrollment });
         }
-        const order = await prisma.courseOrder.create({ data: { course_id: course.id, buyer_id: req.user.id, amount: course.price_amount, currency: course.currency, payment_provider: process.env.PAYMENT_PROVIDER || 'razorpay' } });
-        res.status(201).json({ order, checkoutRequired: true, message: 'Create the provider checkout using this order ID' });
+        return res.status(503).json({ error: 'Paid course checkout is not configured yet', code: 'PAYMENTS_NOT_CONFIGURED' });
     } catch (error) { res.status(500).json({ error: 'Failed to start checkout' }); }
 };
 
 exports.confirmPayment = async (req, res) => {
-    try {
-        if (!process.env.PAYMENT_WEBHOOK_SECRET || req.headers['x-podlive-webhook-secret'] !== process.env.PAYMENT_WEBHOOK_SECRET) return res.status(401).json({ error: 'Invalid webhook signature' });
-        const order = await prisma.courseOrder.findUnique({ where: { id: req.params.orderId } });
-        if (!order) return res.status(404).json({ error: 'Order not found' });
-        if (order.status === 'paid') return res.json({ message: 'Payment was already confirmed' });
-        await prisma.$transaction([
-            prisma.courseOrder.update({ where: { id: order.id }, data: { status: 'paid', provider_payment_id: req.body.paymentId || null, paid_at: new Date() } }),
-            prisma.courseEnrollment.upsert({ where: { course_id_user_id: { course_id: order.course_id, user_id: order.buyer_id } }, create: { course_id: order.course_id, user_id: order.buyer_id }, update: { status: 'active' } }),
-            prisma.course.update({ where: { id: order.course_id }, data: { enrollment_count: { increment: 1 } } })
-        ]);
-        res.json({ message: 'Payment confirmed and course unlocked' });
-    } catch (error) { res.status(500).json({ error: 'Failed to confirm payment' }); }
+    res.status(410).json({ error: 'Unverified client payment confirmation is disabled; configure a signed provider webhook', code: 'SIGNED_PAYMENT_WEBHOOK_REQUIRED' });
 };
 
 exports.updateProgress = async (req, res) => {
     try {
         const enrollment = await prisma.courseEnrollment.findUnique({ where: { course_id_user_id: { course_id: req.params.id, user_id: req.user.id } } });
         if (!enrollment || enrollment.status !== 'active') return res.status(403).json({ error: 'Course enrollment required' });
-        const completed = Array.from(new Set([...enrollment.completed_lessons, req.body.lessonId].filter(Boolean)));
+        if (typeof req.body.lessonId !== 'string' || !req.body.lessonId) return res.status(400).json({ error: 'Lesson ID is required' });
+        const lesson = await prisma.courseLesson.findFirst({ where: { id: req.body.lessonId, section: { course_id: req.params.id }, is_published: true }, select: { id: true } });
+        if (!lesson) return res.status(404).json({ error: 'Published course lesson not found' });
+        const completed = Array.from(new Set([...enrollment.completed_lessons, lesson.id]));
         const total = await prisma.courseLesson.count({ where: { section: { course_id: req.params.id }, is_published: true } });
-        const progress = total ? Math.min((completed.length / total) * 100, 100) : 0;
+        const validCompleted = total ? await prisma.courseLesson.count({ where: { id: { in: completed }, section: { course_id: req.params.id }, is_published: true } }) : 0;
+        const progress = total ? Math.min((validCompleted / total) * 100, 100) : 0;
         const updated = await prisma.courseEnrollment.update({ where: { id: enrollment.id }, data: { completed_lessons: completed, progress_percent: progress, ...(progress === 100 ? { completed_at: new Date() } : {}) } });
         res.json({ enrollment: updated });
     } catch (error) { res.status(500).json({ error: 'Failed to update progress' }); }

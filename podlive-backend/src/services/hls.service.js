@@ -3,10 +3,9 @@ const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../lib/prisma');
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
-const prisma = new PrismaClient();
 
 const resolutions = [
     { name: '2160p', size: '3840x2160', bitrate: '16000k' },

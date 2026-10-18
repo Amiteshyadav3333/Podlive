@@ -2,6 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const http = require('http');
 const { Server } = require('socket.io');
+const { createAdapter } = require('@socket.io/redis-adapter');
+const { createClient } = require('redis');
 const multer = require('multer');
 const helmet = require('helmet');
 const compression = require('compression');
@@ -156,6 +158,26 @@ socketHandler(io);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 5005;
-server.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+
+const startServer = async () => {
+  if (process.env.REDIS_URL) {
+    const pubClient = createClient({ url: process.env.REDIS_URL });
+    const subClient = pubClient.duplicate();
+    pubClient.on('error', (error) => console.error('[Redis] Publisher error:', error.message));
+    subClient.on('error', (error) => console.error('[Redis] Subscriber error:', error.message));
+    await Promise.all([pubClient.connect(), subClient.connect()]);
+    io.adapter(createAdapter(pubClient, subClient));
+    console.log('[Socket] Redis adapter enabled for multi-instance rooms and presence');
+  } else {
+    console.warn('[Socket] REDIS_URL is not set; socket rooms and presence are single-instance only');
+  }
+
+  server.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+  });
+};
+
+startServer().catch((error) => {
+  console.error('[Server] Startup failed:', error);
+  process.exitCode = 1;
 });

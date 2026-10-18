@@ -1,15 +1,15 @@
 const crypto = require('crypto');
 const { getAgeGroup } = require('../services/audience.service');
 const { resolveEntitlements } = require('../services/platform-subscription.service');
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../lib/prisma');
 const path = require('path');
 const fs = require('fs');
 const { buildPlayerConfig } = require('../services/player-config.service');
 const { calculateViewProgress } = require('../services/view-metrics.service');
 const bunnyService = require('../services/bunny.service');
+const { signBunnyDirectoryUrl } = require('../services/bunny-token.service');
 const telegramService = require('../services/telegram.service');
 
-const prisma = new PrismaClient();
 const publicUserSelect = { id: true, unique_handle: true, display_name: true, avatar_url: true, is_verified: true };
 
 const toInt = (value, fallback) => {
@@ -60,8 +60,18 @@ const canAccessVideo = async (video, userId) => {
 };
 
 const getClientHash = (req) => {
-    const raw = req.user?.id || req.body.deviceId || req.headers['x-device-id'] || req.ip || 'anonymous';
+    const raw = req.user?.id || req.ip || 'anonymous';
     return crypto.createHash('sha256').update(String(raw)).digest('hex');
+};
+
+const signPrivateMediaUrl = (rawUrl) => {
+    if (!rawUrl) return rawUrl;
+    const cdnHostname = String(process.env.BUNNY_STREAM_CDN_HOSTNAME || '').replace(/^https?:\/\//, '').replace(/\/+$/, '').toLowerCase();
+    const parsed = new URL(rawUrl);
+    if (!cdnHostname || parsed.hostname.toLowerCase() !== cdnHostname) {
+        throw new Error('Private video playback requires a Bunny CDN URL');
+    }
+    return signBunnyDirectoryUrl(rawUrl, process.env.BUNNY_STREAM_TOKEN_AUTH_KEY);
 };
 
 exports.listVideos = async (req, res) => {
@@ -155,8 +165,15 @@ exports.getVideo = async (req, res) => {
             }) : null
         ]);
 
+        const responseVideo = serializeVideo(video);
+        if (video.visibility === 'private') {
+            delete responseVideo.source_url;
+            delete responseVideo.hls_master_url;
+            delete responseVideo.files;
+            delete responseVideo.thumbnails;
+        }
         res.json({
-            video: serializeVideo(video),
+            video: responseVideo,
             viewer: {
                 reaction: viewerReaction?.reaction || null,
                 subscribed: !!subscription
@@ -194,9 +211,13 @@ exports.getPlayerConfig = async (req, res) => {
         const entitlements = resolveEntitlements(platformSubscription);
 
         res.setHeader('Cache-Control', req.user?.id ? 'private, no-store' : 'public, max-age=60');
-        res.json({ player: buildPlayerConfig({ video, history, entitlements }) });
+        const transformMediaUrl = video.visibility === 'private' ? signPrivateMediaUrl : (url) => url;
+        res.json({ player: buildPlayerConfig({ video, history, entitlements, transformMediaUrl }) });
     } catch (error) {
         console.error('[Videos] player config error:', error);
+        if (error.message?.includes('Private video playback') || error.message?.includes('token authentication is not configured')) {
+            return res.status(503).json({ error: 'Private video playback requires configured Bunny CDN token authentication', code: 'PRIVATE_PLAYBACK_NOT_CONFIGURED' });
+        }
         res.status(500).json({ error: 'Failed to fetch player configuration' });
     }
 };
@@ -320,19 +341,23 @@ exports.recordView = async (req, res) => {
             return res.status(404).json({ error: 'Video not found' });
         }
 
-        const duration = Math.max(Number(req.body.durationSeconds || video.duration_seconds || 0), 0);
-        const sessionId = String(req.body.sessionId || req.headers['x-view-session'] || crypto.randomUUID()).slice(0, 200);
-        const sessionKey = crypto.createHash('sha256').update(`${video.id}:${sessionId}`).digest('hex');
+        const duration = Math.max(Number(video.duration_seconds || 0), 0);
+        const viewerKey = getClientHash(req);
+        const dayKey = new Date().toISOString().slice(0, 10);
+        const sessionKey = crypto.createHash('sha256').update(`${video.id}:${viewerKey}:${dayKey}`).digest('hex');
         const existing = await prisma.view.findUnique({ where: { session_key: sessionKey } });
         const viewerProfile = !existing && req.user?.id ? await prisma.profile.findUnique({
             where: { user_id: req.user.id },
             select: { birth_date: true }
         }) : null;
+        const elapsedSeconds = existing ? Math.max(0, Math.floor((Date.now() - new Date(existing.updated_at).getTime()) / 1000)) : 0;
+        if (existing && elapsedSeconds < 5) {
+            return res.json({ counted: false, qualified: existing.qualified, views: video.views.toString(), watch_time: video.watch_time.toString() });
+        }
         const viewProgress = calculateViewProgress({
             previousWatchTime: existing?.watch_time_seconds,
-            submittedWatchTime: req.body.watchTimeSeconds,
+            elapsedSeconds,
             duration,
-            completionRate: req.body.completionRate,
             wasQualified: existing?.qualified
         });
         const { nextWatchTime, watchDelta, completionRate, qualified, becameQualified } = viewProgress;
@@ -1286,6 +1311,13 @@ exports.streamVideoById = async (req, res) => {
         }
 
         if (url) {
+            if (video.visibility === 'private') {
+                try {
+                    return res.redirect(signPrivateMediaUrl(url));
+                } catch (error) {
+                    return res.status(503).json({ error: 'Private video playback is not configured for signed CDN access', code: 'PRIVATE_PLAYBACK_NOT_CONFIGURED' });
+                }
+            }
             return res.redirect(url);
         }
 

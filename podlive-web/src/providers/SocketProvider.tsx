@@ -21,11 +21,13 @@ export default function SocketProvider({ children }: { children: React.ReactNode
     const router = useRouter();
 
     useEffect(() => {
+        let newSocket: Socket | null = null;
         if (typeof window !== 'undefined') {
             if (localStorage.getItem('accessToken') === 'mock-access-token') {
                 localStorage.removeItem('user');
                 localStorage.removeItem('accessToken');
                 localStorage.removeItem('refreshToken');
+                window.dispatchEvent(new Event('podlive-auth-change'));
             }
         }
 
@@ -44,6 +46,7 @@ export default function SocketProvider({ children }: { children: React.ReactNode
                     localStorage.setItem('accessToken', data.accessToken);
                     if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken);
                     if (data.user) localStorage.setItem('user', JSON.stringify(data.user));
+                    window.dispatchEvent(new Event('podlive-auth-change'));
                     return true;
                 }
                 return false;
@@ -58,6 +61,7 @@ export default function SocketProvider({ children }: { children: React.ReactNode
                 localStorage.removeItem('accessToken');
                 localStorage.removeItem('refreshToken');
                 localStorage.removeItem('user');
+                window.dispatchEvent(new Event('podlive-auth-change'));
                 window.location.href = '/login?expired=true';
             }
         };
@@ -69,7 +73,13 @@ export default function SocketProvider({ children }: { children: React.ReactNode
             if (res.status === 401) {
                 const refreshed = await attemptTokenRefresh();
                 if (refreshed) {
-                    // Retry with new token if authorization header was present
+                    const [input, init] = args;
+                    const headers = new Headers(init?.headers || (input instanceof Request ? input.headers : undefined));
+                    const refreshedToken = localStorage.getItem('accessToken');
+                    if (headers.has('Authorization') && refreshedToken) {
+                        headers.set('Authorization', `Bearer ${refreshedToken}`);
+                        return originalFetch(input, { ...init, headers });
+                    }
                     return originalFetch(...args);
                 }
                 handleAuthExpired();
@@ -105,10 +115,15 @@ export default function SocketProvider({ children }: { children: React.ReactNode
             return originalSend.apply(this, args);
         };
 
-        const token = localStorage.getItem('accessToken');
-
-        const newSocket = io(getSocketUrl(), {
-            auth: { token: token || undefined },
+        const connectWithCurrentAuth = () => {
+            if (!newSocket) return;
+            const token = localStorage.getItem('accessToken');
+            newSocket.auth = token ? { token } : {};
+            if (newSocket.connected) newSocket.disconnect();
+            newSocket.connect();
+        };
+        const activeSocket = io(getSocketUrl(), {
+            auth: { token: localStorage.getItem('accessToken') || undefined },
             transports: ['websocket', 'polling'],
             tryAllTransports: true,
             upgrade: true,
@@ -119,32 +134,23 @@ export default function SocketProvider({ children }: { children: React.ReactNode
             randomizationFactor: 0.5,
             timeout: 20000
         });
+        newSocket = activeSocket;
 
-        newSocket.on('connect', () => {
-            const currentUserData = localStorage.getItem('user');
-            if (currentUserData) {
-                try {
-                    const user = JSON.parse(currentUserData);
-                    if (user?.id) {
-                        newSocket.emit('register_user', user.id);
-                    }
-                } catch (e) {
-                    console.error('Failed to parse user data from localStorage', e);
-                }
-            }
-        });
+        activeSocket.on('connect', () => activeSocket.emit('register_user'));
+        window.addEventListener('podlive-auth-change', connectWithCurrentAuth);
 
-        newSocket.on('receive_invite', (data: StageInvite) => {
+        activeSocket.on('receive_invite', (data: StageInvite) => {
             setInviteData(data);
         });
 
-        setSocket(newSocket);
+        setSocket(activeSocket);
 
         return () => {
             window.fetch = originalFetch;
             axios.interceptors.response.eject(axiosInterceptor);
             XMLHttpRequest.prototype.send = originalSend;
-            newSocket.disconnect();
+            window.removeEventListener('podlive-auth-change', connectWithCurrentAuth);
+            newSocket?.disconnect();
         };
     }, []);
 

@@ -1,8 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 const s3Service = require('./s3.service');
 
 // Helper to format seconds to VTT timestamp HH:MM:SS.mmm

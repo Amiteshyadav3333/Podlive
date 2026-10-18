@@ -1,5 +1,4 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../lib/prisma');
 const { syncMonetizationAccount } = require('../services/monetization.service');
 
 const serializeUser = (user) => {
@@ -268,8 +267,17 @@ exports.getCreatorProfile = async (req, res) => {
         const { id } = req.params;
         const creator = await prisma.user.findUnique({
             where: { id },
-            include: {
-                profile: true,
+            select: {
+                id: true,
+                display_name: true,
+                unique_handle: true,
+                avatar_url: true,
+                bio: true,
+                is_verified: true,
+                follower_count: true,
+                total_views: true,
+                total_likes: true,
+                profile: { select: { bio: true, profile_photo: true, cover_image: true, links: true, location: true, language: true } },
                 videos: {
                     where: {
                         visibility: 'public',
@@ -279,12 +287,11 @@ exports.getCreatorProfile = async (req, res) => {
                     take: 30
                 },
                 hosted_sessions: {
-                    include: {
-                        video: {
-                            select: {
-                                duration_seconds: true
-                            }
-                        }
+                    where: { status: 'ended', visibility: 'public', video: { visibility: 'public', processing_status: 'ready' } },
+                    select: {
+                        id: true, title: true, description: true, thumbnail_url: true, category: true,
+                        viewer_count_peak: true, created_at: true, started_at: true, ended_at: true,
+                        video: { select: { duration_seconds: true, views: true } }
                     },
                     orderBy: { created_at: 'desc' }
                 }
@@ -297,10 +304,8 @@ exports.getCreatorProfile = async (req, res) => {
 
         const totalLives = creator.hosted_sessions.length;
         const totalViews = creator.hosted_sessions.reduce((acc, curr) => acc + curr.viewer_count_peak, 0);
-        const recordings = creator.hosted_sessions.filter(s => s.status === 'ended');
-
-        // Never expose sensitive fields (password hash, private email, cheetchat ID)
-        const { password_hash, email, cheetchat_user_id, ...safeCreator } = serializeUser(creator);
+        const recordings = creator.hosted_sessions.map((s) => ({ ...s, video: s.video ? { ...s.video, views: s.video.views?.toString?.() || s.video.views } : null }));
+        const safeCreator = serializeUser(creator);
         res.json({
             ...safeCreator,
             totalLives,
