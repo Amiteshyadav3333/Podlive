@@ -1,11 +1,13 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Mic, Search, User, Video, Play, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import axios from "axios";
 import { buildApiUrl } from "@/lib/api";
+import type { SearchResults } from "@/lib/models";
 
 function SearchContent() {
     const searchParams = useSearchParams();
@@ -14,7 +16,7 @@ function SearchContent() {
 
     const [searchQuery, setSearchQuery] = useState(q);
     const [loading, setLoading] = useState(true);
-    const [results, setResults] = useState<{ users: any[], sessions: any[] }>({ users: [], sessions: [] });
+    const [results, setResults] = useState<SearchResults>({ users: [], sessions: [] });
 
     useEffect(() => {
         const fetchResults = async () => {
@@ -79,7 +81,7 @@ function SearchContent() {
             {/* Results Section */}
             <main className="pt-28 px-6 max-w-7xl mx-auto">
                 <h1 className="text-3xl font-bold tracking-tight mb-8">
-                    Search Results for <span className="text-indigo-400">"{q}"</span>
+                    Search Results for <span className="text-indigo-400">&quot;{q}&quot;</span>
                 </h1>
 
                 {loading ? (
@@ -106,7 +108,7 @@ function SearchContent() {
                                     {results.users.map(user => (
                                         <Link href={`/creator/${user.id}`} key={user.id} className="bg-zinc-900/50 border border-white/5 p-4 rounded-2xl flex items-center gap-4 hover:bg-zinc-900 transition-colors group">
                                             <div className="w-12 h-12 rounded-full overflow-hidden shrink-0 border-2 border-transparent group-hover:border-purple-500 transition-all">
-                                                <img src={user.avatar_url || `https://ui-avatars.com/api/?name=${user.display_name}&background=random`} alt={user.display_name} className="w-full h-full object-cover" />
+                                                <Image unoptimized width={1200} height={675} src={user.avatar_url || `https://ui-avatars.com/api/?name=${user.display_name}&background=random`} alt={user.display_name} className="w-full h-full object-cover" />
                                             </div>
                                             <div className="overflow-hidden">
                                                 <h3 className="font-bold text-white truncate group-hover:text-purple-400 transition-colors">{user.display_name}</h3>
@@ -136,7 +138,7 @@ function SearchContent() {
                                                     </div>
                                                 )}
                                                 {session.thumbnail_url ? (
-                                                    <img src={session.thumbnail_url} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" alt={session.title} />
+                                                    <Image unoptimized width={1200} height={675} src={session.thumbnail_url} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" alt={session.title} />
                                                 ) : (
                                                     <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                                         <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center">
@@ -149,7 +151,7 @@ function SearchContent() {
                                                 <h3 className="font-bold text-lg mb-1 truncate text-white group-hover:text-indigo-400 transition-colors">{session.title}</h3>
                                                 <div className="flex items-center gap-2 mt-2">
                                                     <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 overflow-hidden shrink-0">
-                                                        <img src={session.host?.avatar_url || `https://ui-avatars.com/api/?name=${session.host?.display_name || "Host"}&background=random`} alt="host" className="w-full h-full object-cover" />
+                                                        <Image unoptimized width={1200} height={675} src={session.host?.avatar_url || `https://ui-avatars.com/api/?name=${session.host?.display_name || "Host"}&background=random`} alt="host" className="w-full h-full object-cover" />
                                                     </div>
                                                     <span className="text-sm font-medium text-zinc-400 truncate hover:text-white transition-colors">@{session.host?.unique_handle || session.host?.username || "Host"}</span>
                                                 </div>

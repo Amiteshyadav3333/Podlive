@@ -1,12 +1,13 @@
 "use client";
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { ArrowLeft, Check, Globe2, Loader2, Lock, Search, ShieldCheck, Trash2, UserPlus } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import DashboardSidebar from "@/components/DashboardSidebar";
 import { buildApiUrl } from "@/lib/api";
+import type { VideoAccessGrant, VideoAccessRecord } from "@/lib/models";
 
-export default function VideoAccess(){const {id}=useParams();const router=useRouter();const [video,setVideo]=useState<any>();const [grants,setGrants]=useState<any[]>([]);const [handle,setHandle]=useState("");const [expiry,setExpiry]=useState("");const [busy,setBusy]=useState(false);const [message,setMessage]=useState("");const auth=()=>({Authorization:`Bearer ${localStorage.getItem("accessToken")}`});
- const load=async()=>{const [v,g]=await Promise.all([fetch(buildApiUrl(`/api/videos/${id}`),{headers:auth()}),fetch(buildApiUrl(`/api/videos/${id}/access`),{headers:auth()})]);if(v.ok)setVideo((await v.json()).video);if(g.ok)setGrants((await g.json()).grants)};useEffect(()=>{load()},[id]);
+export default function VideoAccess(){const {id}=useParams();const router=useRouter();const [video,setVideo]=useState<VideoAccessRecord>();const [grants,setGrants]=useState<VideoAccessGrant[]>([]);const [handle,setHandle]=useState("");const [expiry,setExpiry]=useState("");const [busy,setBusy]=useState(false);const [message,setMessage]=useState("");const auth=()=>({Authorization:`Bearer ${localStorage.getItem("accessToken")}`});
+ const load=useCallback(async()=>{const [v,g]=await Promise.all([fetch(buildApiUrl(`/api/videos/${id}`),{headers:auth()}),fetch(buildApiUrl(`/api/videos/${id}/access`),{headers:auth()})]);if(v.ok)setVideo((await v.json()).video);if(g.ok)setGrants((await g.json()).grants)},[id]);useEffect(()=>{void Promise.resolve().then(load)},[load]);
  const privacy=async(vis:string)=>{setBusy(true);const r=await fetch(buildApiUrl(`/api/videos/${id}`),{method:"PATCH",headers:{...auth(),"Content-Type":"application/json"},body:JSON.stringify({visibility:vis})});if(r.ok)setVideo((await r.json()).video);setBusy(false)};
  const grant=async()=>{if(!handle.trim())return;setBusy(true);setMessage("");const r=await fetch(buildApiUrl(`/api/videos/${id}/access`),{method:"POST",headers:{...auth(),"Content-Type":"application/json"},body:JSON.stringify({handle:handle.replace(/^@/,""),expiresAt:expiry||null})});const d=await r.json();if(r.ok){setHandle("");setExpiry("");setMessage("Viewer approved successfully.");load()}else setMessage(d.error||"Could not approve viewer.");setBusy(false)};
  const revoke=async(userId:string)=>{await fetch(buildApiUrl(`/api/videos/${id}/access/${userId}`),{method:"DELETE",headers:auth()});load()};

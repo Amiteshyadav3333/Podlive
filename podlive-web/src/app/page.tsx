@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Mic, Radio, Users, Play, Video, Search, TrendingUp, Eye, ChevronRight } from "lucide-react";
+import { Mic, Radio, Users, Play, Video, Search, TrendingUp, Eye, ChevronRight, Home as HomeIcon, Compass, BookOpen } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -170,7 +170,13 @@ export default function Home() {
   useEffect(() => {
     if (typeof window !== "undefined") {
       const u = localStorage.getItem("user");
-      if (u) setUser(JSON.parse(u));
+      if (u) {
+        try {
+          setUser(JSON.parse(u));
+        } catch {
+          localStorage.removeItem("user");
+        }
+      }
       setAuthChecked(true);
     }
 
@@ -215,21 +221,21 @@ export default function Home() {
   if (authChecked && !user) return <MarketingLanding />;
 
   return (
-    <div className="min-h-screen bg-[#080808] text-white">
+    <div className="min-h-screen bg-[#0f0f0f] text-white">
       {/* ── NAVBAR ── */}
-      <nav className="fixed top-0 w-full z-50 border-b border-white/[0.06] bg-[#080808]/90 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-4 md:px-6 h-14 flex items-center gap-4">
+      <nav className="fixed top-0 w-full z-50 border-b border-white/[0.07] bg-[#0f0f0f]/95 backdrop-blur-xl">
+        <div className="max-w-[1600px] mx-auto px-4 md:px-6 h-16 flex items-center gap-4">
           {/* Logo */}
           <Link href="/" className="flex items-center gap-2 shrink-0">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg">
+            <div className="w-9 h-9 rounded-xl bg-red-600 flex items-center justify-center shadow-lg">
               <Mic className="w-4 h-4 text-white" />
             </div>
-            <span className="font-bold text-lg tracking-tight hidden sm:block">PodLive</span>
+            <span className="font-extrabold text-lg tracking-tight hidden sm:block">PodLive</span>
           </Link>
 
           {/* Search */}
           <form
-            onSubmit={(e) => { e.preventDefault(); if (searchQuery.trim()) router.push(`/search?q=${searchQuery}`); }}
+            onSubmit={(e) => { e.preventDefault(); if (searchQuery.trim()) router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`); }}
             className="flex-1 max-w-xl mx-auto"
           >
             <div className="relative">
@@ -239,7 +245,7 @@ export default function Home() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search podcasts, creators..."
-                className="w-full bg-zinc-900/80 border border-white/[0.08] rounded-full pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-indigo-500/70 focus:bg-zinc-900 transition-all text-white placeholder:text-zinc-500"
+                className="w-full bg-[#121212] border border-white/[0.15] rounded-full pl-9 pr-4 py-2.5 text-sm focus:outline-none focus:border-sky-500/70 transition-all text-white placeholder:text-zinc-500"
               />
             </div>
           </form>
@@ -269,7 +275,19 @@ export default function Home() {
         </div>
       </nav>
 
-      <main className="pt-14">
+      {user && <aside className="fixed left-0 top-16 z-40 hidden h-[calc(100vh-4rem)] w-[224px] border-r border-white/[.07] bg-[#0f0f0f] px-3 py-5 md:block">
+        <nav className="space-y-1">
+          {[[HomeIcon, "Home", "/"], [Compass, "Discover", "/discover"], [Radio, "Live", "/discover"], [Video, "Videos", "/"], [BookOpen, "Courses", "/courses"]].map(([Icon, label, href]) => {
+            const NavIcon = Icon as typeof HomeIcon;
+            return <Link key={String(label)} href={String(href)} className={`flex h-11 items-center gap-5 rounded-xl px-4 text-sm ${label === "Home" ? "bg-white/10 font-semibold" : "text-zinc-300 hover:bg-white/[.08]"}`}><NavIcon className="size-5" />{String(label)}</Link>;
+          })}
+        </nav>
+        <div className="my-5 border-t border-white/[.1]" />
+        <p className="px-4 text-xs font-semibold uppercase tracking-wider text-zinc-500">Your space</p>
+        <Link href="/dashboard" className="mt-2 flex h-11 items-center gap-5 rounded-xl px-4 text-sm text-zinc-300 hover:bg-white/[.08]"><Users className="size-5" />Creator studio</Link>
+      </aside>}
+
+      <main className={`pt-16 ${user ? "md:ml-[224px]" : ""}`}>
         {/* ── HERO (only when no lives) ── */}
         {!loading && lives.length === 0 && (
           <div className="relative overflow-hidden border-b border-white/[0.05]">
@@ -297,7 +315,7 @@ export default function Home() {
           </div>
         )}
 
-        <div className="max-w-7xl mx-auto px-4 md:px-6 py-8 space-y-12">
+        <div className="max-w-[1600px] mx-auto px-4 md:px-6 py-8 space-y-12">
 
           {/* ── LIVE NOW ── */}
           <section>

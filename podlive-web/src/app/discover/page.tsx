@@ -1,142 +1,134 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Mic, Search, Play, Users, Radio, ChevronRight } from "lucide-react";
+import { Mic, Search, Play, Users, Radio, ChevronRight, Home, Compass, Video, BookOpen, Menu, Bell, Plus, Sparkles } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import axios from "axios";
 import { buildApiUrl } from "@/lib/api";
 
 const CATEGORIES = ["All", "Technology", "Music", "Comedy", "Education", "Finance", "Gaming", "General"];
 
+type LiveSession = {
+  id: string;
+  title: string;
+  thumbnail_url?: string | null;
+  category?: string | null;
+  viewer_count_peak?: number;
+  host?: { id?: string; avatar_url?: string | null; display_name?: string; unique_handle?: string; username?: string };
+};
+
+function avatarFor(session: LiveSession) {
+  const name = session.host?.display_name || "PodLive creator";
+  return session.host?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=292524&color=fff`;
+}
+
 export default function Discover() {
   const router = useRouter();
-  const [lives, setLives] = useState<any[]>([]);
-  const [filtered, setFiltered] = useState<any[]>([]);
+  const [lives, setLives] = useState<LiveSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("All");
 
   useEffect(() => {
-    axios.get(buildApiUrl("/api/live/active"))
-      .then(r => { setLives(r.data); setFiltered(r.data); })
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    let mounted = true;
+    const loadLives = async () => {
+      try {
+        const response = await axios.get(buildApiUrl("/api/live/active"));
+        if (mounted) setLives(Array.isArray(response.data) ? response.data : []);
+      } catch (error) {
+        console.error("Unable to load live streams", error);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+    loadLives();
+    const interval = window.setInterval(loadLives, 15000);
+    return () => { mounted = false; window.clearInterval(interval); };
   }, []);
 
-  useEffect(() => {
-    let result = lives;
-    if (activeCategory !== "All") result = result.filter(l => l.category === activeCategory);
-    if (searchQuery.trim()) result = result.filter(l =>
-      l.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      l.host?.unique_handle?.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-    setFiltered(result);
-  }, [lives, activeCategory, searchQuery]);
+  const filtered = lives.filter((live) => {
+    const categoryMatches = activeCategory === "All" || live.category === activeCategory;
+    const query = searchQuery.trim().toLowerCase();
+    const searchMatches = !query || live.title.toLowerCase().includes(query) ||
+      live.host?.unique_handle?.toLowerCase().includes(query) || live.host?.display_name?.toLowerCase().includes(query);
+    return categoryMatches && searchMatches;
+  });
 
   return (
-    <div className="min-h-screen bg-[#080808] text-white">
-      <nav className="fixed top-0 w-full z-50 border-b border-white/[0.06] bg-[#080808]/90 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-4 md:px-6 h-14 flex items-center gap-4">
-          <Link href="/" className="flex items-center gap-2 shrink-0">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-              <Mic className="w-4 h-4 text-white" />
-            </div>
-            <span className="font-bold text-base tracking-tight hidden sm:block">PodLive</span>
+    <div className="min-h-screen bg-[#0f0f0f] text-white">
+      <header className="fixed inset-x-0 top-0 z-50 h-16 border-b border-white/[.07] bg-[#0f0f0f]/95 backdrop-blur-xl">
+        <div className="mx-auto flex h-full max-w-[1600px] items-center gap-5 px-4 sm:px-6">
+          <button aria-label="Open menu" className="hidden size-10 shrink-0 items-center justify-center rounded-full hover:bg-white/10 md:flex"><Menu className="size-5" /></button>
+          <Link href="/" className="flex shrink-0 items-center gap-2.5" aria-label="PodLive home">
+            <span className="grid size-9 place-items-center rounded-xl bg-red-600"><Mic className="size-5" /></span>
+            <span className="text-lg font-extrabold tracking-tight">PodLive</span>
+            <span className="-mt-3 text-[10px] text-zinc-500">IN</span>
           </Link>
-
-          <div className="flex-1 max-w-xl mx-auto">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-              <input
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search live streams..."
-                className="w-full bg-zinc-900/80 border border-white/[0.08] rounded-full pl-9 pr-4 py-2 text-sm focus:outline-none focus:border-indigo-500/60 transition-all text-white placeholder:text-zinc-500"
-              />
-            </div>
+          <form onSubmit={(event) => { event.preventDefault(); if (searchQuery.trim()) router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`); }} className="mx-auto flex w-full max-w-2xl">
+            <label className="relative flex min-w-0 flex-1">
+              <Search className="absolute left-4 top-1/2 size-4 -translate-y-1/2 text-zinc-500" />
+              <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search live streams and creators" className="h-11 w-full rounded-l-full border border-white/15 bg-[#121212] pl-11 pr-4 text-sm outline-none transition focus:border-sky-500" />
+            </label>
+            <button className="grid h-11 w-16 shrink-0 place-items-center rounded-r-full border border-l-0 border-white/15 bg-white/[.07] hover:bg-white/[.12]" aria-label="Search"><Search className="size-5" /></button>
+          </form>
+          <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <Link href="/dashboard/setup" className="hidden h-10 items-center gap-2 rounded-full bg-white/10 px-4 text-sm font-semibold hover:bg-white/15 sm:flex"><Plus className="size-4" />Create</Link>
+            <Link href="/dashboard" aria-label="Creator studio" className="grid size-10 place-items-center rounded-full hover:bg-white/10"><Bell className="size-5" /></Link>
+            <Link href="/login" className="grid size-9 place-items-center rounded-full bg-sky-700 text-sm font-bold" aria-label="Sign in">P</Link>
           </div>
-
-          <Link href="/dashboard" className="bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold px-4 py-1.5 rounded-full transition-colors flex items-center gap-1.5 shrink-0">
-            <Radio className="w-3.5 h-3.5" />
-            <span className="hidden sm:block">Go Live</span>
-          </Link>
         </div>
-      </nav>
+      </header>
 
-      <main className="pt-14">
-        <div className="max-w-7xl mx-auto px-4 md:px-6 py-8">
-          <div className="mb-8">
-            <h1 className="text-3xl font-extrabold tracking-tight mb-1">Discover Live</h1>
-            <p className="text-zinc-400 text-sm">Join real-time podcast streams happening right now</p>
-          </div>
-
-          {/* Category chips */}
-          <div className="flex gap-2 overflow-x-auto pb-3 scrollbar-hide mb-6">
-            {CATEGORIES.map(cat => (
-              <button
-                key={cat}
-                onClick={() => setActiveCategory(cat)}
-                className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-all ${
-                  activeCategory === cat ? "bg-white text-black" : "bg-zinc-900 border border-white/[0.07] text-zinc-300 hover:bg-zinc-800"
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-
-          {loading ? (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-              {[...Array(8)].map((_, i) => <div key={i} className="aspect-video skeleton rounded-xl" />)}
-            </div>
-          ) : filtered.length === 0 ? (
-            <div className="glass p-16 rounded-2xl text-center">
-              <Radio className="w-12 h-12 mx-auto mb-4 text-zinc-600" />
-              <h3 className="text-xl font-bold text-white mb-2">No live streams right now</h3>
-              <p className="text-zinc-400 text-sm mb-6">Be the first to go live!</p>
-              <Link href="/dashboard/setup" className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white font-semibold px-6 py-2.5 rounded-full text-sm transition-colors">
-                Start Broadcasting <ChevronRight className="w-4 h-4" />
-              </Link>
-            </div>
-          ) : (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-              {filtered.map((session) => {
-                const avatar = session.host?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(session.host?.display_name || "H")}&background=6366f1&color=fff`;
-                return (
-                  <div key={session.id} onClick={() => router.push(`/live/${session.id}`)} className="group cursor-pointer fade-up">
-                    <div className="relative aspect-video rounded-xl overflow-hidden bg-zinc-900 border border-white/[0.06] group-hover:border-red-500/40 transition-all">
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <Radio className="w-8 h-8 text-zinc-700" />
-                      </div>
-                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <div className="w-14 h-14 bg-white/20 backdrop-blur-md rounded-full flex items-center justify-center">
-                          <Play className="w-6 h-6 text-white ml-1" fill="white" />
-                        </div>
-                      </div>
-                      <div className="absolute top-2 left-2 bg-red-600 text-white text-[11px] font-bold px-2 py-0.5 rounded flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 bg-white rounded-full live-dot" /> LIVE
-                      </div>
-                      <div className="absolute top-2 right-2 bg-black/70 backdrop-blur-sm text-white text-xs px-2 py-0.5 rounded flex items-center gap-1">
-                        <Users className="w-3 h-3" />{session.viewer_count_peak || 0}
-                      </div>
-                      {session.category && (
-                        <div className="absolute bottom-2 left-2 bg-black/70 text-white text-[10px] px-2 py-0.5 rounded">{session.category}</div>
-                      )}
-                    </div>
-                    <div className="mt-2.5 flex gap-2.5">
-                      <img src={avatar} className="w-9 h-9 rounded-full object-cover border border-white/10 shrink-0" alt="" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-white truncate group-hover:text-red-400 transition-colors">{session.title}</p>
-                        <p className="text-xs text-zinc-400 truncate mt-0.5">@{session.host?.unique_handle}</p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+      <aside className="fixed bottom-0 left-0 top-16 z-40 hidden w-[224px] border-r border-white/[.07] bg-[#0f0f0f] px-3 py-5 md:block">
+        <nav className="space-y-1">
+          {[[Home, "Home", "/"], [Compass, "Discover", "/discover"], [Radio, "Live", "/discover"], [Video, "Videos", "/"], [BookOpen, "Courses", "/courses"]].map(([Icon, label, href]) => {
+            const NavIcon = Icon as typeof Home;
+            return <Link key={String(label)} href={String(href)} className={`flex h-11 items-center gap-5 rounded-xl px-4 text-sm ${label === "Discover" ? "bg-white/10 font-semibold" : "text-zinc-300 hover:bg-white/[.08]"}`}><NavIcon className="size-5" />{String(label)}</Link>;
+          })}
+        </nav>
+        <div className="my-5 border-t border-white/[.1]" />
+        <div className="px-4 text-xs font-semibold uppercase tracking-wider text-zinc-500">Your space</div>
+        <Link href="/dashboard" className="mt-2 flex h-11 items-center gap-5 rounded-xl px-4 text-sm text-zinc-300 hover:bg-white/[.08]"><Users className="size-5" />Creator studio</Link>
+        <div className="absolute inset-x-6 bottom-6 rounded-2xl border border-white/[.08] bg-gradient-to-br from-red-500/15 to-transparent p-4">
+          <Sparkles className="size-5 text-red-300" />
+          <p className="mt-3 text-sm font-bold">Your voice, live</p>
+          <p className="mt-1 text-xs leading-5 text-zinc-400">Start a conversation with your community.</p>
+          <Link href="/dashboard/setup" className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-red-300">Set up a stream <ChevronRight className="size-3" /></Link>
         </div>
+      </aside>
+
+      <main className="mx-auto max-w-[1600px] px-4 pb-16 pt-20 sm:px-6 md:ml-[224px] md:px-8">
+        <div className="sticky top-16 z-30 -mx-4 border-b border-white/[.06] bg-[#0f0f0f]/95 px-4 py-3 backdrop-blur-xl sm:-mx-6 sm:px-6 md:-mx-8 md:px-8">
+          <div className="scrollbar-hide flex gap-3 overflow-x-auto">
+            {CATEGORIES.map((category) => <button key={category} onClick={() => setActiveCategory(category)} className={`rounded-lg px-3.5 py-2 text-sm font-medium whitespace-nowrap transition ${activeCategory === category ? "bg-white text-black" : "bg-white/[.08] text-zinc-200 hover:bg-white/[.14]"}`}>{category}</button>)}
+          </div>
+        </div>
+
+        <section className="pb-6 pt-7">
+          <div className="mb-5 flex items-end justify-between gap-4">
+            <div><p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.18em] text-red-300"><span className="size-2 rounded-full bg-red-500" /> happening now</p><h1 className="mt-2 text-2xl font-extrabold tracking-tight sm:text-3xl">Live conversations</h1><p className="mt-1 text-sm text-zinc-400">Join creators and communities streaming right now.</p></div>
+            <span className="hidden rounded-full border border-white/10 px-3 py-1.5 text-xs text-zinc-400 sm:inline-flex">{filtered.length} {filtered.length === 1 ? "stream" : "streams"}</span>
+          </div>
+
+          {loading ? <div className="grid gap-x-5 gap-y-8 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">{Array.from({ length: 8 }, (_, index) => <div key={index}><div className="aspect-video animate-pulse rounded-2xl bg-white/[.08]" /><div className="mt-3 h-4 w-3/4 animate-pulse rounded bg-white/[.08]" /></div>)}</div>
+            : filtered.length === 0 ? <div className="rounded-3xl border border-white/[.08] bg-[#161616] px-6 py-16 text-center sm:py-20"><div className="mx-auto grid size-16 place-items-center rounded-2xl bg-white/[.06]"><Radio className="size-7 text-zinc-400" /></div><h2 className="mt-5 text-xl font-bold">{lives.length ? "No streams match those filters" : "It’s quiet on stage right now"}</h2><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-zinc-400">{lives.length ? "Try a different category or search for another creator." : "Check back soon, or kick things off and invite your community to join."}</p><Link href="/dashboard/setup" className="mt-6 inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-bold text-black hover:bg-zinc-200">Start a live stream <ChevronRight className="size-4" /></Link></div>
+              : <div className="grid gap-x-5 gap-y-8 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">{filtered.map((session) => <article key={session.id} onClick={() => router.push(`/live/${session.id}`)} className="group min-w-0 cursor-pointer">
+                <div className="relative aspect-video overflow-hidden rounded-2xl bg-[#242424] ring-1 ring-white/[.08] transition group-hover:ring-white/25">
+                  {session.thumbnail_url ? <Image unoptimized fill sizes="(max-width: 640px) 100vw, (max-width: 1200px) 50vw, 25vw" src={session.thumbnail_url} alt="" className="object-cover transition duration-500 group-hover:scale-[1.04]" /> : <div className="grid size-full place-items-center bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-red-950 via-[#211b1c] to-[#111111]"><Radio className="size-10 text-white/40" /></div>}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-black/20" />
+                  <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-md bg-red-600 px-2 py-1 text-[10px] font-extrabold tracking-wide"><span className="size-1.5 animate-pulse rounded-full bg-white" />LIVE</span>
+                  <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-md bg-black/70 px-2 py-1 text-xs font-semibold backdrop-blur"><Users className="size-3.5" />{session.viewer_count_peak || 0}</span>
+                  {session.category && <span className="absolute bottom-3 left-3 rounded-md bg-black/65 px-2 py-1 text-[11px] font-medium backdrop-blur">{session.category}</span>}
+                  <span className="absolute bottom-3 right-3 grid size-10 translate-y-2 place-items-center rounded-full bg-white text-black opacity-0 shadow-xl transition group-hover:translate-y-0 group-hover:opacity-100"><Play className="ml-0.5 size-4 fill-current" /></span>
+                </div>
+                <div className="mt-3 flex gap-3">
+                  <Image unoptimized width={40} height={40} src={avatarFor(session)} alt="" className="size-10 shrink-0 rounded-full bg-zinc-800 object-cover" />
+                  <div className="min-w-0 flex-1"><h2 className="line-clamp-2 text-[15px] font-bold leading-5 group-hover:text-red-200">{session.title}</h2><Link onClick={(event) => event.stopPropagation()} href={session.host?.id ? `/creator/${session.host.id}` : "/discover"} className="mt-1 block truncate text-[13px] text-zinc-400 hover:text-white">{session.host?.display_name || session.host?.unique_handle || "PodLive creator"}{session.host?.unique_handle ? ` · @${session.host.unique_handle}` : ""}</Link><p className="mt-1 text-xs text-zinc-500">Streaming now · {session.viewer_count_peak || 0} watching</p></div>
+                </div>
+              </article>)}</div>}
+        </section>
       </main>
     </div>
   );

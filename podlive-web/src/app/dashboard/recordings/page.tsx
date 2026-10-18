@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import Image from "next/image";
+import { useCallback, useEffect, useState, useRef } from "react";
 import {
   Video, Play, Loader2, Trash2, Eye, Clock, TrendingUp,
   MoreVertical, Image as ImageIcon, Upload, X, Subtitles, CheckCircle2, AlertCircle, UserRoundCheck, Lock
@@ -9,6 +10,8 @@ import { useRouter } from "next/navigation";
 import { buildApiUrl } from "@/lib/api";
 import DashboardSidebar from "@/components/DashboardSidebar";
 import { formatDistanceToNow } from "date-fns";
+import type { VideoRecording } from "@/lib/models";
+import { getErrorMessage } from "@/lib/models";
 
 const LANGUAGES = [
   { code: "en", label: "English" },
@@ -25,7 +28,7 @@ const LANGUAGES = [
 
 export default function Recordings() {
   const router = useRouter();
-  const [recordings, setRecordings] = useState<any[]>([]);
+  const [recordings, setRecordings] = useState<VideoRecording[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -49,10 +52,6 @@ export default function Recordings() {
   const [subtitleSuccess, setSubtitleSuccess] = useState(false);
   const [subtitleError, setSubtitleError] = useState("");
 
-  useEffect(() => {
-    fetchRecordings();
-  }, []);
-
   // Close menu on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -64,7 +63,7 @@ export default function Recordings() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const fetchRecordings = async () => {
+  const fetchRecordings = useCallback(async () => {
     const token = localStorage.getItem("accessToken");
     if (!token) { router.push("/login"); return; }
     try {
@@ -75,7 +74,11 @@ export default function Recordings() {
       if (res.ok) setRecordings(data);
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
-  };
+  }, [router]);
+
+  useEffect(() => {
+    fetchRecordings();
+  }, [fetchRecordings]);
 
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this recording? This cannot be undone.")) return;
@@ -92,7 +95,7 @@ export default function Recordings() {
     finally { setDeletingId(null); }
   };
 
-  const openThumbnailModal = (rec: any) => {
+  const openThumbnailModal = (rec: VideoRecording) => {
     const videoId = rec.video?.id;
     if (!videoId) {
       alert("This video is still processing. Please try again later.");
@@ -133,14 +136,14 @@ export default function Recordings() {
       } else {
         setThumbnailError(result.error || "Upload failed");
       }
-    } catch (err: any) {
-      setThumbnailError(err.message || "Network error");
+    } catch (err: unknown) {
+      setThumbnailError(getErrorMessage(err, "Network error"));
     } finally {
       setThumbnailUploading(false);
     }
   };
 
-  const openSubtitleModal = (rec: any) => {
+  const openSubtitleModal = (rec: VideoRecording) => {
     const videoId = rec.video?.id;
     if (!videoId) {
       alert("This video is still processing. Please try again later.");
@@ -179,8 +182,8 @@ export default function Recordings() {
       } else {
         setSubtitleError(result.error || "Upload failed");
       }
-    } catch (err: any) {
-      setSubtitleError(err.message || "Network error");
+    } catch (err: unknown) {
+      setSubtitleError(getErrorMessage(err, "Network error"));
     } finally {
       setSubtitleUploading(false);
     }
@@ -231,7 +234,7 @@ export default function Recordings() {
                     className="relative aspect-video rounded-xl overflow-hidden bg-zinc-900 border border-white/[0.06] group-hover:border-indigo-500/40 transition-all cursor-pointer"
                   >
                     {rec.thumbnail_url ? (
-                      <img
+                      <Image unoptimized width={1200} height={675}
                         src={rec.thumbnail_url}
                         alt={rec.title}
                         onError={(e) => {
@@ -383,7 +386,7 @@ export default function Recordings() {
                 {/* Image preview */}
                 <div className="relative aspect-video w-full bg-zinc-800 rounded-xl border-2 border-dashed border-white/10 overflow-hidden mb-4">
                   {thumbnailPreview ? (
-                    <img src={thumbnailPreview} alt="Preview" className="w-full h-full object-cover" />
+                    <Image unoptimized width={1200} height={675} src={thumbnailPreview} alt="Preview" className="w-full h-full object-cover" />
                   ) : (
                     <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer hover:bg-zinc-700/50 transition-colors">
                       <ImageIcon className="w-10 h-10 text-zinc-600 mb-2" />

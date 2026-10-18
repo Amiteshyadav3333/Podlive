@@ -6,11 +6,12 @@ import { useRouter } from "next/navigation";
 import { buildApiUrl } from "@/lib/api";
 import DashboardSidebar from "@/components/DashboardSidebar";
 import { useSocket } from "@/providers/SocketProvider";
+import type { AudienceStats } from "@/lib/models";
 
 export default function Audience() {
   const router = useRouter();
   const { socket } = useSocket();
-  const [stats, setStats] = useState<any>(null);
+  const [stats, setStats] = useState<AudienceStats | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -26,7 +27,7 @@ export default function Audience() {
     if (!socket) return;
     const u = localStorage.getItem("user");
     if (u) socket.emit("register_user", JSON.parse(u).id);
-    const handler = (data: { count: number }) => setStats((p: any) => p ? { ...p, followers: data.count } : p);
+    const handler = (data: { count: number }) => setStats((previous) => previous ? { ...previous, followers: data.count } : previous);
     socket.on("follower_count_update", handler);
     return () => { socket.off("follower_count_update", handler); };
   }, [socket]);
@@ -35,7 +36,7 @@ export default function Audience() {
     { label: "Total Followers", value: stats.followers || 0, icon: Users, color: "purple", change: "+12% this month" },
     { label: "Total Views", value: stats.totalViews || 0, icon: Eye, color: "blue", change: "Across all sessions" },
     { label: "Live Sessions", value: stats.totalLives || 0, icon: Radio, color: "red", change: "Completed streams" },
-    { label: "Avg. Peak Viewers", value: stats.totalLives > 0 ? Math.round(stats.totalViews / stats.totalLives) : 0, icon: TrendingUp, color: "green", change: "Per session" },
+    { label: "Avg. Peak Viewers", value: stats.totalLives > 0 ? Math.round(Number(stats.totalViews) / stats.totalLives) : 0, icon: TrendingUp, color: "green", change: "Per session" },
   ] : [];
 
   return (

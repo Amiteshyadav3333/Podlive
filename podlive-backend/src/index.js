@@ -6,6 +6,8 @@ const multer = require('multer');
 const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
+const { getAllowedOrigins, isOriginAllowed } = require('./config/cors-policy');
+const errorHandler = require('./middleware/error-handler');
 require('dotenv').config();
 
 const requiredEnvVars = [
@@ -21,28 +23,7 @@ if (missingEnvVars.length > 0) {
   throw new Error(`Missing required environment variables: ${missingEnvVars.join(', ')}`);
 }
 
-const defaultOrigins = [
-  'https://indiapodlive.vercel.app',
-  'https://chat.indiasearch.site',
-  'https://indiasearch.site',
-  'https://podlive.indiasearch.site',
-  'http://localhost:3000',
-  'http://localhost:3001',
-  'http://localhost:5173'
-];
-
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',').map((s) => s.trim())
-  : [process.env.FRONTEND_URL, ...defaultOrigins].filter(Boolean);
-
-const isOriginAllowed = (origin) => {
-  if (!origin) return true; // Server-to-server or mobile requests
-  if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) return true;
-  // Allow all vercel preview & production domains (*.vercel.app), render (*.onrender.com), indiasearch (*.indiasearch.site), and localhost
-  if (/^https:\/\/(?:[a-zA-Z0-9-]+\.)*(vercel\.app|onrender\.com|indiasearch\.site)$/i.test(origin)) return true;
-  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return true;
-  return false;
-};
+const allowedOrigins = getAllowedOrigins(process.env.ALLOWED_ORIGINS, process.env.FRONTEND_URL);
 
 const corsOriginHandler = (origin, callback) => {
   if (isOriginAllowed(origin)) {
@@ -172,26 +153,7 @@ const socketHandler = require('./sockets/socket');
 socketHandler(io);
 
 // Global Error Handler Middleware (Ensure all errors return JSON, not HTML)
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  
-  if (err instanceof multer.MulterError) {
-    if (err.code === 'LIMIT_FILE_SIZE') {
-      const configuredLimit = Number(process.env.MAX_UPLOAD_SIZE_BYTES);
-      const maxUploadSizeBytes = Number.isFinite(configuredLimit) && configuredLimit > 0
-        ? configuredLimit
-        : 5 * 1024 * 1024 * 1024;
-      return res.status(413).json({ error: 'File size exceeds the configured upload limit.', maxUploadSizeBytes });
-    }
-    return res.status(400).json({ error: `Upload error: ${err.message}` });
-  }
-
-  res.status(500).json({ 
-    error: 'Internal Server Error', 
-    message: err.message,
-    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined 
-  });
-});
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 5005;
 server.listen(PORT, () => {

@@ -6,6 +6,7 @@ import { UploadCloud, Video, Loader2, CheckCircle2, AlertCircle, Globe2, Lock } 
 import { useRouter } from "next/navigation";
 import { buildApiUrl } from "@/lib/api";
 import DashboardSidebar from "@/components/DashboardSidebar";
+import { getErrorMessage } from "@/lib/models";
 
 const CATEGORIES = ["Technology", "Music", "Comedy", "Education", "Finance", "Gaming", "General", "Other (Custom)"];
 
@@ -113,8 +114,8 @@ export default function UploadPage() {
 
       setSuccess(true);
       setTimeout(() => router.push("/dashboard/recordings"), 2000);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError(getErrorMessage(err, "Upload failed. Please try again."));
       setLoading(false);
     }
   };

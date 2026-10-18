@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
@@ -7,7 +8,6 @@ import {
     Users,
     Video,
     CheckCircle2,
-    Clock,
     Heart,
     Share2,
     Mic,
@@ -17,6 +17,7 @@ import { useParams, useRouter } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
 import { buildApiUrl } from "@/lib/api";
 import { useSocket } from "@/providers/SocketProvider";
+import type { CreatorProfile } from "@/lib/models";
 const formatTime = (secs: number) => {
     if (isNaN(secs)) return "0:00";
     const h = Math.floor(secs / 3600);
@@ -34,7 +35,7 @@ export default function CreatorProfilePage() {
     const params = useParams();
     const router = useRouter();
     const { socket } = useSocket();
-    const [creatorData, setCreatorData] = useState<any>(null);
+    const [creatorData, setCreatorData] = useState<CreatorProfile | null>(null);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState("videos");
     const [isFollowing, setIsFollowing] = useState(false);
@@ -45,7 +46,7 @@ export default function CreatorProfilePage() {
         const handleFollowerUpdateForCreator = (data: { count: number }) => {
             // Only update if the event is for the current creator public profile we are looking at
             // Though currently the event is emitted to the target room, let's just update
-            setCreatorData((prev: any) => prev ? ({ ...prev, follower_count: data.count }) : null);
+            setCreatorData((prev) => prev ? ({ ...prev, follower_count: data.count }) : null);
         };
 
         socket.on('follower_count_update', handleFollowerUpdateForCreator);
@@ -143,10 +144,10 @@ export default function CreatorProfilePage() {
             if (res.ok) {
                 setIsFollowing(data.following);
                 // Also update local follower count optimistically
-                setCreatorData((prev: any) => ({
-                    ...prev,
-                    follower_count: data.following ? prev.follower_count + 1 : prev.follower_count - 1
-                }));
+                setCreatorData((previous) => previous ? ({
+                    ...previous,
+                    follower_count: data.following ? (previous.follower_count || 0) + 1 : Math.max(0, (previous.follower_count || 0) - 1)
+                }) : previous);
             }
         } catch (error) {
             console.error("Error toggling follow:", error);
@@ -180,7 +181,7 @@ export default function CreatorProfilePage() {
             {/* ===== HERO BANNER ===== */}
             <div className="relative w-full h-[250px] md:h-[350px] overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0a] via-transparent to-transparent z-10" />
-                <img
+                <Image unoptimized width={1200} height={675}
                     src={bannerUrl}
                     alt="Cover"
                     className="w-full h-full object-cover object-center opacity-80"
@@ -196,7 +197,7 @@ export default function CreatorProfilePage() {
                         {/* Avatar Profile Pic */}
                         <div className="relative group">
                             <div className="w-32 h-32 md:w-40 md:h-40 rounded-full p-1 bg-gradient-to-tr from-indigo-500 via-purple-500 to-pink-500">
-                                <img
+                                <Image unoptimized width={1200} height={675}
                                     src={avatarUrl}
                                     alt={creatorData.display_name}
                                     className="w-full h-full rounded-full object-cover border-4 border-[#0a0a0a]"
@@ -256,7 +257,7 @@ export default function CreatorProfilePage() {
 
                 {/* Bio */}
                 <div className="py-6 max-w-3xl text-gray-300 leading-relaxed text-sm md:text-base">
-                    {creatorData.bio || "This creator hasn't added a bio yet."}
+                    {creatorData.bio || "This creator hasn&apos;t added a bio yet."}
                 </div>
 
                 {/* ===== TABS ===== */}
@@ -299,11 +300,11 @@ export default function CreatorProfilePage() {
                                 <div className="p-12 text-center bg-zinc-900 border border-zinc-800 rounded-2xl">
                                     <Video className="w-12 h-12 mx-auto mb-4 text-zinc-600" />
                                     <h3 className="text-lg font-bold text-zinc-300 mb-1">No videos yet</h3>
-                                    <p className="text-zinc-500">This creator hasn't published any videos.</p>
+                                    <p className="text-zinc-500">This creator hasn&apos;t published any videos.</p>
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                                    {creatorData.recordings.map((recording: any, idx: number) => (
+                                    {creatorData.recordings.map((recording, idx) => (
                                         <motion.div
                                             key={recording.id}
                                             onClick={() => router.push(`/watch/${recording.id}`)}
@@ -314,7 +315,7 @@ export default function CreatorProfilePage() {
                                         >
                                             {/* Thumbnail Container */}
                                             <div className="relative aspect-video rounded-xl overflow-hidden bg-gray-900 border border-gray-800 group-hover:border-indigo-500/50 transition-colors duration-300">
-                                                <img
+                                                <Image unoptimized width={1200} height={675}
                                                     src={recording.thumbnail_url || "https://images.unsplash.com/photo-1611162617474-5b21e879e113?auto=format&fit=crop&q=80&w=600"}
                                                     alt={recording.title}
                                                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-60 group-hover:opacity-100"

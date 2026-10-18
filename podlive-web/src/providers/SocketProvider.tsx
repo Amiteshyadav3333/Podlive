@@ -5,6 +5,7 @@ import { io, Socket } from 'socket.io-client';
 import { useRouter } from 'next/navigation';
 import { getSocketUrl, buildApiUrl } from '@/lib/api';
 import axios from 'axios';
+import type { StageInvite } from '@/lib/models';
 
 interface SocketContextData {
     socket: Socket | null;
@@ -16,7 +17,7 @@ export const useSocket = () => useContext(SocketContext);
 
 export default function SocketProvider({ children }: { children: React.ReactNode }) {
     const [socket, setSocket] = useState<Socket | null>(null);
-    const [inviteData, setInviteData] = useState<any>(null);
+    const [inviteData, setInviteData] = useState<StageInvite | null>(null);
     const router = useRouter();
 
     useEffect(() => {
@@ -130,7 +131,7 @@ export default function SocketProvider({ children }: { children: React.ReactNode
             }
         });
 
-        newSocket.on('receive_invite', (data) => {
+        newSocket.on('receive_invite', (data: StageInvite) => {
             setInviteData(data);
         });
 

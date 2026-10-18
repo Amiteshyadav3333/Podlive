@@ -3,25 +3,28 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 
 import { useParams, useRouter } from "next/navigation";
-import { Mic, MicOff, VideoIcon, VideoOff, PhoneOff, Users, MessageSquare, Loader2, Share2, Circle, UserX, Maximize, Eye, EyeOff, ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen, Clock, Sparkles, AlertTriangle } from "lucide-react";
+import { Mic, MicOff, VideoIcon, VideoOff, Users, MessageSquare, Loader2, Share2, UserX, Maximize, Eye, EyeOff, ChevronLeft, ChevronRight, PanelRightClose, PanelRightOpen, Clock } from "lucide-react";
 import {
     LiveKitRoom,
     RoomAudioRenderer,
     PreJoin,
     useParticipants,
     useTracks,
-    GridLayout,
     ParticipantTile,
     ControlBar,
     StartAudio,
     useLocalParticipant
 } from "@livekit/components-react";
 
-import { createLocalScreenTracks, Track, type LocalTrack } from "livekit-client";
+import { createLocalScreenTracks, Track, type LocalTrack, type Participant } from "livekit-client";
+import type { Socket } from "socket.io-client";
+import type { LocalUserChoices, TrackReferenceOrPlaceholder } from "@livekit/components-react";
 import "@livekit/components-styles";
 import axios from "axios";
 import { useSocket } from "@/providers/SocketProvider";
 import { buildApiUrl, fetchLiveKitWsUrl } from "@/lib/api";
+import type { ChatMessage, InviteStatusMessage, StageGuest, StageInvite } from "@/lib/models";
+import { getErrorMessage } from "@/lib/models";
 
 
 
@@ -88,7 +91,7 @@ function RoomHeader({
                 await navigator.share(shareData);
                 shared = true;
             }
-        } catch (err) {
+        } catch {
             // Share permission denied or not supported; fallback to clipboard
         }
 
@@ -203,11 +206,11 @@ function StageLayout({
     setFocusedTrackId
 }: {
     isBroadcaster: boolean;
-    allTracks: any[];
+    allTracks: TrackReferenceOrPlaceholder[];
     hiddenTracks: string[];
     setHiddenTracks: React.Dispatch<React.SetStateAction<string[]>>;
     focusedTrackId: string | null;
-    setFocusedTrackId: React.Dispatch<React.SetStateAction<string | null>>;
+    setFocusedTrackId: React.Dispatch<React.SetStateAction<string | null | undefined>>;
 }) {
     const { localParticipant } = useLocalParticipant();
     const [screenTracks, setScreenTracks] = useState<LocalTrack[]>([]);
@@ -288,8 +291,8 @@ function StageLayout({
             screenTracksRef.current = tracks;
             setScreenTracks(tracks);
             setIsScreenAudioPublished(true);
-        } catch (error: any) {
-            setScreenShareError(error?.message || "Screen share start nahi ho paya.");
+        } catch (error: unknown) {
+            setScreenShareError(getErrorMessage(error, "Screen share start nahi ho paya."));
         } finally {
             setIsScreenShareStarting(false);
         }
@@ -358,7 +361,7 @@ function StageLayout({
         (t) => `${t.participant.identity}-${t.source}` !== focusedTrackId
     );
 
-    const renderTileOverlay = (t: any) => {
+    const renderTileOverlay = (t: TrackReferenceOrPlaceholder) => {
         const trackId = `${t.participant.identity}-${t.source}`;
         const isFocused = focusedTrackId === trackId;
         return (
@@ -499,15 +502,15 @@ function StageLayout({
 // ─────────────────────────────────────────────────────────────
 // CustomChat
 // ─────────────────────────────────────────────────────────────
-function CustomChat({ socket, sessionId }: { socket: any; sessionId: string }) {
-    const [chatMessages, setChatMessages] = useState<any[]>([]);
+function CustomChat({ socket, sessionId }: { socket: Socket | null; sessionId: string }) {
+    const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
     const [message, setMessage] = useState("");
     const [isSending, setIsSending] = useState(false);
 
     useEffect(() => {
         if (!socket) return;
         socket.emit("join_chat_room", sessionId);
-        const handleReceiveChat = (data: any) => {
+        const handleReceiveChat = (data: ChatMessage) => {
             setChatMessages((prev) => [...prev, data]);
         };
         socket.on("receive_chat_message", handleReceiveChat);
@@ -584,7 +587,7 @@ function CustomChat({ socket, sessionId }: { socket: any; sessionId: string }) {
 // ─────────────────────────────────────────────────────────────
 // GuestSocketListener — listens for host commands on guest side
 // ─────────────────────────────────────────────────────────────
-function GuestSocketListener({ socket }: { socket: any }) {
+function GuestSocketListener({ socket }: { socket: Socket | null }) {
     const { localParticipant } = useLocalParticipant();
 
     useEffect(() => {
@@ -622,15 +625,15 @@ function GuestSocketListener({ socket }: { socket: any }) {
 // ─────────────────────────────────────────────────────────────
 // GuestManager — host control panel for on-stage guests
 // ─────────────────────────────────────────────────────────────
-function GuestManager({ sessionId, isHost, socket }: { sessionId: string; isHost: boolean; socket: any }) {
-    const [guests, setGuests] = useState<any[]>([]);
+function GuestManager({ sessionId, isHost, socket }: { sessionId: string; isHost: boolean; socket: Socket | null }) {
+    const [guests, setGuests] = useState<StageGuest[]>([]);
     const [busy, setBusy] = useState<Record<string, string>>({}); // guestId -> action
     const [toast, setToast] = useState<string>("");
     const participants = useParticipants();
 
     // Map handle → LiveKit participant
     const participantMap = useMemo(() => {
-        const map = new Map<string, any>();
+        const map = new Map<string, Participant>();
         participants.forEach((p) => map.set(p.identity, p));
         return map;
     }, [participants]);
@@ -640,7 +643,7 @@ function GuestManager({ sessionId, isHost, socket }: { sessionId: string; isHost
         setTimeout(() => setToast(""), 2500);
     };
 
-    const fetchGuests = async () => {
+    const fetchGuests = useCallback(async () => {
         try {
             const lsToken = localStorage.getItem("accessToken");
             if (!lsToken) return;
@@ -653,24 +656,24 @@ function GuestManager({ sessionId, isHost, socket }: { sessionId: string; isHost
         } catch {
             // Ignore polling errors
         }
-    };
+    }, [sessionId]);
 
     useEffect(() => {
         if (!isHost) return;
         fetchGuests();
         const interval = setInterval(fetchGuests, 4000);
         return () => clearInterval(interval);
-    }, [sessionId, isHost]);
+    }, [fetchGuests, isHost]);
 
     // Listen for guest join/leave to refresh list
     useEffect(() => {
         if (!socket || !isHost) return;
         const handler = () => fetchGuests();
         socket.on("invite_accepted", handler);
-        return () => socket.off("invite_accepted", handler);
-    }, [socket, isHost]);
+        return () => { socket.off("invite_accepted", handler); };
+    }, [fetchGuests, isHost, socket]);
 
-    const muteMic = async (g: any) => {
+    const muteMic = async (g: StageGuest) => {
         setBusy(p => ({ ...p, [g.invitee_id]: "mic" }));
         try {
             const token = localStorage.getItem("accessToken");
@@ -683,7 +686,7 @@ function GuestManager({ sessionId, isHost, socket }: { sessionId: string; isHost
         finally { setBusy(p => { const n = {...p}; delete n[g.invitee_id]; return n; }); }
     };
 
-    const disableCamera = async (g: any) => {
+    const disableCamera = async (g: StageGuest) => {
         setBusy(p => ({ ...p, [g.invitee_id]: "cam" }));
         try {
             const token = localStorage.getItem("accessToken");
@@ -696,7 +699,7 @@ function GuestManager({ sessionId, isHost, socket }: { sessionId: string; isHost
         finally { setBusy(p => { const n = {...p}; delete n[g.invitee_id]; return n; }); }
     };
 
-    const removeGuest = async (g: any) => {
+    const removeGuest = async (g: StageGuest) => {
         setBusy(p => ({ ...p, [g.invitee_id]: "remove" }));
         try {
             const token = localStorage.getItem("accessToken");
@@ -856,11 +859,11 @@ function StreamsPanel({
     focusedTrackId,
     setFocusedTrackId
 }: {
-    allTracks: any[];
+    allTracks: TrackReferenceOrPlaceholder[];
     hiddenTracks: string[];
     setHiddenTracks: React.Dispatch<React.SetStateAction<string[]>>;
     focusedTrackId: string | null;
-    setFocusedTrackId: React.Dispatch<React.SetStateAction<string | null>>;
+    setFocusedTrackId: React.Dispatch<React.SetStateAction<string | null | undefined>>;
 }) {
     const activeTracks = allTracks.filter((t) => {
         const p = t.participant;
@@ -1015,12 +1018,12 @@ function ListenerPanel({
     setFocusedTrackId
 }: {
     sessionId: string;
-    socket: any;
-    allTracks: any[];
+    socket: Socket | null;
+    allTracks: TrackReferenceOrPlaceholder[];
     hiddenTracks: string[];
     setHiddenTracks: React.Dispatch<React.SetStateAction<string[]>>;
     focusedTrackId: string | null;
-    setFocusedTrackId: React.Dispatch<React.SetStateAction<string | null>>;
+    setFocusedTrackId: React.Dispatch<React.SetStateAction<string | null | undefined>>;
 }) {
     const [tab, setTab] = useState<"chat" | "streams">("chat");
 
@@ -1079,15 +1082,15 @@ function HostPanel({
     setFocusedTrackId
 }: {
     sessionId: string;
-    socket: any;
+    socket: Socket | null;
     inviteHandle: string;
     setInviteHandle: (v: string) => void;
     handleSendInvite: () => void;
-    allTracks: any[];
+    allTracks: TrackReferenceOrPlaceholder[];
     hiddenTracks: string[];
     setHiddenTracks: React.Dispatch<React.SetStateAction<string[]>>;
     focusedTrackId: string | null;
-    setFocusedTrackId: React.Dispatch<React.SetStateAction<string | null>>;
+    setFocusedTrackId: React.Dispatch<React.SetStateAction<string | null | undefined>>;
 }) {
     const [tab, setTab] = useState<"controls" | "streams" | "chat">("controls");
     const [inviteStatus, setInviteStatus] = useState<{ ok: boolean; msg: string } | null>(null);
@@ -1095,14 +1098,14 @@ function HostPanel({
     // Show invite status from socket
     useEffect(() => {
         if (!socket) return;
-        const handler = (data: any) => {
+        const handler = (data: InviteStatusMessage) => {
             setInviteStatus({ ok: data.success, msg: data.message });
             setTimeout(() => setInviteStatus(null), 3000);
             if (data.success) setInviteHandle("");
         };
         socket.on("invite_status", handler);
-        return () => socket.off("invite_status", handler);
-    }, [socket]);
+        return () => { socket.off("invite_status", handler); };
+    }, [setInviteHandle, socket]);
 
     const sendInvite = () => {
         if (!inviteHandle.trim()) return;
@@ -1208,7 +1211,7 @@ function LiveRoomContent({
     roomName: string;
     isHost: boolean;
     onStage: boolean;
-    socket: any;
+    socket: Socket | null;
     inviteHandle: string;
     setInviteHandle: React.Dispatch<React.SetStateAction<string>>;
     handleSendInvite: () => void;
@@ -1216,7 +1219,7 @@ function LiveRoomContent({
     onTrialExpired?: () => void;
 }) {
     const [hiddenTracks, setHiddenTracks] = useState<string[]>([]);
-    const [focusedTrackId, setFocusedTrackId] = useState<string | null>(null);
+    const [focusedTrackChoice, setFocusedTrackId] = useState<string | null | undefined>(undefined);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
     const allTracks = useTracks(
@@ -1227,23 +1230,16 @@ function LiveRoomContent({
         { onlySubscribed: false }
     );
 
-    // Auto-focus screenshare when screenshare starts. If stops, reset.
-    const autoPinnedScreenshares = useRef<Set<string>>(new Set());
-    useEffect(() => {
-        const screenshareTrack = allTracks.find(t => t.source === Track.Source.ScreenShare);
-        if (screenshareTrack) {
-            const trackId = `${screenshareTrack.participant.identity}-${Track.Source.ScreenShare}`;
-            if (!autoPinnedScreenshares.current.has(trackId)) {
-                autoPinnedScreenshares.current.add(trackId);
-                setFocusedTrackId(trackId);
-            }
-        } else {
-            autoPinnedScreenshares.current.clear();
-            if (focusedTrackId && focusedTrackId.endsWith(`-${Track.Source.ScreenShare}`)) {
-                setFocusedTrackId(null);
-            }
-        }
-    }, [allTracks, focusedTrackId]);
+    // Prefer a new screen share by default while keeping manual focus choices in state.
+    const screenShareTrack = allTracks.find((track) => track.source === Track.Source.ScreenShare);
+    const screenShareTrackId = screenShareTrack
+        ? `${screenShareTrack.participant.identity}-${Track.Source.ScreenShare}`
+        : null;
+    const selectedTrackExists = focusedTrackChoice === null || focusedTrackChoice === undefined ||
+        allTracks.some((track) => `${track.participant.identity}-${track.source}` === focusedTrackChoice);
+    const focusedTrackId = focusedTrackChoice !== undefined && selectedTrackExists
+        ? focusedTrackChoice
+        : screenShareTrackId;
 
     const isBroadcaster = isHost || onStage;
 
@@ -1365,7 +1361,7 @@ export default function LiveRoom() {
     const [isHost, setIsHost] = useState(false);
     const [onStage, setOnStage] = useState(false);
     const [preJoinComplete, setPreJoinComplete] = useState(false);
-    const [preJoinChoices, setPreJoinChoices] = useState<any>(null);
+    const [preJoinChoices, setPreJoinChoices] = useState<LocalUserChoices | null>(null);
     const [liveKitServerUrl, setLiveKitServerUrl] = useState("");
     const [connectError, setConnectError] = useState<string | null>(null);
 
@@ -1375,7 +1371,7 @@ export default function LiveRoom() {
 
     // Stage invite state
     const [inviteHandle, setInviteHandle] = useState("");
-    const [receivedInvite, setReceivedInvite] = useState<any>(null);
+    const [receivedInvite, setReceivedInvite] = useState<StageInvite | null>(null);
 
     const initRoom = useCallback(async () => {
         setLoading(true);
@@ -1408,13 +1404,13 @@ export default function LiveRoom() {
                     }
                     setPreJoinComplete(!isUserHost && !isUserStage); // viewers skip prejoin
                     tokenLoaded = true;
-                } catch (userTokenErr: any) {
-                    if (userTokenErr?.response?.status === 402 || userTokenErr?.response?.data?.code === 'payment_required') {
+                } catch (userTokenErr: unknown) {
+                    if (axios.isAxiosError(userTokenErr) && (userTokenErr.response?.status === 402 || userTokenErr.response?.data?.code === 'payment_required')) {
                         setTrialExpired(true);
                         setLoading(false);
                         return;
                     }
-                    console.warn("[Live] Authenticated token attempt failed, attempting guest fallback:", userTokenErr?.response?.data || userTokenErr.message);
+                    console.warn("[Live] Authenticated token attempt failed, attempting guest fallback:", axios.isAxiosError(userTokenErr) ? userTokenErr.response?.data || userTokenErr.message : userTokenErr);
                 }
             }
 
@@ -1428,13 +1424,13 @@ export default function LiveRoom() {
                     setOnStage(false);
                     setPreJoinComplete(true); // viewers skip prejoin
                     tokenLoaded = true;
-                } catch (guestErr: any) {
-                    if (guestErr?.response?.status === 402 || guestErr?.response?.data?.code === 'payment_required') {
+                } catch (guestErr: unknown) {
+                    if (axios.isAxiosError(guestErr) && (guestErr.response?.status === 402 || guestErr.response?.data?.code === 'payment_required')) {
                         setTrialExpired(true);
                         setLoading(false);
                         return;
                     }
-                    if (guestErr.response?.status === 404) {
+                    if (axios.isAxiosError(guestErr) && guestErr.response?.status === 404) {
                         try {
                             const stats = await axios.get(buildApiUrl(`/api/live/${id}/stats`));
                             if (stats.data?.status === "ended") {
@@ -1443,12 +1439,12 @@ export default function LiveRoom() {
                             }
                         } catch { }
                     }
-                    throw new Error(guestErr.response?.data?.error || "Active live podcast not found.");
+                    throw new Error(axios.isAxiosError(guestErr) ? guestErr.response?.data?.error || "Active live podcast not found." : "Active live podcast not found.");
                 }
             }
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error("[Live] Room init error:", err);
-            setConnectError(err.message || "Failed to initialize live podcast room.");
+            setConnectError(getErrorMessage(err, "Failed to initialize live podcast room."));
         } finally {
             setLoading(false);
         }
@@ -1470,13 +1466,13 @@ export default function LiveRoom() {
         }
         socket.emit("join_chat_room", id);
 
-        const handleReceiveInvite = (data: any) => {
+        const handleReceiveInvite = (data: StageInvite) => {
             if (data.sessionId === id) setReceivedInvite(data);
         };
         const handleInviteAccepted = () => {
             if (isHost) setInviteHandle(""); // clear input on accept
         };
-        const handleInviteRejected = (data: any) => {
+        const handleInviteRejected = (data: { inviteeHandle: string }) => {
             console.log(`${data.inviteeHandle} declined invite`);
         };
         const handlePodcastEnded = () => {

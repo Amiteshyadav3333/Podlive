@@ -494,9 +494,6 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
         const video = videoRef.current;
         if (!video || !url) return;
 
-        // Clear any previous error when a new source is being loaded
-        setVideoError(null);
-
         let hls: Hls;
         let retryTimer: ReturnType<typeof setTimeout> | undefined;
         let directMetadataHandler: (() => void) | undefined;
@@ -942,6 +939,7 @@ function HlsPlayer({ videoId, url, poster, subtitles, onNext, onPrev, onEnded, o
                 poster={poster}
                 onClick={handleTogglePlay}
                 onDoubleClick={handleToggleFullscreen}
+                onLoadStart={() => setVideoError(null)}
                 onPlay={() => { setIsPlaying(true); setVideoError(null); }}
                 onPause={() => setIsPlaying(false)}
                 onTimeUpdate={() => {
