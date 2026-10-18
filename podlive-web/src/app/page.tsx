@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Mic, Radio, Users, Play, Video, Search, TrendingUp, Eye, ChevronRight, Home as HomeIcon, Compass, BookOpen } from "lucide-react";
+import { Radio, Users, Play, Video, Search, TrendingUp, Eye, ChevronRight, Home as HomeIcon, Compass, BookOpen } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -9,6 +9,7 @@ import axios from "axios";
 import { buildApiUrl } from "@/lib/api";
 import { formatDistanceToNow } from "date-fns";
 import MarketingLanding from "@/components/MarketingLanding";
+import BrandLogo from "@/components/BrandLogo";
 
 const formatTime = (secs: number) => {
   if (isNaN(secs)) return "0:00";
@@ -226,11 +227,8 @@ export default function Home() {
       <nav className="fixed top-0 w-full z-50 border-b border-white/[0.07] bg-[#0f0f0f]/95 backdrop-blur-xl">
         <div className="max-w-[1600px] mx-auto px-4 md:px-6 h-16 flex items-center gap-4">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 shrink-0">
-            <div className="w-9 h-9 rounded-xl bg-red-600 flex items-center justify-center shadow-lg">
-              <Mic className="w-4 h-4 text-white" />
-            </div>
-            <span className="font-extrabold text-lg tracking-tight hidden sm:block">PodLive</span>
+          <Link href="/" className="flex shrink-0 items-center">
+            <BrandLogo iconClassName="size-9" textClassName="hidden text-lg sm:inline" />
           </Link>
 
           {/* Search */}

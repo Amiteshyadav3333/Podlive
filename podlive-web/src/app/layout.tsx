@@ -7,6 +7,11 @@ export const metadata: Metadata = {
   title: "PodLive — भारत का Video और Live Podcast Platform",
   description: "Videos देखें, creators को follow करें और live podcasts के साथ अपनी आवाज़ को stage दें।",
   keywords: ["podcast", "live streaming", "livekit", "hls", "broadcast"],
+  icons: {
+    icon: [{ url: "/podlive-mark.svg", type: "image/svg+xml" }],
+    shortcut: "/podlive-mark.svg",
+    apple: "/podlive-mark.svg",
+  },
   openGraph: {
     title: "PodLive",
     description: "Next-Generation Live Podcast Platform",

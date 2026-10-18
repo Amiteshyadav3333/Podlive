@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
-import { Mic, Home, Radio, UploadCloud, Video, Users, Settings, LogOut, ChevronRight, Palette, Crown, BookOpen, BarChart3 } from "lucide-react";
+import { Home, Radio, UploadCloud, Video, Users, Settings, LogOut, ChevronRight, Palette, Crown, BookOpen, BarChart3 } from "lucide-react";
 import { detectLanguage, type SupportedLanguage } from "@/lib/language";
+import BrandLogo from "@/components/BrandLogo";
 
 const NAV = [
   { href: "/dashboard", icon: Home, label: { en: "Home", hi: "होम" } },
@@ -73,11 +74,8 @@ export default function DashboardSidebar() {
       <aside className="fixed left-0 top-0 h-screen w-60 border-r border-white/[0.06] bg-[#0c0c0c] flex flex-col z-50 hidden md:flex">
         {/* Logo */}
         <div className="px-5 py-5 border-b border-white/[0.06]">
-          <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg group-hover:scale-105 transition-transform">
-              <Mic className="w-4 h-4 text-white" />
-            </div>
-            <span className="font-bold text-base tracking-tight">PodLive</span>
+          <Link href="/" className="group flex items-center">
+            <BrandLogo iconClassName="size-9 transition-transform group-hover:scale-105" textClassName="text-base" />
           </Link>
         </div>
 

@@ -3,11 +3,12 @@
 import Image from "next/image";
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
-import { Mic, Search, User, Video, Play, ArrowLeft } from "lucide-react";
+import { Search, User, Video, Play, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import axios from "axios";
 import { buildApiUrl } from "@/lib/api";
 import type { SearchResults } from "@/lib/models";
+import BrandLogo from "@/components/BrandLogo";
 
 function SearchContent() {
     const searchParams = useSearchParams();
@@ -50,11 +51,8 @@ function SearchContent() {
             <nav className="fixed top-0 w-full z-50 border-b border-white/10 bg-black/80 backdrop-blur-md">
                 <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
                     <div className="flex items-center gap-6">
-                        <Link href="/" className="flex items-center gap-2">
-                            <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center">
-                                <Mic className="w-4 h-4 text-white" />
-                            </div>
-                            <span className="font-bold border-r border-white/10 pr-6 hidden sm:block tracking-tight text-xl">PodLive</span>
+                        <Link href="/" className="flex items-center border-r border-white/10 pr-6">
+                            <BrandLogo iconClassName="size-9" textClassName="hidden text-xl sm:inline" />
                         </Link>
 
                         <form onSubmit={handleSearch} className="relative w-full max-w-md">

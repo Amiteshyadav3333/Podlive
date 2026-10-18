@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Mic, Search, Play, Users, Radio, ChevronRight, Home, Compass, Video, BookOpen, Menu, Bell, Plus, Sparkles } from "lucide-react";
+import { Search, Play, Users, Radio, ChevronRight, Home, Compass, Video, BookOpen, Menu, Bell, Plus, Sparkles } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import axios from "axios";
 import { buildApiUrl } from "@/lib/api";
+import BrandLogo from "@/components/BrandLogo";
 
 const CATEGORIES = ["All", "Technology", "Music", "Comedy", "Education", "Finance", "Gaming", "General"];
 
@@ -61,9 +62,8 @@ export default function Discover() {
       <header className="fixed inset-x-0 top-0 z-50 h-16 border-b border-white/[.07] bg-[#0f0f0f]/95 backdrop-blur-xl">
         <div className="mx-auto flex h-full max-w-[1600px] items-center gap-5 px-4 sm:px-6">
           <button aria-label="Open menu" className="hidden size-10 shrink-0 items-center justify-center rounded-full hover:bg-white/10 md:flex"><Menu className="size-5" /></button>
-          <Link href="/" className="flex shrink-0 items-center gap-2.5" aria-label="PodLive home">
-            <span className="grid size-9 place-items-center rounded-xl bg-red-600"><Mic className="size-5" /></span>
-            <span className="text-lg font-extrabold tracking-tight">PodLive</span>
+          <Link href="/" className="flex shrink-0 items-center" aria-label="PodLive home">
+            <BrandLogo iconClassName="size-9" textClassName="text-lg" />
             <span className="-mt-3 text-[10px] text-zinc-500">IN</span>
           </Link>
           <form onSubmit={(event) => { event.preventDefault(); if (searchQuery.trim()) router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`); }} className="mx-auto flex w-full max-w-2xl">
