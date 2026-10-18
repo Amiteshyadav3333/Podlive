@@ -110,6 +110,7 @@ export default function SocketProvider({ children }: { children: React.ReactNode
         const newSocket = io(getSocketUrl(), {
             auth: { token: token || undefined },
             transports: ['websocket', 'polling'],
+            tryAllTransports: true,
             upgrade: true,
             reconnection: true,
             reconnectionAttempts: Infinity,

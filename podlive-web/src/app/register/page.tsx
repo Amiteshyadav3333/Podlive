@@ -22,16 +22,25 @@ export default function Register() {
       const res = await fetch(buildApiUrl("/api/auth/register"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...formData, unique_handle: handle }),
+        body: JSON.stringify({ ...formData, email: formData.email.trim().toLowerCase(), unique_handle: handle }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Registration failed");
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error || (res.status >= 500
+          ? "PodLive is temporarily unavailable. Please try again shortly."
+          : "Registration failed. Please check your details and try again."));
+      }
+      if (!data?.accessToken || !data?.refreshToken || !data?.user) {
+        throw new Error("The server returned an incomplete sign-in response. Please try again.");
+      }
       localStorage.setItem("accessToken", data.accessToken);
       localStorage.setItem("refreshToken", data.refreshToken);
       localStorage.setItem("user", JSON.stringify(data.user));
       router.push("/dashboard");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Registration failed");
+      setError(err instanceof TypeError
+        ? "Could not connect to PodLive. Check your connection and try again."
+        : err instanceof Error ? err.message : "Registration failed");
     } finally {
       setLoading(false);
     }

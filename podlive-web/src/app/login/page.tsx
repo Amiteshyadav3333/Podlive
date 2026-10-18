@@ -30,17 +30,26 @@ export default function Login() {
       const res = await fetch(buildApiUrl("/api/auth/login"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ ...formData, email: formData.email.trim().toLowerCase() }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Login failed");
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(data?.error || (res.status >= 500
+          ? "PodLive is temporarily unavailable. Please try again shortly."
+          : "Login failed. Please check your details and try again."));
+      }
+      if (!data?.accessToken || !data?.refreshToken || !data?.user) {
+        throw new Error("The server returned an incomplete sign-in response. Please try again.");
+      }
       localStorage.setItem("accessToken", data.accessToken);
       localStorage.setItem("refreshToken", data.refreshToken);
       localStorage.setItem("user", JSON.stringify(data.user));
       const next = new URLSearchParams(window.location.search).get("next");
       router.push(next?.startsWith("/") && !next.startsWith("//") ? next : "/dashboard");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      setError(err instanceof TypeError
+        ? "Could not connect to PodLive. Check your connection and try again."
+        : err instanceof Error ? err.message : "Login failed");
     } finally {
       setLoading(false);
     }
