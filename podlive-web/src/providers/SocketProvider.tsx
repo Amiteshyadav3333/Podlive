@@ -115,6 +115,8 @@ export default function SocketProvider({ children }: { children: React.ReactNode
             reconnection: true,
             reconnectionAttempts: Infinity,
             reconnectionDelay: 1000,
+            reconnectionDelayMax: 60000,
+            randomizationFactor: 0.5,
             timeout: 20000
         });
 
