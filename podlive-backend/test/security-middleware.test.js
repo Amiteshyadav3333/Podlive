@@ -38,8 +38,12 @@ test('default CORS origins retain the production site and local development port
   const origins = getAllowedOrigins('', undefined);
   assert.deepEqual(origins, [
     'https://indiapodlive.vercel.app',
+    'https://chat.indiasearch.site',
+    'https://indiasearch.site',
+    'https://podlive.indiasearch.site',
     'http://localhost:3000',
-    'http://localhost:3001'
+    'http://localhost:3001',
+    'http://localhost:5173'
   ]);
 });
 

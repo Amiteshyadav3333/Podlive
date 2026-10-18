@@ -1,6 +1,7 @@
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 const livekitEgressService = require('../services/livekit-egress.service');
+const createViewerCountUpdater = require('../services/viewer-count-updater');
 const jwt = require('jsonwebtoken');
 
 // In-memory store — works for single-instance.
@@ -40,31 +41,13 @@ const findUserByHandle = async (handleOrId) => {
     });
 };
 
-const emitViewerCount = async (io, sessionId) => {
-    const count = liveRoomViewers.get(sessionId)?.size || 0;
-    try {
-        const session = await prisma.liveSession.findUnique({ where: { id: sessionId } });
-        if (!session) return;
-        const newPeak = Math.max(session.viewer_count_peak || 0, count);
-        await prisma.liveSession.update({
-            where: { id: sessionId },
-            data: {
-                viewer_count: count,
-                viewer_count_peak: newPeak
-            }
-        });
-
-        io.to(sessionId).emit('viewer_count_update', {
-            sessionId,
-            viewerCount: count,
-            viewerCountPeak: newPeak
-        });
-    } catch (err) {
-        console.error('[Socket] Viewer count update error:', err.message);
-    }
-};
-
 module.exports = (io) => {
+    const scheduleViewerCountUpdate = createViewerCountUpdater({
+        prisma,
+        io,
+        getViewerCount: (sessionId) => liveRoomViewers.get(sessionId)?.size || 0
+    });
+
     io.use((socket, next) => {
         try {
             const token = socket.handshake.auth?.token || socket.handshake.query?.token;
@@ -283,15 +266,21 @@ module.exports = (io) => {
             if (!liveRoomViewers.has(sessionId)) {
                 liveRoomViewers.set(sessionId, new Set());
             }
-            liveRoomViewers.get(sessionId).add(socket.id);
-            emitViewerCount(io, sessionId);
+            const viewers = liveRoomViewers.get(sessionId);
+            if (!viewers.has(socket.id)) {
+                viewers.add(socket.id);
+                scheduleViewerCountUpdate(io, sessionId);
+            }
         });
 
         socket.on('leave_chat_room', (sessionId) => {
             if (!sessionId) return;
             socket.leave(sessionId);
-            liveRoomViewers.get(sessionId)?.delete(socket.id);
-            emitViewerCount(io, sessionId);
+            const viewers = liveRoomViewers.get(sessionId);
+            if (viewers?.delete(socket.id)) {
+                if (viewers.size === 0) liveRoomViewers.delete(sessionId);
+                scheduleViewerCountUpdate(io, sessionId);
+            }
         });
 
         socket.on('send_chat_message', async ({ sessionId, senderHandle, message }) => {
@@ -348,7 +337,7 @@ module.exports = (io) => {
                 }
             }
 
-            affectedRooms.forEach((sessionId) => emitViewerCount(io, sessionId));
+            affectedRooms.forEach((sessionId) => scheduleViewerCountUpdate(io, sessionId));
 
             const disconnectedUserId = socketUsers.get(socket.id) || socket.data?.user?.id;
             socketUsers.delete(socket.id);

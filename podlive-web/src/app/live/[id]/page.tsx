@@ -26,6 +26,11 @@ import { buildApiUrl, fetchLiveKitWsUrl } from "@/lib/api";
 import type { ChatMessage, InviteStatusMessage, StageGuest, StageInvite } from "@/lib/models";
 import { getErrorMessage } from "@/lib/models";
 
+const LIVE_ROOM_OPTIONS = {
+    adaptiveStream: true,
+    dynacast: true,
+};
+
 
 
 
@@ -509,13 +514,11 @@ function CustomChat({ socket, sessionId }: { socket: Socket | null; sessionId: s
 
     useEffect(() => {
         if (!socket) return;
-        socket.emit("join_chat_room", sessionId);
         const handleReceiveChat = (data: ChatMessage) => {
             setChatMessages((prev) => [...prev, data]);
         };
         socket.on("receive_chat_message", handleReceiveChat);
         return () => {
-            socket.emit("leave_chat_room", sessionId);
             socket.off("receive_chat_message", handleReceiveChat);
         };
     }, [socket, sessionId]);
@@ -1457,14 +1460,18 @@ export default function LiveRoom() {
     // Socket events
     useEffect(() => {
         if (!socket) return;
-        const userData = localStorage.getItem("user");
-        if (userData) {
-            try {
-                const user = JSON.parse(userData);
-                socket.emit("register_user", user.id);
-            } catch {}
-        }
-        socket.emit("join_chat_room", id);
+        const joinLiveRoom = () => {
+            const userData = localStorage.getItem("user");
+            if (userData) {
+                try {
+                    const user = JSON.parse(userData);
+                    if (user?.id) socket.emit("register_user", user.id);
+                } catch {}
+            }
+            socket.emit("join_chat_room", id);
+        };
+        socket.on("connect", joinLiveRoom);
+        if (socket.connected) joinLiveRoom();
 
         const handleReceiveInvite = (data: StageInvite) => {
             if (data.sessionId === id) setReceivedInvite(data);
@@ -1488,6 +1495,8 @@ export default function LiveRoom() {
         socket.on("podcast_ended", handlePodcastEnded);
 
         return () => {
+            socket.off("connect", joinLiveRoom);
+            socket.emit("leave_chat_room", id);
             socket.off("receive_invite", handleReceiveInvite);
             socket.off("invite_accepted", handleInviteAccepted);
             socket.off("invite_rejected", handleInviteRejected);
@@ -1708,6 +1717,7 @@ export default function LiveRoom() {
                 token={token}
                 connect={isBroadcaster ? preJoinComplete : true}
                 serverUrl={liveKitServerUrl}
+                options={LIVE_ROOM_OPTIONS}
                 data-lk-theme="default"
                 onError={(err) => {
                     console.error("[LiveKitRoom Error]:", err);
