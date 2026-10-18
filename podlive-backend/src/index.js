@@ -26,7 +26,7 @@ if (missingEnvVars.length > 0) {
 const allowedOrigins = getAllowedOrigins(process.env.ALLOWED_ORIGINS, process.env.FRONTEND_URL);
 
 const corsOriginHandler = (origin, callback) => {
-  if (isOriginAllowed(origin)) {
+  if (isOriginAllowed(origin, allowedOrigins)) {
     return callback(null, true);
   }
   return callback(null, false);
@@ -39,7 +39,7 @@ app.set('trust proxy', 1);
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: (origin, callback) => callback(null, isOriginAllowed(origin)),
+    origin: (origin, callback) => callback(null, isOriginAllowed(origin, allowedOrigins)),
     methods: ['GET', 'POST'],
     credentials: true
   },
