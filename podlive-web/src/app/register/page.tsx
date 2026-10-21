@@ -60,7 +60,7 @@ export default function Register() {
           </Link>
           <div>
             <h2 className="text-3xl font-extrabold text-white mb-3 leading-tight">
-              हजारों creators<br />के साथ जुड़ें।
+              thousands of  creators<br /> add on one place।
             </h2>
             <p className="text-zinc-400 text-sm leading-relaxed max-w-xs">
               Start your first live stream in minutes. No equipment needed — just your voice and your story.
@@ -76,9 +76,9 @@ export default function Register() {
             <BrandLogo iconClassName="size-9" textClassName="text-lg text-white" />
           </Link>
 
-          <h1 className="text-2xl font-bold text-white mb-1">अकाउंट बनाएँ / Create account</h1>
+          <h1 className="text-2xl font-bold text-white mb-1"> Create account</h1>
           <p className="text-sm text-zinc-400 mb-8">
-            पहले से account है?{" "}
+             account  exists in db.{" "}
             <Link href="/login" className="text-indigo-400 hover:text-indigo-300 font-medium">Log in / लॉग इन</Link>
           </p>
 
@@ -126,7 +126,7 @@ export default function Register() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">पासवर्ड / Password</label>
+              <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2"> Password</label>
               <div className="relative">
                 <input
                   type={showPassword ? "text" : "password"} required
