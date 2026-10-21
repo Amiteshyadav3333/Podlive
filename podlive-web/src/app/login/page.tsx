@@ -85,10 +85,10 @@ export default function Login() {
             <BrandLogo iconClassName="size-9" textClassName="text-lg text-white" />
           </Link>
 
-          <h1 className="text-2xl font-bold text-white mb-1">वापसी पर स्वागत है / Welcome back</h1>
+          <h1 className="text-2xl font-bold text-white mb-1">Welcome back</h1>
           <p className="text-sm text-zinc-400 mb-8">
-            Account नहीं है?{" "}
-            <Link href="/register" className="text-indigo-400 hover:text-indigo-300 font-medium">Sign up / साइन अप</Link>
+            Account not found {" "}
+            <Link href="/register" className="text-indigo-400 hover:text-indigo-300 font-medium">Sign up </Link>
           </p>
 
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -116,7 +116,7 @@ export default function Login() {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">पासवर्ड / Password</label>
+              <label className="block text-xs font-semibold text-zinc-400 uppercase tracking-wider mb-2">Password</label>
               <div className="relative">
                 <input
                   type={showPassword ? "text" : "password"} required
@@ -135,7 +135,7 @@ export default function Login() {
               type="submit" disabled={loading}
               className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 rounded-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed active:scale-95 mt-2"
             >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sign in / लॉग इन"}
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Sign in"}
             </button>
           </form>
         </div>
