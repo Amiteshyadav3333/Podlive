@@ -1,6 +1,25 @@
-version: '3.8'
-
 services:
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      NODE_ENV: production
+      PORT: 5005
+      DATABASE_URL: postgresql://podlive_user:podlive_password@db:5432/podlive
+      DIRECT_URL: postgresql://podlive_user:podlive_password@db:5432/podlive
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "5005:5005"
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - uploads_data:/app/uploads
+
   db:
     image: postgres:16
     restart: always
@@ -21,3 +40,4 @@ services:
 
 volumes:
   postgres_data:
+  uploads_data:
